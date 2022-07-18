@@ -225,6 +225,73 @@ End eqit_closure.
 Arguments eqit_clo_trans : clear implicits.
 #[global] Hint Constructors eqit_trans_clo : entree.
 
+#[global] Instance geuttgen_cong_eqit {E R1 R2 RR1 RR2 RS} `{EncodedType E} b1 b2 r rg
+       (LERR1: forall x x' y, (RR1 x x': Prop) -> (RS x' y: Prop) -> RS x y)
+       (LERR2: forall x y y', (RR2 y y': Prop) -> RS x y' -> RS x y):
+  Proper (eq_itree RR1 ==> eq_itree RR2 ==> flip impl)
+         (gpaco2 (@eqit_ E _ R1 R2 RS b1 b2 id) (eqitC RS b1 b2) r rg).
+Proof.
+  repeat intro. guclo eqit_clo_trans. econstructor; cycle -3; eauto.
+  - eapply eqit_mon, H0; eauto; try discriminate.
+  - eapply eqit_mon, H1; eauto; discriminate.
+Qed.
+
+#[global] Instance geuttgen_cong_eqit_eq {E R1 R2 RS} `{EncodedType E} b1 b2 r rg:
+  Proper (eq_itree eq ==> eq_itree eq ==> flip impl)
+         (gpaco2 (@eqit_ E _ R1 R2 RS b1 b2 id) (eqitC RS b1 b2) r rg).
+Proof.
+  eapply geuttgen_cong_eqit; intros; subst; eauto.
+Qed.
+
+#[global] Instance geuttge_cong_euttge {E R1 R2 RR1 RR2 RS} `{EncodedType E} r rg
+       (LERR1: forall x x' y, (RR1 x x': Prop) -> (RS x' y: Prop) -> RS x y)
+       (LERR2: forall x y y', (RR2 y y': Prop) -> RS x y' -> RS x y):
+  Proper (euttge RR1 ==> eq_itree RR2 ==> flip impl)
+         (gpaco2 (@eqit_ E _ R1 R2 RS true false id) (eqitC RS true false) r rg).
+Proof.
+  repeat intro. guclo eqit_clo_trans. eauto with entree.
+Qed.
+
+#[global] Instance geuttge_cong_euttge_eq {E R1 R2 RS} `{EncodedType E} r rg:
+  Proper (euttge eq ==> eq_itree eq ==> flip impl)
+         (gpaco2 (@eqit_ E _ R1 R2 RS true false id) (eqitC RS true false) r rg).
+Proof.
+  eapply geuttge_cong_euttge; intros; subst; eauto.
+Qed.
+
+#[global] Instance geutt_cong_euttge {E R1 R2 RR1 RR2 RS} `{EncodedType E} r rg
+       (LERR1: forall x x' y, (RR1 x x': Prop) -> (RS x' y: Prop) -> RS x y)
+       (LERR2: forall x y y', (RR2 y y': Prop) -> RS x y' -> RS x y):
+  Proper (euttge RR1 ==> euttge RR2 ==> flip impl)
+         (gpaco2 (@eqit_ E _ R1 R2 RS true true id) (eqitC RS true true) r rg).
+Proof.
+  repeat intro. guclo eqit_clo_trans. eauto with entree.
+Qed.
+
+#[global] Instance geutt_cong_euttge_eq {E R1 R2 RS} `{EncodedType E} r rg:
+  Proper (euttge eq ==> euttge eq ==> flip impl)
+         (gpaco2 (@eqit_ E _ R1 R2 RS true true id) (eqitC RS true true) r rg).
+Proof.
+  eapply geutt_cong_euttge; intros; subst; eauto.
+Qed.
+
+#[global] Instance eqitgen_cong_eqit {E R1 R2 RR1 RR2 RS} `{EncodedType E} b1 b2
+       (LERR1: forall x x' y, (RR1 x x': Prop) -> (RS x' y: Prop) -> RS x y)
+       (LERR2: forall x y y', (RR2 y y': Prop) -> RS x y' -> RS x y):
+  Proper (eq_itree RR1 ==> eq_itree RR2 ==> flip impl)
+         (@eqit E _ R1 R2 RS b1 b2).
+Proof.
+  ginit. intros. eapply geuttgen_cong_eqit; eauto. gfinal. eauto.
+Qed.
+
+#[global] Instance eqitgen_cong_eqit_eq {E R1 R2 RS} `{EncodedType E} b1 b2:
+  Proper (eq_itree eq ==> eq_itree eq ==> flip impl)
+         (@eqit E _ R1 R2 RS b1 b2).
+Proof.
+  eapply eqitgen_cong_eqit; intros; subst; auto.
+Qed.
+
+
 Section eqit_gen.
 
 (** *** Properties of relation transformers. *)
@@ -368,7 +435,11 @@ Proof.
   auto. reflexivity.
 Qed.
 
-Inductive eqit_bind_clo {E} `{EncodedType E} {R1 R2} b1 b2 (r : entree E R1 -> entree E R2 -> Prop) :
+Section eqit_closure.
+
+Context {E : Type} `{EncodedType E} {R1 R2 : Type} (RR : R1 -> R2 -> Prop).
+
+Inductive eqit_bind_clo b1 b2 (r : entree E R1 -> entree E R2 -> Prop) :
   entree E R1 -> entree E R2 -> Prop :=
 | pbc_intro_h U1 U2 (RU : U1 -> U2 -> Prop) t1 t2 k1 k2
       (EQV: eqit RU b1 b2 t1 t2)
@@ -376,7 +447,11 @@ Inductive eqit_bind_clo {E} `{EncodedType E} {R1 R2} b1 b2 (r : entree E R1 -> e
   : eqit_bind_clo b1 b2 r (EnTree.bind t1 k1) (EnTree.bind t2 k2)
 .
 Hint Constructors eqit_bind_clo : entree.
-(*
+
+Ltac auto_ctrans :=
+  intros; repeat (match goal with [H: rcompose _ _ _ _ |- _] => destruct H end); subst; eauto.
+Ltac auto_ctrans_eq := try instantiate (1:=eq); auto_ctrans.
+
 Lemma eqit_clo_bind b1 b2 vclo
       (MON: monotone2 vclo)
       (CMP: compose (eqitC RR b1 b2) vclo <3= compose vclo (eqitC RR b1 b2))
@@ -384,23 +459,80 @@ Lemma eqit_clo_bind b1 b2 vclo
   eqit_bind_clo b1 b2 <3= gupaco2 (eqit_ RR b1 b2 vclo) (eqitC RR b1 b2).
 Proof.
   intros rr. pcofix CIH. intros. destruct PR.
-  guclo eqit_clo_trans. econstructor; auto_ctrans_eq.
-  1,2: rewrite unfold_bind; reflexivity.
+  guclo eqit_clo_trans.
+  econstructor; auto_ctrans_eq.
+  1,2:  reflexivity.
   punfold EQV. unfold_eqit.
-  hinduction EQV before CIH; intros; pclearbot; cbn;
-    repeat (change (ITree.subst ?k ?m) with (ITree.bind m k)).
+  unfold EnTree.bind, EnTree.subst.
+  hinduction EQV before CIH; intros; pclearbot; cbn.
   - guclo eqit_clo_trans. econstructor; auto_ctrans_eq.
-    1,2: reflexivity.
-    eauto with paco.
-  - gstep. econstructor. eauto 7 with paco itree.
-  - gstep. econstructor. intros. red in CMP. unfold id in ID. apply ID. eauto 7 with paco itree.
+    setoid_rewrite bind_ret_l. reflexivity.
+    setoid_rewrite bind_ret_l. reflexivity. eauto with paco.
+  - gstep. red. cbn. econstructor. gfinal. left. eapply CIH. econstructor; eauto.
+  - gstep. red. cbn. constructor. intros. apply ID. red.
+    gfinal. left. eapply CIH. econstructor; eauto. apply REL.
   - destruct b1; try discriminate.
     guclo eqit_clo_trans.
     econstructor; auto_ctrans_eq; eauto; try reflexivity.
-    eapply eqit_Tau_l. rewrite unfold_bind. reflexivity.
+    pstep. red. cbn. constructor. auto. pstep_reverse. 
+    apply Reflexive_eqit. auto.
   - destruct b2; try discriminate.
     guclo eqit_clo_trans. econstructor; auto_ctrans_eq; eauto; try reflexivity.
-    eapply eqit_Tau_l. rewrite unfold_bind. reflexivity.
+    pstep. red. cbn. constructor. auto. pstep_reverse.
+    apply Reflexive_eqit. auto.
 Qed.
 
-*)
+Lemma eqit_bind {U1 U2 UU} b1 b2 t1 t2 k1 k2
+      (EQT: @eqit E _ U1 U2 UU b1 b2 t1 t2)
+      (EQK: forall u1 u2, UU u1 u2 -> eqit RR b1 b2 (k1 u1) (k2 u2)):
+  eqit RR b1 b2 (EnTree.bind t1 k1) (EnTree.bind t2 k2).
+Proof.
+  ginit. guclo eqit_clo_bind. econstructor; eauto.
+  intros. gfinal. right. apply EQK. auto.
+Qed.
+
+Lemma eutt_clo_bind {U1 U2 UU} t1 t2 k1 k2
+      (EQT: @eutt E _ U1 U2 UU t1 t2)
+      (EQK: forall u1 u2, UU u1 u2 -> eutt RR (k1 u1) (k2 u2)):
+  eutt RR (EnTree.bind t1 k1) (EnTree.bind t2 k2).
+Proof.
+  eapply eqit_bind; eauto.
+Qed.
+
+End eqit_closure.
+
+#[global] Instance eqit_subst {E R S} `{EncodedType E} b1 b2 :
+  Proper (pointwise_relation _ (eqit eq b1 b2) ==> eqit eq b1 b2 ==>
+          eqit eq b1 b2) (@EnTree.subst E _ R S).
+Proof.
+  repeat intro. eapply eqit_bind; eauto. intros. subst. auto.
+Qed.
+
+#[global] Instance eqit_bind_proper {E R S} `{EncodedType E} b1 b2 :
+  Proper (eqit eq b1 b2 ==> pointwise_relation _ (eqit eq b1 b2) ==>
+          eqit eq b1 b2) (@EnTree.bind E _ R S).
+Proof.
+  repeat intro. eapply eqit_subst; eauto.
+Qed.
+
+Lemma simpobs {E R} `{EncodedType E} ot (t : entree E R) :
+  ot = (observe t) -> go _ _ ot ≅ t.
+Proof.
+  intros. pstep. red. rewrite <- H0. rewrite itree_eta'. pstep_reverse.
+  apply Reflexive_eqit. auto.
+Qed.
+
+Theorem bind_bind {E R S T} `{EncodedType E} :
+  forall (s : entree E R) (k : R -> entree E S) (h : S -> entree E T),
+    EnTree.bind (EnTree.bind s k) h ≅ EnTree.bind s (fun r => EnTree.bind (k r) h).
+Proof.
+  ginit. gcofix CIH. intros.
+  destruct (observe s) eqn : Hs; symmetry in Hs; apply simpobs in Hs.
+  - setoid_rewrite <- Hs. setoid_rewrite bind_ret_l. gfinal. right.
+    eapply paco2_mon with (r := bot2); intros; try contradiction.
+    apply Reflexive_eqit. auto.
+  - setoid_rewrite <- Hs. repeat rewrite bind_tau. gstep. red. constructor.
+    gfinal. left. eauto.
+  - setoid_rewrite <- Hs. repeat rewrite bind_vis. gstep. red. constructor.
+    intros. gfinal. left. eauto.
+Qed.

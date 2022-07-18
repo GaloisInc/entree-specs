@@ -14,7 +14,9 @@ From ITree Require Import
 
 From EnTree Require Import
      Basics.HeterogeneousRelations
-     Core.EnTreeDefinition.
+     Core.EnTreeDefinition
+     Core.SubEvent
+.
 
 Local Open Scope entree_scope.
 
@@ -33,6 +35,11 @@ Arguments Spec_exists {_} _.
                    | Spec_vis e => encodes e
                    | Spec_forall T => T
                    | Spec_exists T => T end.
+
+#[global] Instance SpecEventReSum E1 E2 `{ReSum E1 E2} : ReSum E1 (SpecEvent E2) :=
+  fun e => Spec_vis (resum e).
+#[global] Instance SpecEventReSumRet E1 E2 {EncE1 : EncodedType E1} {EncE2 : EncodedType E2} {Res : ReSum E1 E2}
+ {ResRet : ReSumRet E1 E2} : ReSumRet E1 (SpecEvent E2) := fun e x => @resum_ret _ _ _ _ _ ResRet e x.
 
 Definition entree_spec E `{EncodedType E} R := entree (SpecEvent E) R.
 Notation entree_spec' E R := (entree' (SpecEvent E) R).

@@ -2,6 +2,7 @@
 
 theories/Basics/HeterogeneousRelations.v
 theories/Core/EnTreeDefinition.v
+theories/Core/SubEvent.v
 theories/Eq/Eqit.v
 theories/Ref/Padded.v
 theories/Ref/EnTreeSpecDefinition.v

@@ -40,3 +40,9 @@ Definition interp_mrec_spec {R} (t : entree_spec (D + E) R) : entree_spec E R :=
 Definition mrec_spec (d : D) := interp_mrec_spec (bodies d).
 
 End mrec_spec.
+
+Section spec_fix.
+Context {A B : Type}.
+
+
+End spec_fix.
