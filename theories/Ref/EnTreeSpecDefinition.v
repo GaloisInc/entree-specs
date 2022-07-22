@@ -86,7 +86,25 @@ Definition refines := paco2 refines_ bot2.
 
 End refines.
 
+Definition assume_spec {E} `{EncodedType E} (P : Prop) : entree_spec E unit :=
+  Vis (Spec_forall P) (fun _ => Ret tt).
+Definition assert_spec {E} `{EncodedType E} (P : Prop) : entree_spec E unit :=
+  Vis (Spec_exists P) (fun _ => Ret tt).
+Definition forall_spec {E} `{EncodedType E} (A : Set) : entree_spec E A :=
+  Vis (Spec_forall A) (fun a => Ret a).
+Definition exists_spec {E} `{EncodedType E} (A : Set) : entree_spec E A :=
+  Vis (Spec_exists A) (fun a => Ret a).
 
 (* 
    need padded refines
-   Tomorrow write headers for important theorems and lemmas, not necessarily important to prove them yet *)
+   Tomorrow write headers for important theorems and lemmas, not necessarily important to prove them yet 
+
+SpecM :[(Type,Type)] -> Type -> Type -> Type
+SpecM calls E R := itree_spec (addCalls calls E) R
+Eddy Westbrook
+4:35 PM
+makeCall : forall calls E i, getCallInput calls i -> itree_spec calls E (getCallOutput calls)
+
+saw_mrec
+
+*)

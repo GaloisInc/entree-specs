@@ -41,8 +41,11 @@ Definition mrec_spec (d : D) := interp_mrec_spec (bodies d).
 
 End mrec_spec.
 
+Variant callE (A B : Type@{entree_u}) : Type@{entree_u} := Call (a : A).
+#[global] Instance callE_encodes {A B} : EncodedType (callE A B) :=
+  fun _ => B.
+
 Section spec_fix.
-Context {A B : Type}.
 
 
 End spec_fix.

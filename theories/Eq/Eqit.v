@@ -500,6 +500,7 @@ Proof.
 Qed.
 
 End eqit_closure.
+Arguments eqit_clo_bind : clear implicits.
 
 #[global] Instance eqit_subst {E R S} `{EncodedType E} b1 b2 :
   Proper (pointwise_relation _ (eqit eq b1 b2) ==> eqit eq b1 b2 ==>
@@ -522,7 +523,7 @@ Proof.
   apply Reflexive_eqit. auto.
 Qed.
 
-Theorem bind_bind {E R S T} `{EncodedType E} :
+Theorem bind_bind E R S T `{EncodedType E} :
   forall (s : entree E R) (k : R -> entree E S) (h : S -> entree E T),
     EnTree.bind (EnTree.bind s k) h ≅ EnTree.bind s (fun r => EnTree.bind (k r) h).
 Proof.
@@ -535,4 +536,44 @@ Proof.
     gfinal. left. eauto.
   - setoid_rewrite <- Hs. repeat rewrite bind_vis. gstep. red. constructor.
     intros. gfinal. left. eauto.
+Qed.
+
+Theorem eqit_iter E R1 R2 S1 S2 `{EncodedType E} b1 b2 RR RS
+        (body1 : R1 -> entree E (R1 + S1)) (body2 : R2 -> entree E (R2 + S2)) :
+  (forall r1 r2, (RR r1 r2 : Prop) -> eqit (sum_rel RR RS) b1 b2 (body1 r1) (body2 r2)) ->
+  forall r1 r2, RR r1 r2 -> eqit RS b1 b2 (EnTree.iter body1 r1) (EnTree.iter body2 r2).
+Proof.
+  intro Hbodies. ginit. gcofix CIH. intros r1 r2 Hr.
+  specialize (Hbodies r1 r2 Hr) as Hbodies'.
+  punfold Hbodies'. red in Hbodies'.
+  remember (observe (body1 r1)) as or1.
+  remember (observe (body2 r2)) as or2.
+  hinduction Hbodies' before r; intros;  apply simpobs in Heqor1, Heqor2.
+  - setoid_rewrite unfold_iter. rewrite <- Heqor1. rewrite <- Heqor2.
+    setoid_rewrite bind_ret_l.
+    inv REL.
+    + gstep. constructor. gfinal. eauto.
+    + gstep. constructor. auto.
+  - setoid_rewrite unfold_iter.
+    rewrite <- Heqor1. rewrite <- Heqor2. setoid_rewrite bind_tau.
+    gstep. constructor. pclearbot. guclo eqit_clo_bind. econstructor; eauto.
+    intros. inv H0.
+    + gstep. constructor. gfinal. eauto.
+    + gstep. constructor. auto.
+  - setoid_rewrite unfold_iter.
+    rewrite <- Heqor1. rewrite <- Heqor2. setoid_rewrite bind_vis.
+    gstep. constructor. pclearbot. guclo eqit_clo_bind. econstructor; eauto.
+    intros. apply REL. intros. inv H0.
+    + gstep. constructor. gfinal. eauto.
+    + gstep. constructor. auto.
+  - setoid_rewrite unfold_iter. rewrite <- Heqor1.
+    guclo eqit_clo_bind. econstructor; eauto. rewrite Heqor1. eauto.
+    intros. inv H0.
+    + gstep. constructor. gfinal. eauto.
+    + gstep. constructor. auto.
+  - setoid_rewrite unfold_iter. rewrite <- Heqor2.
+    guclo eqit_clo_bind. econstructor; eauto. rewrite Heqor2. eauto.
+    intros. inv H0.
+    + gstep. constructor. gfinal. eauto.
+    + gstep. constructor. auto.
 Qed.
