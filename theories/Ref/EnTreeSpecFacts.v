@@ -24,7 +24,6 @@ From Paco Require Import paco.
 
 Local Open Scope entree_scope.
 
-
 Definition padded_refines {E1 E2} `{EncodedType E1} `{EncodedType E2}
            {R1 R2 : Type} (RPre : Rel E1 E2) (RPost : PostRel E1 E2) (RR : Rel R1 R2)
            (t1 : entree_spec E1 R1) (t2 : entree_spec E2 R2) :=

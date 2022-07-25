@@ -7,3 +7,4 @@ theories/Eq/Eqit.v
 theories/Ref/Padded.v
 theories/Ref/EnTreeSpecDefinition.v
 theories/Ref/MRecSpec.v
+theories/Ref/SpecM.v
