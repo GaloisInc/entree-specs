@@ -14,7 +14,9 @@ From EnTree Require Import
      Ref.MRecSpec
 .
 
-From Coq Require Import Lists.List.
+From Coq Require Import Lists.List
+     Logic.JMeq
+.
 
 From Paco Require Import paco.
 
@@ -23,6 +25,10 @@ From Equations Require Import Equations Signature.
 Local Open Scope entree_scope.
 Local Open Scope list_scope.
 
+
+Import Monads.
+Import MonadNotation.
+Local Open Scope monad_scope.
 
 (*
   should we enfore that A has type universe < entree_u? 
@@ -135,7 +141,9 @@ Fixpoint LRTsInput (lrts : function_sigs) : Type@{entree_u} :=
       LRTInput lrt + (LRTsInput lrts')
   end.
 
-(* this was a key missing piece I should have seen earlier *)
+Equations function_sig_nil {A : Type} (lrt : LetRecType) (x : function_var lrt nil) : A := .
+
+(* this was a key missing piece *)
 Equations LRTinjection (lrt : LetRecType) (lrts : function_sigs) (x : function_var lrt lrts) (args : LRTInput lrt) : LRTsInput lrts  :=
   LRTinjection lrt (lrt :: lrts) (VarZ lrt lrts) args := inl args;
   LRTinjection lrt (lrt' :: lrts) (VarS lrt lrt' lrts y) args := inr (LRTinjection lrt lrts y args).
@@ -145,8 +153,14 @@ Equations LRTsOutput (lrts : function_sigs) (args : LRTsInput lrts) : Type@{entr
   LRTsOutput nil args := match args : void with end;
   LRTsOutput (lrt :: lrts') (inl args') := LRTOutput lrt args';
   LRTsOutput (lrt :: lrts') (inr args') := LRTsOutput lrts' args'.
-
-
+(*
+Fixpoint LRTsOutputProjection (lrts : function_sigs) (lrt : LetRecType)
+         (args : LRTInput lrt) (x : function_var lrt lrts)
+    (ret : LRTsOutput lrts (LRTinjection lrt lrts x args)) :
+    LRTOutput lrt args.
+  LRTsOutputProjection lrts lrt (inl args') (VarZ lrt lrts) ret := LRTOutput lrt args';
+  LRTsOutputProjection lrts lrt (inr args') (VarS lrt lrt' lrts y) ret :=  LRTsOutputProjection lrts lrt args' y ret.
+*)
 Fixpoint function_stackE (E : Type) (Γ : function_stack) : Type@{entree_u} :=
   match Γ with
   | nil => E
@@ -174,6 +188,31 @@ red.  intros e x. induction Γ.
 - exact (IHΓ x).
 Defined.
 
+Definition function_stackE_lrt_resum (E : Type) (Γ : function_stack) (lrts : function_sigs)
+ (lrt : LetRecType) (x : function_var lrt lrts) (args : LRTInput lrt) : function_stackE E (lrts :: Γ) :=
+  inl (LRTinjection lrt lrts x args).
+
+#[global] Instance function_stackE_lrt_resum' (E : Type) (Γ : function_stack) (lrts : function_sigs)
+ (lrt : LetRecType) (x : function_var lrt lrts) : ReSum (LRTInput lrt) (function_stackE E (lrts :: Γ)) :=
+  function_stackE_lrt_resum E Γ lrts lrt x.
+
+(* TODO write this with equations*)
+Definition function_stackE_lrt_resum_ret (E : Type) `{EncodedType E} (Γ : function_stack) (lrts : function_sigs)
+ (lrt : LetRecType) (x : function_var lrt lrts) : @ReSumRet (LRTInput lrt) (function_stackE E (lrts :: Γ)) _ _ 
+                                                            (function_stackE_lrt_resum E Γ lrts lrt x).
+red. intros args ret. unfold encodes. unfold encodes in ret. simpl in ret. unfold LRTOutputEncoded.
+induction x.
+- simp LRTinjection in ret. simp LRTsOutput in ret.
+- apply IHx. simp LRTinjection in ret.
+Defined.
+(*
+Equations function_stackE_lrt_resum_ret' (E : Type) `{EncodedType E} (Γ : function_stack) (lrts : function_sigs)
+ (lrt : LetRecType) (x : function_var lrt lrts)  : 
+  @ReSumRet (LRTInput lrt) (function_stackE E (lrts :: Γ)) _ _ (function_stackE_lrt_resum E Γ lrts lrt x) :=
+function_stackE_lrt_resum_ret' E Γ lrts lrt (VarZ lrt lrts) := 
+  fun (args : LRTInput lrt) (ret : encodes (resum args)) => ret;
+function_stackE_lrt_resum_ret' E Γ lrts lrt (VarS lrt' lrts)
+*)
 #[global] Instance function_stackE_resum_ret' E `{EncodedType E} Γ : ReSumRet E (function_stackE E Γ) :=
   function_stackE_resum_ret E Γ.
 
@@ -185,18 +224,69 @@ Arguments AssertS {_ _ _}.
 Arguments ExistsS {_ _ _}.
 Arguments ForallS {_ _ _}.
 Arguments TriggerS {_ _ _} _.
-Arguments CallS {_ _ _} _ _ _.
-Arguments MultiFixS {_ _ _ _}.
+Arguments CallS {_ _ _ _ _} _.
+Arguments MultiFixS {_ _ _}.
 
-(* write up the MultiFixS stuff, finish this translation this morning, look more at the haskell in afternoon*)
+(* I am concerned that this might not reduce, hopefully equations won't fail me now *)
 
-Definition calls_test (E : Type@{entree_u}) `{EncodedType E} (lrts : function_sigs) Γ (lrt : LetRecType) 
-           (args : LRTInput lrt) (x : function_var lrt lrts) : entree_spec (function_stackE E (lrts :: Γ)) (LRTOutput lrt args).
-simpl. constructor. eapply VisF. Unshelve.
-(*so the problem is injection an LRTInput into an LRTsInput, should rely on function_var *)
-2 : apply (Spec_vis (inl args)).
-eapply (EnTree.trigger (Spec_vis (inl args))) .
+Equations LRTsInput_proj (lrts : function_sigs) (args : LRTsInput lrts) : 
+  {lrt : LetRecType & (function_var lrt lrts) * { args' : LRTInput lrt & (LRTOutput lrt args' -> LRTsOutput lrts args) }}%type :=
+  LRTsInput_proj (lrt :: lrts) (inl args) := existT _ lrt (VarZ lrt lrts, existT _ args _);
+  LRTsInput_proj (lrt :: lrts) (inr args) := let '(existT _ lrt' (x , (existT _ args' f))) := LRTsInput_proj lrts args in
+                                            existT _ lrt' (VarS _ _ _ x, existT _ args' f ).
+Next Obligation. simp LRTsOutput.
+Defined.
 
+(**)
+
+Equations LRTsOutput_projection (lrts : function_sigs) (lrt : LetRecType) 
+          (args : LRTInput lrt) (x : function_var lrt lrts) : LRTsOutput lrts (LRTinjection lrt lrts x args) ->
+                                                              LRTOutput lrt args :=
+  LRTsOutput_projection lrts lrt args (VarZ lrt lrts) := fun ret => ret;
+  LRTsOutput_projection lrts lrt args (VarS lrt lrt' lrts y) := LRTsOutput_projection lrts lrt args y.
+
+Definition LRTsOutput_projection':
+  forall (lrts : function_sigs) (lrt : LetRecType)
+         (args : LRTInput lrt) (x : function_var lrt lrts),
+    LRTsOutput lrts (LRTinjection lrt lrts x args) ->
+    LRTOutput lrt args.
+Proof.
+  intros lrts lrt args x ret.
+  induction x.
+  - simp LRTinjection in ret. simp LRTsOutput in ret.
+  - apply IHx. simp LRTinjection in ret.
+Defined.
+(*
+Equations LRTsOutput_projection' (lrts : function_sigs) 
+*)
+
+Lemma LRTsOutputLRTOutput : forall (lrts : function_sigs) (lrt : LetRecType)
+         (args : LRTInput lrt) (x : function_var lrt lrts),
+    LRTsOutput lrts (LRTinjection lrt lrts x args) = LRTOutput lrt args.
+Proof.
+  intros. induction x.
+  - simp LRTinjection. simp LRTsOutput. reflexivity.
+  - simp LRTinjection. rewrite <- IHx. simp LRTsOutput. reflexivity.
+Qed.
+
+Lemma LRTsOutput_projection_JMeq : forall (lrts : function_sigs) (lrt : LetRecType)
+         (args : LRTInput lrt) (x : function_var lrt lrts) 
+         (ret : LRTsOutput lrts (LRTinjection lrt lrts x args) ) ,
+    JMeq ret (LRTsOutput_projection _ _ _ _ ret).
+Proof.
+  intros.
+  induction x.
+  - cbv. reflexivity.
+  - specialize (IHx args ret). eapply JMeq_trans. eapply IHx. cbn. reflexivity. 
+Qed.
+(* doesn't even require any axioms *)
+
+(* maybe using equations for LRTinjection is a mistake? will it reduce when *)
+Definition call_spec {E : Type@{entree_u}} `{EncodedType E} {lrts : function_sigs} {Γ} {lrt : LetRecType} 
+           (args : LRTInput lrt) (x : function_var lrt lrts) : entree_spec (function_stackE E (lrts :: Γ)) (LRTOutput lrt args) :=
+Vis (Spec_vis (inl (LRTinjection lrt lrts x args)))
+  (fun ret => Ret (LRTsOutput_projection lrts lrt args x ret)).
+(*
 Equations denote_SpecM (E : Type@{entree_u}) `{EncodedType E} (Γ : function_stack) (A : Type) (spec : SpecM E Γ A) :
   entree_spec (function_stackE E Γ) A :=
   denote_SpecM E Γ A (RetS a) := Ret a;
@@ -206,9 +296,37 @@ Equations denote_SpecM (E : Type@{entree_u}) `{EncodedType E} (Γ : function_sta
   denote_SpecM E Γ A (ForallS A) := forall_spec A;
   denote_SpecM E Γ A (ExistsS A) := exists_spec A;
   denote_SpecM E Γ A (TriggerS e) := trigger e;
-  denote_SpecM E Γ A (CallS lrts lrt x args) := EnTree.trigger (Spec_vis (inl args) );
+  denote_SpecM E Γ A (CallS lrts lrt x args) := call_spec args x;
   denote_SpecM E Γ A _ := EnTree.spin.
+Reset denote_SpecM.
+*)
+(* need to go from LRTsInput lrts to lrt * LTRInput lrt  *)
+(* not right yet,*)
+(*
+Definition multifix_spec {E : Type@{entree_u}} `{EncodedType E} (lrts : function_sigs) {Γ : function_stack} 
+           (bodies : forall lrt : LetRecType, function_var lrt lrts -> forall args : LRTInput lrt, SpecM E (lrts :: Γ) (LRTOutput lrt args))
+           (lrt : LetRecType) (x : function_var lrt lrts) (args : LRTInput lrt) : SpecM E Γ (LRTOutput lrt args) :=
+mrec_spec 
+*)
 
+(* error in defining this function, not sure how important it is? *)
+Equations LRTinjection_ret (lrt : LetRecType) lrts (x : function_var lrt lrts) (args : LRTInput lrt) : 
+  LRTsOutput lrts (LRTinjection lrt lrts x args) -> LRTOutput lrt args :=
+  LRTinjection_ret lrt (lrt :: lrts) (VarZ lrt lrts) args := fun ret => ret;
+  LRTinjection_ret lrt (lrt' :: lrts) (VarS lrt lrt' lrts y) args := LRTinjection_ret lrt lrts y args.
+
+(*
+Definition LRTinjection_ret (lrt : LetRecType) lrts (x : function_var lrt lrts) (args : LRTInput lrt) : 
+  LRTsOutput lrts (LRTinjection lrt lrts x args) -> LRTOutput lrt args.
+induction x.
+- simp LRTinjection. simp LRTsOutput.
+- intros. apply IHx. simp LRTinjection in X.
+Defined.
+*)
+
+
+#[global] Instance Monad_entree_spec {E} `{EncodedType E} : Monad (entree_spec E) :=
+  Monad_entree.
 
 Fixpoint denote_SpecM (E : Type@{entree_u}) `{EncodedType E} Γ A (spec : SpecM E Γ A) : 
   entree_spec (function_stackE E Γ) A :=
@@ -221,127 +339,17 @@ Fixpoint denote_SpecM (E : Type@{entree_u}) `{EncodedType E} Γ A (spec : SpecM 
   | ForallS A => forall_spec A
   | ExistsS A => exists_spec A
   | TriggerS e => trigger e
-  (* I think there is an issue with + vs LRTOutput *)
-  | CallS lrts lrt x args => EnTree.trigger (Spec_vis (inl args) )
-  | _ => EnTree.spin end.
-(*
-
-  | CallS a => (EnTree.trigger (Spec_vis (inl (CallDep _ _ a))))
-  | MrecS A B bodies a => mrec_spec (fun c : call_depE _ _  => 
-                         match c with CallDep _ _ a => denote_SpecM E _ _ (bodies a) end) 
-                               (CallDep _ _ a)
+  | CallS x args => call_spec args x
+  (* some weird error when defining LRTinjection_ret with equations *)
+  | MultiFixS lrts bodies lrt x args => 
+      ret <- (mrec_spec (fun args : LRTsInput lrts => 
+                   let '(existT _ lrt (x, existT _ args' f)) := LRTsInput_proj lrts args in 
+                   ret <- (denote_SpecM E _ _ (bodies lrt x args'));;
+                   Ret (f ret)
+                )
+                (LRTinjection lrt lrts x args));;
+      Ret (LRTinjection_ret lrt lrts x args ret)
   end.
-*)
-(* 
-Equations function_stackE_resum_ret (E : Type) `{EncodedType E} (Γ : function_stack) (e : E) (x : encodes (resum e)) :
-  function_stackE_encodes E Γ :=
-  function_stackE_resum_ret E nil e x := x;
-  function_stackE_resum_ret E (_ :: Γ') e x := function_stackE_resum_ret E Γ' e x. *)
-(*write up the translation today *)
-
-(*could be worth proving an isomorphism between function_var lrt lrts and 
-  bound indices
- *)
-(*
-  | CallS Γ A B (a : A) : SpecM E (ct_intro A B :: Γ) (B a)
-  | MrecS Γ A B (bodies : forall a, SpecM E (ct_intro A B :: Γ) (B a) ) (a : A):
-    SpecM E Γ (B a) *)
-.
-
-(* not sure this is needed
-Fixpoint nat_to_call_var Γ n : option call_var :=
-  match Γ with
-  | nil => None
-  | lrt :: Γ' =>
-      match n with
-      | 0 => Some (VarZ Γ' lrt
-*)
-(* call stack should become a list list lrt 
-   maybe a sort of typed list where each signature has an index
-*)
-
-Instance LetRecTypeEEncodes lrt : EncodedType (LetRecTypeE lrt) := LRTEncodes lrt.
-
-
-Variant callE (lrt : LetRecType) : Type@{entree_u} := Call (a : encodes lrt).
-(* check with eddy to make sure this is right, does this do mutual right? *)
-#[global] Instance callE_encdoes lrt : EncodedType (callE lrt) :=
-  fun _ => encodes lrt.
-
-Variant call_depE (A : Type) (B : A -> Type) : Type@{entree_u} := CallDep (a : A).
-#[global] Instance call_depE_encodes A B : EncodedType (call_depE A B) :=
-  fun c => match c with CallDep _ _ a => B a end.
-
-(* should be different for my uses *)
-Fixpoint denote_LetRecType (M : Type -> Type) (lrt : LetRecType) : Type@{entree_u} :=
-  match lrt with
-  | LRT_Ret R => M R (**)
-  | LRT_Fun A rest => forall (a : A), denote_LetRecType M (rest a) end.
-
-#[global] Instance LetRecTypeEncodes : EncodedType LetRecType :=
-  denote_LetRecType.
-
-Variant call_dep_type := 
-  ct_intro (A : Type) (B : A -> Type).
-Notation call_stack := (list call_dep_type).
-Inductive call_var : call_stack -> call_dep_type -> Type :=
-| VarZ  : forall (G:call_stack) t, call_var (t::G) t
-| VarS  : forall (G:call_stack) u t,
-    call_var G t -> call_var (u::G) t.
-
-Definition call_dep_type_trans (c : call_dep_type) : Type@{entree_u} :=
-  match c with ct_intro A B => call_depE A B end.
-
-#[global] Instance call_dep_type_trans_encodes (C : call_dep_type) : 
-  EncodedType (call_dep_type_trans C) :=
- match C as C' return (call_dep_type_trans C' -> Type) with
-   ct_intro A B =>
-     fun c => match c with CallDep _ _ a => B a end end.
-
-Definition uncall {A B} (c : call_depE A B) : A :=
-  match c with CallDep _ _ a => a end.
-
-
-
-
-
-
-
-
-(* I think there is an associativity issue here want + E to be at the top
-   maybe the way to do that is have nil map to void and only add E at the top level
-*)
-Fixpoint denote_call_stack (E : Type) (Γ : call_stack) : Type :=
-  match Γ with
-  | nil => E
-  | C :: Γ' => call_dep_type_trans C + denote_call_stack E Γ' end.
-(*
-Print Instances EncodedType.
-Definition denote_call_ctx_encodes_ (E : Type) `{EncodedType E} (Γ : call_ctx) : 
-  denote_call_ctx E Γ -> Type. *)
-
-(* replace with sanely written one *)
-#[global] Instance denote_call_ctx_encodes E `{EncodedType E} Γ : EncodedType (denote_call_stack E Γ).
-induction Γ.
-- exact encodes.
-- simpl. apply EncodedSum. exact (call_dep_type_trans_encodes a).
-  exact IHΓ.
-Defined.
-
-#[global] Instance denote_call_ctx_resum E Γ : ReSum E (denote_call_stack E Γ).
-induction Γ.
-- simpl. intros e. exact e.
-- simpl. intros e. apply ReSum_inr. exact (IHΓ e).
-Defined.
-
-#[global] Instance denote_call_ctx_resumret E Γ `{EncodedType E} : ReSumRet E (denote_call_stack E Γ).
-induction Γ.
-- simpl. intros e. unfold resum. intros x. exact x.
-- simpl. intros e. apply IHΓ.
-Defined.
-
-
-
 
 #[global] Instance SpecM_Monad {E} `{EncodedType E} Γ : Monad (SpecM E Γ) :=
   {|
