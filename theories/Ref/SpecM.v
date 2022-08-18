@@ -303,50 +303,46 @@ Definition AssumeS {E} `{EncodedType E} {Γ} (P : Prop) : SpecM E Γ unit := ass
 Definition AssertS {E} `{EncodedType E} {Γ} (P : Prop) : SpecM E Γ unit := assert_spec P.
 Definition ForallS {E} `{EncodedType E} {Γ} (A : Set) : SpecM E Γ A := forall_spec A.
 Definition ExistsS {E} `{EncodedType E} {Γ} (A : Set) : SpecM E Γ A := exists_spec A.
+Definition TriggerS {E} `{EncodedType E} {Γ} (e : E) : SpecM E Γ (encodes e) := trigger e.
 Definition CallS {E} `{EncodedType E} {Γ Frame} (lrt : LetRecType)
   (x : function_var lrt Frame) (args : LRTInput lrt) :
   SpecM E (Frame :: Γ) (LRTOutput lrt args) :=
   Vis (Spec_vis (inl (LRTinjection lrt Frame x args)))
   (fun ret => Ret (LRTsOutput_projection Frame lrt args x ret)).
 
-Fixpoint LRTType E `{EncodedType E} Γ (Frame : function_sigs) (lrt : LetRecType) : Type@{entree_u} :=
+Fixpoint LRTType E `{EncodedType E} Γ (lrt : LetRecType) : Type@{entree_u} :=
   match lrt with
-  | LRT_Ret R => SpecM E (Frame :: Γ) R
-  | LRT_Fun A rest => forall (a : A), LRTType E Γ Frame (rest a) end.
-(*
-Definition MultiFixSBodies E `{EncodedType E} Γ (Frame : function_sigs) : Type@{entree_u} :=
-  (fix mfsb (CurrFrame : function_sigs) : Type@{entree_u}:=
-    match CurrFrame with
-    | nil => unit
-    | lrt :: CurrFrame' =>
-        (LRTType E Γ Frame lrt * mfsb CurrFrame')%type end)
-    Frame. *)
-(*seems like I cannot translate between LRTInput -> LRTOutput*)
+  | LRT_Ret R => SpecM E Γ R
+  | LRT_Fun A rest => forall (a : A), LRTType E Γ (rest a) end.
+
 Equations LRTTypeFun E `{EncodedType E} Γ (Frame : function_sigs) (lrt : LetRecType)
-  (lrtT : LRTType E Γ Frame lrt) (args : LRTInput lrt) :
-  SpecM E (Frame :: Γ) (LRTOutput lrt args) :=
+  (lrtT : LRTType E Γ lrt) (args : LRTInput lrt) :
+  SpecM E Γ (LRTOutput lrt args) :=
   LRTTypeFun E Γ Frame (LRT_Ret R) spec _ := spec;
   LRTTypeFun E Γ Frame (LRT_Fun A rest) func (existT _ a args) := LRTTypeFun E Γ Frame (rest a) (func a) args.
 
 Arguments LRTTypeFun {_ _ _ _ _}.
   
 
-Fixpoint MultiFixSBodiesR E `{EncodedType E} Γ (TopFrame CurrFrame : function_sigs) : Type@{entree_u} :=
-    match CurrFrame with
+Fixpoint MultiFixSBodiesR E `{EncodedType E} Γ (Frame : function_sigs) : Type@{entree_u} :=
+    match Frame with
     | nil => unit
-    | lrt :: CurrFrame' =>
-        (LRTType E Γ TopFrame lrt * MultiFixSBodiesR E Γ TopFrame CurrFrame')%type
+    | lrt :: Frame' =>
+        (LRTType E Γ lrt * MultiFixSBodiesR E Γ Frame')%type
     end.
 
 Equations MultiFixSBodiesTransR {E} `{EncodedType E} {Γ} (TopFrame CurrFrame : function_sigs)
-  (bodies : MultiFixSBodiesR E Γ TopFrame CurrFrame) lrt (x : function_var lrt CurrFrame) (args : LRTInput lrt)  :
+  (bodies : MultiFixSBodiesR E (TopFrame :: Γ) CurrFrame) lrt (x : function_var lrt CurrFrame) (args : LRTInput lrt)  :
   SpecM E (TopFrame :: Γ) (LRTOutput lrt args) :=
   MultiFixSBodiesTransR TopFrame (lrt :: CurrFrame) (f, _) lrt (VarZ lrt CurrFrame) args := LRTTypeFun f args;
   MultiFixSBodiesTransR TopFrame (lrt' :: CurrFrame) (_, fs) lrt (VarS lrt lrt' CurrFrame y) args :=
     MultiFixSBodiesTransR TopFrame CurrFrame fs lrt y args.
-
+Next Obligation.
+  (* why is this obligations here?*)
+  exact TopFrame.
+Defined.
 Definition MultiFixSBodies E `{EncodedType E} Γ (Frame : function_sigs) : Type@{entree_u} :=
-  MultiFixSBodiesR E Γ Frame Frame.
+  MultiFixSBodiesR E (Frame :: Γ) Frame.
 
 Definition MultiFixSBodiesTrans {E} `{EncodedType E} {Γ} Frame bodies lrt x args : SpecM E (Frame :: Γ) (LRTOutput lrt args) :=
   MultiFixSBodiesTransR Frame Frame bodies lrt x args.
