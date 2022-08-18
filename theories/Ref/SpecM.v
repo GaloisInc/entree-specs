@@ -48,18 +48,25 @@ Inductive LetRecTypeArg : LetRecType -> Type :=
   | LRT_FunArg A rest (a : A) (b : LetRecTypeArg (rest a) ) : LetRecTypeArg (LRT_Fun A rest).
 *)
 (* defines input type for a lrt event *)
+
+(* might need to do a bunch of refactoring I think LRTInput' is right*)
 Fixpoint LRTInput (lrt : LetRecType) : Type@{entree_u} :=
   match lrt with
   | LRT_Ret R => unit
-  | LRT_Fun A rest => forall a : A, LRTInput (rest a) 
+  | LRT_Fun A rest => {a : A & LRTInput (rest a) }
   end.
 
+(* need to write LRTOutput', do a bunch of refactoring,
+   could be fun tomorrow
+ *)
 
 Fixpoint LRTOutput lrt : EncodedType (LRTInput lrt) :=
   match lrt with
   | LRT_Ret R => fun _ : unit => R
   | LRT_Fun A rest => fun args =>
-                       forall a : A, LRTOutput (rest a) (args a) end.
+                       let '(existT _ a args') := args in
+                       LRTOutput (rest a) args'
+  end.
 
 #[global] Instance LRTOutputEncoded lrt : EncodedType (LRTInput lrt) := LRTOutput lrt.
 
@@ -110,7 +117,7 @@ Fixpoint function_var_index (n : nat) (lrts : function_sigs) : option LetRecType
       end.
 
 (*need to figure *)
-
+(*
 Inductive SpecM (E : Type) `{EncodedType E} : function_stack -> Type@{entree_u} -> Type := 
   | RetS Γ A (a : A) : SpecM E Γ A
   | BindS Γ A B : SpecM E Γ A -> (A -> SpecM E Γ B) -> SpecM E Γ B
@@ -133,7 +140,7 @@ Inductive SpecM (E : Type) `{EncodedType E} : function_stack -> Type@{entree_u} 
                   SpecM E (lrts :: Γ) (LRTOutput lrt args))
     lrt (x : function_var lrt lrts) : 
     forall args : LRTInput lrt, SpecM E Γ (LRTOutput lrt args).
-
+*)
 Fixpoint LRTsInput (lrts : function_sigs) : Type@{entree_u} :=
   match lrts with
   | nil => void
@@ -216,17 +223,6 @@ function_stackE_lrt_resum_ret' E Γ lrts lrt (VarS lrt' lrts)
 #[global] Instance function_stackE_resum_ret' E `{EncodedType E} Γ : ReSumRet E (function_stackE E Γ) :=
   function_stackE_resum_ret E Γ.
 
-Arguments RetS {_ _ _ _} _.
-Arguments BindS {_ _ _ _ _} _ _.
-Arguments IterS {_ _ _ _ _} _ _.
-Arguments AssumeS {_ _ _}.
-Arguments AssertS {_ _ _}.
-Arguments ExistsS {_ _ _}.
-Arguments ForallS {_ _ _}.
-Arguments TriggerS {_ _ _} _.
-Arguments CallS {_ _ _ _ _} _.
-Arguments MultiFixS {_ _ _}.
-
 (* I am concerned that this might not reduce, hopefully equations won't fail me now *)
 
 Equations LRTsInput_proj (lrts : function_sigs) (args : LRTsInput lrts) : 
@@ -237,48 +233,14 @@ Equations LRTsInput_proj (lrts : function_sigs) (args : LRTsInput lrts) :
 Next Obligation. simp LRTsOutput.
 Defined.
 
-(**)
 
+(*TODO: investigate strange equations warning here*)
 Equations LRTsOutput_projection (lrts : function_sigs) (lrt : LetRecType) 
           (args : LRTInput lrt) (x : function_var lrt lrts) : LRTsOutput lrts (LRTinjection lrt lrts x args) ->
                                                               LRTOutput lrt args :=
   LRTsOutput_projection lrts lrt args (VarZ lrt lrts) := fun ret => ret;
   LRTsOutput_projection lrts lrt args (VarS lrt lrt' lrts y) := LRTsOutput_projection lrts lrt args y.
 
-Definition LRTsOutput_projection':
-  forall (lrts : function_sigs) (lrt : LetRecType)
-         (args : LRTInput lrt) (x : function_var lrt lrts),
-    LRTsOutput lrts (LRTinjection lrt lrts x args) ->
-    LRTOutput lrt args.
-Proof.
-  intros lrts lrt args x ret.
-  induction x.
-  - simp LRTinjection in ret. simp LRTsOutput in ret.
-  - apply IHx. simp LRTinjection in ret.
-Defined.
-(*
-Equations LRTsOutput_projection' (lrts : function_sigs) 
-*)
-
-Lemma LRTsOutputLRTOutput : forall (lrts : function_sigs) (lrt : LetRecType)
-         (args : LRTInput lrt) (x : function_var lrt lrts),
-    LRTsOutput lrts (LRTinjection lrt lrts x args) = LRTOutput lrt args.
-Proof.
-  intros. induction x.
-  - simp LRTinjection. simp LRTsOutput. reflexivity.
-  - simp LRTinjection. rewrite <- IHx. simp LRTsOutput. reflexivity.
-Qed.
-
-Lemma LRTsOutput_projection_JMeq : forall (lrts : function_sigs) (lrt : LetRecType)
-         (args : LRTInput lrt) (x : function_var lrt lrts) 
-         (ret : LRTsOutput lrts (LRTinjection lrt lrts x args) ) ,
-    JMeq ret (LRTsOutput_projection _ _ _ _ ret).
-Proof.
-  intros.
-  induction x.
-  - cbv. reflexivity.
-  - specialize (IHx args ret). eapply JMeq_trans. eapply IHx. cbn. reflexivity. 
-Qed.
 (* doesn't even require any axioms *)
 
 (* maybe using equations for LRTinjection is a mistake? will it reduce when *)
@@ -309,7 +271,7 @@ Definition multifix_spec {E : Type@{entree_u}} `{EncodedType E} (lrts : function
 mrec_spec 
 *)
 
-(* error in defining this function, not sure how important it is? *)
+(* TODO: investigate strange equations warning here *)
 Equations LRTinjection_ret (lrt : LetRecType) lrts (x : function_var lrt lrts) (args : LRTInput lrt) : 
   LRTsOutput lrts (LRTinjection lrt lrts x args) -> LRTOutput lrt args :=
   LRTinjection_ret lrt (lrt :: lrts) (VarZ lrt lrts) args := fun ret => ret;
@@ -328,28 +290,94 @@ Defined.
 #[global] Instance Monad_entree_spec {E} `{EncodedType E} : Monad (entree_spec E) :=
   Monad_entree.
 
-Fixpoint denote_SpecM (E : Type@{entree_u}) `{EncodedType E} Γ A (spec : SpecM E Γ A) : 
-  entree_spec (function_stackE E Γ) A :=
-  match spec with
-  | RetS a => Ret a
-  | BindS m k => EnTree.bind (denote_SpecM E _ _ m) (fun x => denote_SpecM E _ _ (k x))
-  | IterS body a => EnTree.iter (fun x => denote_SpecM E _ _ (body x)) a
-  | AssumeS P => assume_spec P
-  | AssertS P => assert_spec P
-  | ForallS A => forall_spec A
-  | ExistsS A => exists_spec A
-  | TriggerS e => trigger e
-  | CallS x args => call_spec args x
-  (* some weird error when defining LRTinjection_ret with equations *)
-  | MultiFixS lrts bodies lrt x args => 
-      ret <- (mrec_spec (fun args : LRTsInput lrts => 
-                   let '(existT _ lrt (x, existT _ args' f)) := LRTsInput_proj lrts args in 
-                   ret <- (denote_SpecM E _ _ (bodies lrt x args'));;
-                   Ret (f ret)
-                )
-                (LRTinjection lrt lrts x args));;
-      Ret (LRTinjection_ret lrt lrts x args ret)
-  end.
+
+Definition SpecM (E : Type@{entree_u}) `{EncodedType E} Γ A : Type@{entree_u} :=
+  entree_spec (function_stackE E Γ) A.
+
+Definition RetS {E} `{EncodedType E} {Γ A} (a : A) : SpecM E Γ A := ret a.
+Definition BindS {E} `{EncodedType E} {Γ A B} (m : SpecM E Γ A) (k : A -> SpecM E Γ B) :=
+  bind m k.
+Definition IterS {E} `{EncodedType E} {Γ A B} (body : A -> SpecM E Γ (A + B)) :
+  A -> SpecM E Γ B := EnTree.iter body.
+Definition AssumeS {E} `{EncodedType E} {Γ} (P : Prop) : SpecM E Γ unit := assume_spec P.
+Definition AssertS {E} `{EncodedType E} {Γ} (P : Prop) : SpecM E Γ unit := assert_spec P.
+Definition ForallS {E} `{EncodedType E} {Γ} (A : Set) : SpecM E Γ A := forall_spec A.
+Definition ExistsS {E} `{EncodedType E} {Γ} (A : Set) : SpecM E Γ A := exists_spec A.
+Definition CallS {E} `{EncodedType E} {Γ Frame} (lrt : LetRecType)
+  (x : function_var lrt Frame) (args : LRTInput lrt) :
+  SpecM E (Frame :: Γ) (LRTOutput lrt args) :=
+  Vis (Spec_vis (inl (LRTinjection lrt Frame x args)))
+  (fun ret => Ret (LRTsOutput_projection Frame lrt args x ret)).
+
+Fixpoint LRTType E `{EncodedType E} Γ (Frame : function_sigs) (lrt : LetRecType) : Type@{entree_u} :=
+  match lrt with
+  | LRT_Ret R => SpecM E (Frame :: Γ) R
+  | LRT_Fun A rest => forall (a : A), LRTType E Γ Frame (rest a) end.
+(*
+Definition MultiFixSBodies E `{EncodedType E} Γ (Frame : function_sigs) : Type@{entree_u} :=
+  (fix mfsb (CurrFrame : function_sigs) : Type@{entree_u}:=
+    match CurrFrame with
+    | nil => unit
+    | lrt :: CurrFrame' =>
+        (LRTType E Γ Frame lrt * mfsb CurrFrame')%type end)
+    Frame. *)
+(*seems like I cannot translate between LRTInput -> LRTOutput*)
+Equations LRTTypeFun E `{EncodedType E} Γ (Frame : function_sigs) (lrt : LetRecType)
+  (lrtT : LRTType E Γ Frame lrt) (args : LRTInput lrt) :
+  SpecM E (Frame :: Γ) (LRTOutput lrt args) :=
+  LRTTypeFun E Γ Frame (LRT_Ret R) spec _ := spec;
+  LRTTypeFun E Γ Frame (LRT_Fun A rest) func (existT _ a args) := LRTTypeFun E Γ Frame (rest a) (func a) args.
+
+Arguments LRTTypeFun {_ _ _ _ _}.
+  
+
+Fixpoint MultiFixSBodiesR E `{EncodedType E} Γ (TopFrame CurrFrame : function_sigs) : Type@{entree_u} :=
+    match CurrFrame with
+    | nil => unit
+    | lrt :: CurrFrame' =>
+        (LRTType E Γ TopFrame lrt * MultiFixSBodiesR E Γ TopFrame CurrFrame')%type
+    end.
+
+Equations MultiFixSBodiesTransR {E} `{EncodedType E} {Γ} (TopFrame CurrFrame : function_sigs)
+  (bodies : MultiFixSBodiesR E Γ TopFrame CurrFrame) lrt (x : function_var lrt CurrFrame) (args : LRTInput lrt)  :
+  SpecM E (TopFrame :: Γ) (LRTOutput lrt args) :=
+  MultiFixSBodiesTransR TopFrame (lrt :: CurrFrame) (f, _) lrt (VarZ lrt CurrFrame) args := LRTTypeFun f args;
+  MultiFixSBodiesTransR TopFrame (lrt' :: CurrFrame) (_, fs) lrt (VarS lrt lrt' CurrFrame y) args :=
+    MultiFixSBodiesTransR TopFrame CurrFrame fs lrt y args.
+
+Definition MultiFixSBodies E `{EncodedType E} Γ (Frame : function_sigs) : Type@{entree_u} :=
+  MultiFixSBodiesR E Γ Frame Frame.
+
+Definition MultiFixSBodiesTrans {E} `{EncodedType E} {Γ} Frame bodies lrt x args : SpecM E (Frame :: Γ) (LRTOutput lrt args) :=
+  MultiFixSBodiesTransR Frame Frame bodies lrt x args.
+
+(*
+Fixpoint MultiFixSBodies E `{EncodedType E} Γ (TopFrame CurrFrame : function_sigs) : Type@{entree_u} :=
+    match CurrFrame with
+    | nil => unit
+    | lrt :: CurrFrame' =>
+        (LRTType E Γ TopFrame lrt * MultiFixSBodies E Γ TopFrame CurrFrame')%type
+    end.
+(*exactly how to recurse over this is a confusing*)
+Equations MultiFixSBodiesTrans {E} `{EncodedType E} {Γ} (TopFrame CurrFrame : function_sigs)
+  (bodies : MultiFixSBodies E Γ TopFrame) lrt (x : function_var lrt CurrFrame) (args : LRTInput lrt)  :
+  LRTOutput lrt args :=
+  MultiFixSBodiesTrans 
+
+*)
+
+(*exactly how to recurse over this is a *)
+
+Definition MultiFixS {E} `{EncodedType E} {Γ} (Frame : function_sigs) (bodies : MultiFixSBodies E Γ Frame)
+  (lrt : LetRecType) (x : function_var lrt Frame) (args : LRTInput lrt) :
+  SpecM E Γ (LRTOutput lrt args) :=
+  Functor.fmap (LRTinjection_ret lrt Frame x args)
+    (
+      mrec_spec (fun args : LRTsInput Frame =>
+                    let '(existT _ lrt (x, (existT _ args' f) ) ) := LRTsInput_proj Frame args in
+                    Functor.fmap f (MultiFixSBodiesTrans Frame bodies lrt x args'))
+                 (LRTinjection lrt Frame x args)             
+    ).
 
 #[global] Instance SpecM_Monad {E} `{EncodedType E} Γ : Monad (SpecM E Γ) :=
   {|
