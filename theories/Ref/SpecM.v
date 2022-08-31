@@ -347,3 +347,24 @@ Definition MultiFixS E `{EncodedType E} Γ Frame
          (resum_ret args)
          (mrec_spec (LRTsTupleFun E (Frame :: Γ) Frame bodies)
                     (mkLRTsInput n Frame args))).
+
+(* Corecursively looks for performances of exceptional effects. If an
+   exceptional performance is caught, then `catch` is performed instead. *)
+Program CoFixpoint try_catch {E} `{EncodedType E} {Γ} {A} {B} 
+    (is_exceptional : FunStackE E Γ -> option A)
+    (catch : A -> SpecM E Γ B) :
+    SpecM E Γ B -> SpecM E Γ B :=
+  fun t => match t with
+  | go _ _ (RetF r) => ret r
+  | go _ _ (TauF t') => Tau (try_catch is_exceptional catch t')
+  | go _ _ (VisF se k) =>
+      match se with
+      | Spec_vis fs =>
+          match is_exceptional fs with 
+          | Some a => catch a
+          | None => Vis (Spec_vis fs) (fun x => try_catch is_exceptional catch (k _))
+          end
+      | Spec_forall T => Vis (Spec_forall T) (fun x => try_catch is_exceptional catch (k _))
+      | Spec_exists T => Vis (Spec_exists T) (fun x => try_catch is_exceptional catch (k _))
+      end
+  end.
