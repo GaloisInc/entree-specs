@@ -349,10 +349,10 @@ Definition MultiFixS E `{EncodedType E} Γ Frame
                     (mkLRTsInput n Frame args))).
 
 
-Require Import ExtLib.Structures.Functor.
+Section interpWithState.
+Import ExtLib.Structures.Functor.
 
 Definition StateT S M A := S -> M (S * A)%type.
-Check bind.
 #[global] Instance Monad_StateT M s `{Monad M} : Monad (StateT s M) :=
   {|
     ret := fun A x s => ret (s, x);
@@ -361,7 +361,6 @@ Check bind.
                                            k a s')
   |}.
 
-Print iter.
 #[global] Instance MonadIter_StateT M St `{Monad M} `{MI:MonadIter M} : MonadIter (StateT St M) :=
   fun R I body i s =>
     iter (MonadIter:=MI) (R:=St * R)
@@ -382,6 +381,8 @@ Definition interpWithState {E1 E2} `{EncodedType E1} `{EncodedType E2} {St}
           | TauF t => ret (inl t)
           | VisF e k => fmap (fun x => inl (k x)) (h e)
           end).
+
+End interpWithState.
 
 (* Corecursively looks for performances of exceptional effects. If an
    exceptional performance is caught, then `catch` is performed instead. *)
