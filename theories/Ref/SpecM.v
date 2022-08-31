@@ -348,6 +348,41 @@ Definition MultiFixS E `{EncodedType E} Γ Frame
          (mrec_spec (LRTsTupleFun E (Frame :: Γ) Frame bodies)
                     (mkLRTsInput n Frame args))).
 
+
+Require Import ExtLib.Structures.Functor.
+
+Definition StateT S M A := S -> M (S * A)%type.
+Check bind.
+#[global] Instance Monad_StateT M s `{Monad M} : Monad (StateT s M) :=
+  {|
+    ret := fun A x s => ret (s, x);
+    bind := fun A B m k s => bind (m s) (fun a_s =>
+                                           let (s',a) := a_s in
+                                           k a s')
+  |}.
+
+Print iter.
+#[global] Instance MonadIter_StateT M St `{Monad M} `{MI:MonadIter M} : MonadIter (StateT St M) :=
+  fun R I body i s =>
+    iter (MonadIter:=MI) (R:=St * R)
+         (fun s'_i':St * I =>
+            let (s',i') := s'_i' in
+            bind (body i s) (fun s''_ir =>
+                               match s''_ir with
+                               | (s'', inl i') => ret (inl (s'', i'))
+                               | (s'', inr r) => ret (inr (s'', r))
+                               end)) (s,i).
+
+Definition interpWithState {E1 E2} `{EncodedType E1} `{EncodedType E2} {St}
+           (h : forall e:E1, StateT St (entree E2) (encodes e)) {A} :
+  entree E1 A -> StateT St (entree E2) A :=
+  iter (fun t =>
+          match observe t with
+          | RetF r => ret (inr r)
+          | TauF t => ret (inl t)
+          | VisF e k => fmap (fun x => inl (k x)) (h e)
+          end).
+
 (* Corecursively looks for performances of exceptional effects. If an
    exceptional performance is caught, then `catch` is performed instead. *)
 Program CoFixpoint try_catch {E} `{EncodedType E} {Γ} {A} {B} 
