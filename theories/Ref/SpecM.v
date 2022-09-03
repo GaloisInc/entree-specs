@@ -287,8 +287,8 @@ Definition ForallS {E} `{EncodedType E} {Γ} (A : Set) : SpecM E Γ A :=
 Definition ExistsS {E} `{EncodedType E} {Γ} (A : Set) : SpecM E Γ A :=
   exists_spec A.
 Definition TriggerS {E} `{EncodedType E} {Γ} (e : E) : SpecM E Γ (encodes e) := trigger e.
-Definition ErrorS {E} `{EncodedType E} {Γ} (str : string) : SpecM E Γ void :=
-  trigger (mkErrorE str).
+Definition ErrorS {E} `{EncodedType E} {Γ} A (str : string) : SpecM E Γ A :=
+  bind (trigger (mkErrorE str)) (fun (x:void) => match x with end).
 
 (* Compute the type forall a b c ... . SpecM ... (R a b c ...) from an lrt *)
 (*
