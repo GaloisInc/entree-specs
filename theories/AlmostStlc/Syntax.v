@@ -24,7 +24,7 @@ Inductive term : type -> ctx -> rec_ctx -> Type :=
   | term_var t Γ R (x : var t Γ) : term t Γ R
 
   | term_match_nat t Γ R (en : term Nat Γ R) (eZ : term t Γ R) (eS : term t (Nat :: Γ) R ) : term t Γ R
-  | term_match_list t1 t2 Γ R (el : term (List t1) Γ R ) (enil : term t2 Γ R) (econs : term t2 (t1 :: Γ) R) : term t2 Γ R
+  | term_match_list t1 t2 Γ R (el : term (List t1) Γ R ) (enil : term t2 Γ R) (econs : term t2 (t1 :: List t1 :: Γ) R) : term t2 Γ R
   (* might be some subtleties in the application rule you are not sufficiently considering *)
   | term_app t1 t2 Γ R (e1 : term (Arrow t1 R t2) Γ R) (e2 : term t1 Γ R) : term t2 Γ R
   (* same here *)

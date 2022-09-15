@@ -131,8 +131,18 @@ Equations denote_term {t : type} (Γ : ctx) (R : rec_ctx) (e : term t Γ R) (hyp
   denote_term Γ R (term_cons t Γ R eh et) hyps := h' <- denote_term Γ R eh hyps;; 
                                                   t' <- denote_term Γ R et hyps;;
                                                   Ret (h' :: t');
-  denote_term Γ R (term_match_nat t _ _ en eZ eS) hyps := EnTree.spin;
-  denote_term Γ R (term_match_list t1 t2 _ _ el enil econs) hyps := EnTree.spin;
+  denote_term Γ R (term_match_nat t _ _ en eZ eS) hyps := 
+    n <- denote_term Γ R en hyps;;
+    match n with
+    | 0 => denote_term Γ R eZ hyps
+    | S m => denote_term (Nat :: Γ) R eS (m, hyps)
+    end;
+  denote_term Γ R (term_match_list t1 t2 _ _ el enil econs) hyps := 
+    l <- denote_term Γ R el hyps;;
+    match l with
+    | nil => denote_term Γ R enil hyps
+    | hd :: tl => denote_term (t1 :: List t1 :: Γ) R econs (hd, (tl, hyps))
+    end;
   denote_term Γ R (term_var t Γ R x) hyps := Ret (index_ctx x hyps);
 
   denote_term Γ R (term_app t1 t2 Γ R e1 e2) hyps := f <- denote_term Γ R e1 hyps;;
