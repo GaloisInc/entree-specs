@@ -10,3 +10,5 @@ theories/Ref/MRecSpec.v
 theories/Ref/SpecM.v
 
 theories/AlmostStlc/MrecMonad.v
+theories/AlmostStlc/Syntax.v
+theories/AlmostStlc/Denotation.v
