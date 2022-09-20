@@ -121,16 +121,13 @@ Equations decode_inject {t1 t2 : type} {R : rec_ctx} {arg : denote_type t1} (x :
   decode_inject (VarS v1 v2 Γ' y) (inr response) := decode_inject y response.
 *)
 
-(* current problem is that is that I can't get the syntax to both put denote_bodies in scope in denote_term mfix
-   and realize it is decreasing
- *)
 Equations denote_term {t : type} (Γ : ctx) (R : rec_ctx) (e : term t Γ R) (hyps : denote_ctx Γ) : 
   mtree (denote_rec_ctx R) (denote_type t) := 
-  denote_term Γ R (term_const n Γ R) hyps := Ret n;
-  denote_term Γ R (term_nil t Γ R) hyps := Ret nil;
+  denote_term Γ R (term_const n Γ R) hyps := ret n;
+  denote_term Γ R (term_nil t Γ R) hyps := ret nil;
   denote_term Γ R (term_cons t Γ R eh et) hyps := h' <- denote_term Γ R eh hyps;; 
                                                   t' <- denote_term Γ R et hyps;;
-                                                  Ret (h' :: t');
+                                                  ret (h' :: t');
   denote_term Γ R (term_match_nat t _ _ en eZ eS) hyps := 
     n <- denote_term Γ R en hyps;;
     match n with
@@ -143,12 +140,12 @@ Equations denote_term {t : type} (Γ : ctx) (R : rec_ctx) (e : term t Γ R) (hyp
     | nil => denote_term Γ R enil hyps
     | hd :: tl => denote_term (t1 :: List t1 :: Γ) R econs (hd, (tl, hyps))
     end;
-  denote_term Γ R (term_var t Γ R x) hyps := Ret (index_ctx x hyps);
+  denote_term Γ R (term_var t Γ R x) hyps := ret (index_ctx x hyps);
 
   denote_term Γ R (term_app t1 t2 Γ R e1 e2) hyps := f <- denote_term Γ R e1 hyps;;
                                                      x <- denote_term Γ R e2 hyps;;
                                                      f x;
-  denote_term Γ R (term_abs t1 t2 Γ R R' e) hyps := Ret (fun (x : denote_type t1) => denote_term (t1 :: Γ) R' e (x, hyps) );
+  denote_term Γ R (term_abs t1 t2 Γ R R' e) hyps := ret (fun (x : denote_type t1) => denote_term (t1 :: Γ) R' e (x, hyps) );
   denote_term Γ R (term_call t1 t2 Γ R x e) hyps := arg <- denote_term Γ R e hyps;;
                                                     out <- call (inject_rec_ctx x arg);;
                                                     (* should get decode_inject into a sane def*)
@@ -160,5 +157,6 @@ where denote_bodies (Γ : ctx) (R R' : rec_ctx) (bodies : mfix_bodies Γ R R') (
     denote_term _ R1 ebody (arg',hyps');
   denote_bodies Γ' R1 (cons (t1,t2) R2) (mfix_bodies_cons Γ' R1 t1 t2 R2 ebody bodies') hyps' (inr arg') := 
     denote_bodies Γ' R1 R2 bodies' hyps' arg'.
+Notation denote_bodies := (denote_term_clause_10_denote_bodies (@denote_term)).
 Print Assumptions denote_term. (* closed under global context *)
 

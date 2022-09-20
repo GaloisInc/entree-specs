@@ -25,9 +25,12 @@ Require Import Program.Tactics.
 
 Require Import ITree.Basics.Basics.
 
+
 Variant void : Set := .
 Global Instance voidEncodedType : EncodedType void := fun v => match v with end.
 
+
+(* interp_mtree *)
 
 (* could extend to have arbitrary constraints on E, could allow E to include other events*)
 (* universe inconsistenty traces back to here, for now could specialize E to void, perhaps,
@@ -56,4 +59,6 @@ Definition interp_mtree {D D' R} `{EncodedType D} `{EncodedType D'}
   entree (D' + void) R := interp_mtree' bodies (observe t).
 
 
-(* define monad structure*)
+(* consider a more complicated mtree monad where you have a list of event types 
+   and interp_mtree requires an index and can an event at that index 
+*)
