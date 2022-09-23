@@ -13,5 +13,3 @@ theories/AlmostStlc/TypedVar.v
 theories/AlmostStlc/MrecMonad.v
 theories/AlmostStlc/Syntax.v
 theories/AlmostStlc/Denotation.v
-
-theories/AlmostStlc/MrecMonad_.v

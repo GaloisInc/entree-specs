@@ -2,7 +2,7 @@ Require Export MrecMonad.
 Require Export HeterogeneousRelations.
 Require Export EnTreeDefinition.
 Require Export Syntax.
-From Coq Require Import Lists.List.
+From Coq Require Import Lists.List Logic.JMeq.
 
 From Equations Require Import Equations Signature.
 
@@ -10,40 +10,48 @@ Import Monads.
 Import MonadNotation.
 Local Open Scope monad_scope.
 
+Global Instance inout_encoded T1 T2 : EncodedType (T1) :=
+  fun _ => T2. 
 
-Fixpoint denote_rec_ctx' (R: list (Type * Type) ) : Type@{entree_u} :=
-  match R with
-  | nil => void
-  | cons (T1, _)  R => T1 + denote_rec_ctx' R end.
 (*
-Definition fold_rec_ctx_inr' (Rt Rc : list (Type * Type)) T1 T2 (arg : denote_rec_ctx' Rt Rc) : denote_rec_ctx' Rt ((T1,T2) :: Rc) :=
-  inr arg.
+first try to see if you can get these to unify
+
 *)
-Fixpoint encoded_rec_ctx' (R : list (Type * Type)) : EncodedType (denote_rec_ctx' R) :=
-  match R with
-  | nil => fun _ => void
-  | cons (_, T2) R => fun x => match x with 
-                             | inl y => T2
-                             | inr y => encoded_rec_ctx' R y end end.
 
-Instance encoded_rec_ctx'' R : EncodedType (denote_rec_ctx' R) :=
-  encoded_rec_ctx' R.
+Definition denote_mfix_ctx' (MR : list (list {T : Type & EncodedType T} )) :=
+  List.map (fun mr => denote_mrec_ctx mr && encoded_mrec_ctx mr ) MR.
 
-
-(* maybe I wrote this wrong *)
+(* this is fairly ugly and causing some unification problem maybe try more closely
+   mirror how the old version did it  *)
 Fixpoint denote_type (t : type) : Type@{entree_u} :=
-  match t with
+  match t with 
   | Nat => nat
   | List t => list (denote_type t)
-  | Arrow t1 R t2 => 
-      let R' := List.map (fun '(t1,t2) => (denote_type t1, denote_type t2)) R in
-      denote_type t1 -> mtree (denote_rec_ctx' R') (denote_type t2)
-  end.
-(*need to fix denote *)
-(* parameterizing denote_type on a translation doesn't work because the recursion is not well founded*)
+  | Arrow t1 MR t2 =>
+      let MR' := List.map (
+                     fun cf : call_frame => 
+                         List.map (fun '(t1,t2) => 
+                                     ((denote_type t1) && 
+                                        (inout_encoded (denote_type t1) (denote_type t2) ) )) cf)%type 
+                          MR
+      in 
+      denote_type t1 -> mtree (denote_mfix_ctx' MR') (denote_type t2) end.
 
-Definition denote_rec_ctx (R : rec_ctx) : Type@{entree_u} :=
-  denote_rec_ctx' (List.map (fun '(t1,t2) => (denote_type t1, denote_type t2)) R).
+
+Definition denote_mfix_ctx (MR : list (list (type * type) ) ) :=
+  denote_mfix_ctx' (List.map (List.map (fun '(t1,t2) => ((denote_type t1) && 
+                                        (inout_encoded (denote_type t1) (denote_type t2) ) ) ) ) MR )%type.
+
+Definition mrec_of_call_frame (cf : call_frame) : mrec_ctx :=
+  (List.map  (fun '(t1,t2) => ((denote_type t1) && 
+                                        (inout_encoded (denote_type t1) (denote_type t2) ) ) ) cf).
+  
+
+Definition denote_call_frame (cf : call_frame) :=
+  denote_mrec_ctx (mrec_of_call_frame cf).
+
+Definition encodes_call_frame (cf : call_frame) : EncodedType (denote_call_frame cf) :=
+  encoded_mrec_ctx (mrec_of_call_frame cf).
 
 Fixpoint denote_ctx (Γ : ctx) : Type@{entree_u} :=
   match Γ with
@@ -53,110 +61,137 @@ Fixpoint denote_ctx (Γ : ctx) : Type@{entree_u} :=
 Equations index_ctx {t : type} {Γ} (x : var t Γ) (hyps : denote_ctx Γ) : denote_type t :=
   index_ctx (VarZ x Γ') (v, _) := v;
   index_ctx (VarS v1 v2 Γ' y) (_, hyps) := index_ctx y hyps.
-
-(* this part is frustrating, I need some kind of translation between these types
-   actually there should not be, args : denote_rec_ctx R
- *)
-(*maybe if I do this part without equations it will work better *)
-Equations inject_rec_ctx {p : type * type} {R} (x : var p R) (arg : denote_type (fst p)) : denote_rec_ctx R :=
-  inject_rec_ctx (VarZ (t1,t2) R') arg := inl arg;
-  inject_rec_ctx (VarS _ (t1',t2') R' y) arg := inr (inject_rec_ctx y arg).
 (*
-Fixpoint inject_rec_ctx' {t1 t2 : type} {R} (x : var (t1,t2) R) : denote_type t1 -> denote_rec_ctx :=
-  match x return with
-  | VarZ *)
-
-Lemma encodes_inject p R (x : var p R) (arg : denote_type (fst p)) : encodes (inject_rec_ctx x arg) = denote_type (snd p).
-revert arg. induction x.
-- destruct x. cbn. intros. simp inject_rec_ctx. auto.
-- destruct x. destruct y. cbn. intros. simp inject_rec_ctx.
-Qed.
-Print Assumptions encodes_inject.
-
-Definition decode_inject {p : type * type} {R : rec_ctx} {arg : denote_type (fst p)} (x : var p R) (response : encodes (inject_rec_ctx x arg)) : 
-  denote_type (snd p).
-revert response. revert arg. induction x.
-- intros arg response. destruct x. cbn in *. exact response.
-- intros. destruct x. destruct y. exact (IHx arg response).
+Definition call_mrec {t1 t2 MR R} (x : var (t1,t2) R) (y : var R MR ) (v : denote_type t1) :
+          {d : denote_mrec_ctx (denote_mfix_ctx MR) & encodes d -> denote_type t2 }.
+induction y.
+- revert v.
+  enough ((denote_type (fst (t1,t2)) -> 
+           {d : denote_mrec_ctx (denote_mfix_ctx (a :: l)) & encodes d -> denote_type (snd (t1,t2))})).
+  auto. induction x.
+  + destruct a. simpl. intros v.
+    exact ((inl (inl v)) && id). 
+  + destruct a. destruct b. intros v. specialize (IHx v) as [v' f]. simpl.
+    destruct v'.
+    * exact (inl (inr d) && f).
+    * exact (inr d && f).
+- specialize (IHy x) as [v' f]. simpl. exact (inr v' && f).
 Defined.
-Print Assumptions decode_inject.
-(*
-(* we still might be able to do better, give it a bit more thought before moving on to another task for today*)
-Equations decode_inject {p : type * type} {R : rec_ctx} {arg : denote_type (fst p)} (x : var p R) (response : encodes (inject_rec_ctx x arg)) : 
-  denote_type (snd p) :=
-  decode_inject (VarZ x Γ') response := _;
-  decode_inject (VarS _ v Γ' y) _ := decode_inject y _.
-Next Obligation.
-  exact response.
-Defined.
-Next Obligation.
-  exact arg.
-Defined.
-
-Print Assumptions decode_inject.
 *)
-(*
-Next Obligation.
-cbn in response.
+Equations call_mrec_type {t1 t2 R} MR (x :  var (t1, t2) R) (v : denote_type t1) : 
+  {d : denote_mrec_ctx (denote_mfix_ctx (R :: MR) ) & encodes d -> denote_type t2 } :=
+  call_mrec_type MR (VarZ _ R) v := (inl (inl v) && id);
+  call_mrec_type MR (VarS _ (t3,t4) R' y) v := 
+    let '(d && f) := call_mrec_type MR y v in
+    match d with
+    | inl d => 
+        (fun (f : encodes (inl d) -> denote_type t2 ) => (inl (inr d) && f))
+    | inr d => (fun f => (inr d && f))
+    end f.
+Arguments call_mrec_type { _ _ _ _}.
 
-  decode_inject (VarZ (t1',t2') Γ') (inl response) := response;
-  decode_inject (VarS (t1',t2') (t3,t4) Γ' y) (inr response) := decode_inject y response.
+(* maybe I need two functions? *)
+Equations  call_mrec {t1 t2 MR R} (x : var (t1,t2) R) (y : var R MR ) (v : denote_type t1) :
+          {d : denote_mrec_ctx (denote_mfix_ctx MR) & encodes d -> denote_type t2 } :=
+  call_mrec (VarZ _ _) (VarZ _ _) v := (inl (inl v) && id );
+  call_mrec (VarS _ (_, _) _ y ) (VarZ R MR) v :=
+        let '(d && f) := call_mrec_type y v in
+        match d with
+        | inl d => 
+            (fun (f : encodes (inl d) -> denote_type t2 ) => (inl (inr d) && f))
+        | inr d => (fun f => (inr d && f)) end f;
+  call_mrec x (VarS _ _ _ y) v := let '(d && f) := call_mrec x y v in
+                                               (inr d && f).
 
-Definition decode_inject {t1 t2 : type} {R : rec_ctx} {arg : denote_type t1} (x : var (t1,t2) R) (response : encodes (inject_rec_ctx x arg)) :  denote_type t2.
-revert response. revert arg. induction x. dependent induction x.
-- simp inject_rec_ctx. cbn. intros. auto.
-- destruct y. simp inject_rec_ctx. cbn. eapply IHx; auto.
-Defined.
-Print Assumptions decode_inject.
-*)
-(* Axioms: JMeq_eq, this is a problem for executability*)
+Definition call_term {t1 t2 MR R} (x : var (t1,t2) R) (y : var R MR ) (v : denote_type t1) 
+  : mtree (denote_mfix_ctx MR) (denote_type t2) :=
+let '(d && f) := call_mrec x y v in
+   Functor.fmap f (EnTree.trigger d).
+
+Definition perm_denote {MR1 MR2} (Hperm : perm MR1 MR2) : 
+  perm (denote_mfix_ctx MR1) (denote_mfix_ctx MR2) :=
+  perm_map (perm_map Hperm).
+
+Equations lift_handler MR1 MR2 (d : denote_mrec_ctx (denote_mfix_ctx MR2)) :
+  {d' : denote_mrec_ctx (denote_mfix_ctx (MR1 ++ MR2) ) & encodes d' -> encodes d} :=
+  lift_handler nil MR2 d := (d && id);
+  lift_handler (_ :: MR1) MR2 d := let '(d' && f) := lift_handler MR1 MR2 d in
+                                  (inr d' && f).
+
+Arguments lift_handler {_ _}.
+
+Equations denote_var {cf : call_frame} {MR : mfix_ctx} (x : var cf MR) : 
+  var (denote_call_frame cf && encodes_call_frame cf) (denote_mfix_ctx MR) :=
+denote_var (VarZ cf MR) := VarZ _ _;
+denote_var (VarS _ _ _ y) := VarS _ _ _ (denote_var y).
+Equations remove_denote {R : call_frame} {MR : mfix_ctx} (x : var R MR)
+          (d : denote_mrec_ctx (TypedVar.remove _ _ (denote_var x))) : 
+  {d' : denote_mrec_ctx (denote_mfix_ctx (TypedVar.remove R MR x) ) & encodes d' -> encodes d} :=
+remove_denote (VarZ _ _) d := (d && id);
+remove_denote (VarS _ _ _ _) (inl d) := (inl d && id);
+remove_denote (VarS _ _ _ y) (inr d) := let '(d' && f) := remove_denote y d in
+                                        (inr d' && f).
 (*
-Unable to build a covering for:
-decode_inject decode_inject t1 t2 R arg x response
-*)
-(*
-Equations decode_inject {t1 t2 : type} {R : rec_ctx} {arg : denote_type t1} (x : var (t1,t2) R) (response : encodes (inject_rec_ctx x arg)) : 
-  denote_type t2 :=
-  decode_inject (VarZ x Γ') (inl response) := response;
-  decode_inject (VarS v1 v2 Γ' y) (inr response) := decode_inject y response.
+Lemma remove_denote_jmeq R MR (x : var R MR) : 
+  forall d d' f, remove_denote x d = (d' && f) -> (JMeq d' d).
+Proof.
+  induction x.
+  - cbn. intros. simp remove_denote in H. setoid_rewrite remove_denote_equation_1 in H.
+    injection H. intros. subst. auto.
+  - intros. destruct d.
+    + simp remove_denote in H. injection H. intros. subst. constructor. setoid_rewrite remove_denote_equation_2 in H.
+ intros.
 *)
 
-Equations denote_term {t : type} (Γ : ctx) (R : rec_ctx) (e : term t Γ R) (hyps : denote_ctx Γ) : 
-  mtree (denote_rec_ctx R) (denote_type t) := 
-  denote_term Γ R (term_const n Γ R) hyps := ret n;
-  denote_term Γ R (term_nil t Γ R) hyps := ret nil;
-  denote_term Γ R (term_cons t Γ R eh et) hyps := h' <- denote_term Γ R eh hyps;; 
-                                                  t' <- denote_term Γ R et hyps;;
-                                                  ret (h' :: t');
-  denote_term Γ R (term_match_nat t _ _ en eZ eS) hyps := 
-    n <- denote_term Γ R en hyps;;
+Equations denote_term {t : type} (Γ : ctx) (MR : mfix_ctx) (e : term t Γ MR) (hyps : denote_ctx Γ)
+  : mtree (denote_mfix_ctx MR) (denote_type t) :=
+  denote_term Γ MR (term_const n _ _) _ := ret n;
+
+  denote_term Γ MR (term_nil _ _ _) _ := ret nil;
+
+  denote_term Γ MR (term_cons _ _ _ eh et) hyps := vh <- denote_term Γ MR eh hyps;;
+                                              vt <- denote_term Γ MR et hyps;;
+                                              ret (vh :: vt);
+
+  denote_term Γ MR (term_match_nat t _ _ en eZ eS) hyps := 
+    n <- denote_term Γ MR en hyps;;
     match n with
-    | 0 => denote_term Γ R eZ hyps
-    | S m => denote_term (Nat :: Γ) R eS (m, hyps)
+    | 0 => denote_term Γ MR eZ hyps
+    | S m => denote_term (Nat :: Γ) MR eS (m, hyps)
     end;
-  denote_term Γ R (term_match_list t1 t2 _ _ el enil econs) hyps := 
-    l <- denote_term Γ R el hyps;;
+
+  denote_term Γ MR (term_match_list t1 t2 _ _ el enil econs) hyps := 
+    l <- denote_term Γ MR el hyps;;
     match l with
-    | nil => denote_term Γ R enil hyps
-    | hd :: tl => denote_term (t1 :: List t1 :: Γ) R econs (hd, (tl, hyps))
+    | nil => denote_term Γ MR enil hyps
+    | hd :: tl => denote_term (t1 :: List t1 :: Γ) MR econs (hd, (tl, hyps))
     end;
-  denote_term Γ R (term_var t Γ R x) hyps := ret (index_ctx x hyps);
 
-  denote_term Γ R (term_app t1 t2 Γ R e1 e2) hyps := f <- denote_term Γ R e1 hyps;;
-                                                     x <- denote_term Γ R e2 hyps;;
-                                                     f x;
-  denote_term Γ R (term_abs t1 t2 Γ R R' e) hyps := ret (fun (x : denote_type t1) => denote_term (t1 :: Γ) R' e (x, hyps) );
-  denote_term Γ R (term_call t1 t2 Γ R x e) hyps := arg <- denote_term Γ R e hyps;;
-                                                    out <- call (inject_rec_ctx x arg);;
-                                                    (* should get decode_inject into a sane def*)
-                                                    ret (decode_inject x out);
-  denote_term Γ R (term_mfix t Γ R' R bodies e) hyps := interp_mtree (denote_bodies Γ R' R' bodies hyps) (denote_term Γ R' e hyps)
-where denote_bodies (Γ : ctx) (R R' : rec_ctx) (bodies : mfix_bodies Γ R R') (hyps : denote_ctx Γ) (arg : denote_rec_ctx R') : 
-  mtree (denote_rec_ctx R) (encodes arg) := 
-  denote_bodies Γ' R1 (cons (t1,t2) R2) (mfix_bodies_cons Γ' R1 t1 t2 R2 ebody bodies') hyps' (inl arg') := 
-    denote_term _ R1 ebody (arg',hyps');
-  denote_bodies Γ' R1 (cons (t1,t2) R2) (mfix_bodies_cons Γ' R1 t1 t2 R2 ebody bodies') hyps' (inr arg') := 
-    denote_bodies Γ' R1 R2 bodies' hyps' arg'.
-Notation denote_bodies := (denote_term_clause_10_denote_bodies (@denote_term)).
-Print Assumptions denote_term. (* closed under global context *)
+  denote_term Γ MR (term_var _ _ _ x) hyps := ret (index_ctx x hyps);
 
+  denote_term Γ MR (term_app t1 t2 Γ MR ef earg) hyps := vf <- denote_term Γ MR ef hyps;;
+                                                         vargs <- denote_term Γ MR earg hyps;;
+                                                         vf vargs;
+
+  denote_term Γ MR (term_abs t1 t2 Γ MR MR' e) hyps := ret (fun x : denote_type t1 => denote_term (t1 :: Γ) MR' e (x, hyps));
+
+  denote_term Γ MR2 (term_perm t Γ MR1 MR2 Hperm e) hyps :=
+    map_perm (denote_mfix_ctx  MR1) (denote_mfix_ctx MR2) (perm_denote Hperm) (denote_term _ _ e hyps);
+
+  denote_term Γ MR2 (term_lift t Γ MR1 MR2 e) hyps := mapE lift_handler (denote_term Γ MR2 e hyps);
+
+  denote_term Γ MR (term_call t1 t2 Γ MR R x y e) hyps := v <- denote_term Γ MR e hyps;;
+                                                          call_term y x v;
+
+  denote_term Γ MR (term_mfix t Γ R MR x bodies e) hyps := 
+    mapE (remove_denote x) (interp_mtree _ _ _ (denote_var x) (denote_bodies Γ MR R bodies hyps) (denote_term Γ MR e hyps));
+where denote_bodies (Γ : ctx) (MR : mfix_ctx) (R : call_frame) (bodies : mfix_bodies Γ MR R) 
+                    (hyps : denote_ctx Γ) (arg : denote_call_frame R)  : 
+  mtree (denote_mfix_ctx MR) (encodes arg) by struct bodies :=
+  denote_bodies Γ' MR' ((t1,t2) :: R') (mfix_bodies_cons Γ' MR' t1 t2 R' ebody bodies') hyps' (inl arg') :=
+    denote_term _ _ ebody (arg', hyps');
+
+  denote_bodies Γ' MR' ((t1,t2) :: R') (mfix_bodies_cons Γ' MR' t1 t2 R' ebody bodies') hyps' (inr arg') :=
+    denote_bodies _ _ _ bodies' hyps' arg'.
+
+Print Assumptions denote_term.

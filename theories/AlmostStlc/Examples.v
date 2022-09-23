@@ -22,6 +22,17 @@ Definition map_rec : rec_ctx := (List t1, List t2) :: nil.
    maybe some of those ideas could help solve the issue of defining recursive function that
    can be defined using map of itself
  *)
+
+(*
+
+(t1 -map_rec-> t2) -map_rec-> List t1 -map_rec-> List t2
+
+
+(t1 -R-> t2) --> List t1 -R-> List t2
+
+*)
+
+
 Definition map_body : term (List t2) (List t1 :: (Arrow t1 map_rec t2 :: nil))%list map_rec.
 eapply term_match_list.
 - eapply term_var. constructor.
@@ -38,3 +49,12 @@ Defined.
 
 
 End map_term.
+
+
+(*
+\(f : t1 =MR=> t2) (l : List t1) ->_MR  mfix (map_rec :: MR) VarZ 
+
+(rec l => match l with nil => nil | cons h t => cons (lift f h) (call (VarZ) (VarZ) t) ) end  
+call... (l)
+
+*)

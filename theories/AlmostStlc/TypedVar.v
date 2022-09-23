@@ -50,6 +50,7 @@ Inductive perm {A : Type} : list A -> list A -> Type :=
   | perm_swap x y l1 l2 : perm l1 l2 -> perm (x :: y :: l1) (y :: x :: l2)
   | perm_trans l1 l2 l3 : perm l1 l2 -> perm l2 l3 -> perm l1 l3.
 
+Derive Signature NoConfusion for perm.
 
 Fixpoint perm_refl {A : Type} (l : list A) : perm l l :=
   match l with
@@ -89,7 +90,23 @@ Equations perm_var {A : Type} (a : A) l1 l2 (x : var a l1) (Hperm : perm l1 l2) 
     perm_var b l2' l3' (perm_var b l1' l2' y Hperm12) Hperm23.
 
 
+Equations bring_to_front_perm {A : Type} (a : A) (l : list A) (x : var a l) :
+  perm l (a :: remove a l x) :=
+  bring_to_front_perm a (a :: l) (VarZ _ l) := perm_refl (a :: l);
+  bring_to_front_perm a (b :: l') (VarS a b l' y) :=  
+    perm_trans (b :: l') (b :: a :: remove a l' y) (a :: b :: remove a l' y)
+     (perm_skip b l' (a :: remove a l' y)
+                   (bring_to_front_perm a l' y)) 
+     (perm_swap  b a (remove a l' y) (remove a l' y) (perm_refl _)) .
 
+Equations perm_map {A B : Type} {f : A -> B} {l1 l2 : list A} (Hperm : perm l1 l2) :
+  perm (List.map f l1) (List.map f l2) :=
+  perm_map  perm_nil := perm_nil;
+  perm_map (perm_skip x l1 l2 Hperm) := perm_skip (f x) _ _ (perm_map Hperm);
+  perm_map (perm_swap x y l1 l2 Hperm) :=
+    perm_swap (f x) (f y) _ _ (perm_map  Hperm);
+  @perm_map _ _ f l1 l3 (perm_trans l1 l2 l3 Hperm12 Hperm23) :=
+    perm_trans (map f l1) (map f l2) (map f l3) (perm_map Hperm12) (perm_map Hperm23).
 
 (*
 
