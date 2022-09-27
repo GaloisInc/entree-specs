@@ -27,6 +27,7 @@ Fixpoint denote_type (t : type) : Type@{entree_u} :=
   match t with 
   | Nat => nat
   | List t => list (denote_type t)
+  | Pair t1 t2 => (denote_type t1 * denote_type t2)%type
   | Arrow t1 MR t2 =>
       let MR' := List.map (
                      fun cf : call_frame => 
@@ -153,6 +154,9 @@ Equations denote_term {t : type} (Γ : ctx) (MR : mfix_ctx) (e : term t Γ MR) (
                                               vt <- denote_term Γ MR et hyps;;
                                               ret (vh :: vt);
 
+  denote_term Γ MR (term_succ Γ MR en) hyps := vn <- denote_term Γ MR en hyps;;
+                                               ret (S vn);
+
   denote_term Γ MR (term_match_nat t _ _ en eZ eS) hyps := 
     n <- denote_term Γ MR en hyps;;
     match n with
@@ -168,6 +172,13 @@ Equations denote_term {t : type} (Γ : ctx) (MR : mfix_ctx) (e : term t Γ MR) (
     end;
 
   denote_term Γ MR (term_var _ _ _ x) hyps := ret (index_ctx x hyps);
+
+  denote_term Γ MR (term_pair _ _ _ _ e1 e2) hyps := v1 <- denote_term Γ MR e1 hyps;;
+                                                     v2 <- denote_term Γ MR e2 hyps;;
+                                                     ret (v1,v2);
+
+  denote_term Γ MR (term_split t1 t2 _ _ _ ep e) hyps := '(v1,v2) <- denote_term Γ MR ep hyps;;
+                                                      denote_term (t1 :: t2 :: Γ) MR e (v1, (v2, hyps));
 
   denote_term Γ MR (term_app t1 t2 Γ MR ef earg) hyps := vf <- denote_term Γ MR ef hyps;;
                                                          vargs <- denote_term Γ MR earg hyps;;
