@@ -20,7 +20,13 @@ Inductive var_neq {A : Type} : forall (a b : A) (l : list A), var a l -> var b l
 
 Arguments var_neq {_ _ _ _}.
 
+Equations var_eqb {A : Type} {l : list A} {a b} (x : var a l) (y : var b l) : bool :=
+  var_eqb (VarZ a l) (VarZ a l) := true;
+  var_eqb (VarS a c l x) (VarS b c l y) := var_eqb x y;
+  var_eqb _ _ := false.
+(*
 Inductive var_eq {A : Type} : forall (a b : A) (l : list A), var a l -> var b l -> Type := .
+*)
 (*
 Definition remove_var {A : Type} (a b : A) (l : list A) (x : var a l) (y : var b l) 
   (vn : var_neq x y) : var b (remove a l x).

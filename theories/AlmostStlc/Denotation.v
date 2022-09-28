@@ -205,4 +205,22 @@ where denote_bodies (Γ : ctx) (MR : mfix_ctx) (R : call_frame) (bodies : mfix_b
   denote_bodies Γ' MR' ((t1,t2) :: R') (mfix_bodies_cons Γ' MR' t1 t2 R' ebody bodies') hyps' (inr arg') :=
     denote_bodies _ _ _ bodies' hyps' arg'.
 
-Print Assumptions denote_term.
+Arguments denote_term {_ _ _}.
+Arguments term_const (_) {_ _}.
+Arguments term_cons {_ _ _}.
+Arguments term_nil {_ _ _}.
+Arguments term_var {_ _ _}.
+Arguments term_succ {_ _}.
+Arguments term_match_nat {_ _ _}.
+Arguments term_match_list {_ _ _ _}.
+Arguments term_pair {_ _ _ _}.
+Arguments term_split {_ _ _ _ _}.
+Arguments term_app {_ _ _ _}.
+Arguments term_abs {_ _ _ _ _}.
+Arguments term_perm {_ _ _ _}.
+Arguments term_call {_ _ _ _ _}.
+Arguments term_mfix {_ _} (_) {_}.
+Arguments mfix_bodies_nil {_ _}.
+Arguments mfix_bodies_cons {_ _ _ _ _}.
+Arguments VarZ {_ _ _}.
+Arguments VarS {_ _ _ _}.

@@ -1,7 +1,8 @@
 Require Export Syntax.
+Require Export TypedVar.
 From Equations Require Import Equations Signature.
 
-Equations subst_term {Γ}
+Equations subst_term {Γ R} (t1 t2 : type) (e1 : term t2 Γ R) (e2 : term t1 Γ R) (x : var t1 Γ)
 
 Equations subst_term {Γ R} (t1 t2 : type) (e1 : term t2 (t1 :: Γ) R) (e2 : term t1 Γ R) :
   term t2 Γ R :=
