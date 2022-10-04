@@ -222,5 +222,6 @@ Arguments term_call {_ _ _ _ _}.
 Arguments term_mfix {_ _} (_) {_}.
 Arguments mfix_bodies_nil {_ _}.
 Arguments mfix_bodies_cons {_ _ _ _ _}.
+Arguments term_lift {_ _} (_) {_}.
 Arguments VarZ {_ _ _}.
 Arguments VarS {_ _ _ _}.

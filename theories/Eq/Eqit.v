@@ -10,7 +10,9 @@ From ITree Require Import
      Basics.Basics
      Basics.Tacs
      Basics.HeterogeneousRelations
-     Eq.Paco2.
+     Eq.Paco2
+     Basics.Monad
+.
 
 From EnTree Require Import
      Basics.HeterogeneousRelations
@@ -95,6 +97,45 @@ Lemma eqit_Vis_inv {E R1 R2} `{EncodedType E} b1 b2 (RR : R1 -> R2 -> Prop) (e :
   eqit RR b1 b2 (Vis e k1) (Vis e k2) -> forall a, eqit RR b1 b2 (k1 a) (k2 a).
 Proof.
   intros. punfold H0. red in H0. dependent destruction H0. pclearbot. apply REL.
+Qed.
+
+Lemma eqit_inv_Tau_l {E R1 R2 RR} `{enc: EncodedType E} b1 t1 t2 :
+  @eqit E _ R1 R2 RR b1 true (Tau t1) t2 -> eqit RR b1 true t1 t2.
+Proof.
+  intros. punfold H. red in H. simpl in *.
+  remember (TauF t1) as tt1. genobs t2 ot2.
+  hinduction H before b1; intros; try discriminate.
+  - inv Heqtt1. pclearbot. pstep. red. simpobs. econstructor; eauto. pstep_reverse.
+  - inv Heqtt1. punfold_reverse H.
+  - red in IHeqitF. pstep. red; simpobs. econstructor; eauto. pstep_reverse.
+Qed.
+
+Lemma eqit_inv_Tau_r {E R1 R2 RR} `{enc : EncodedType E} b2 t1 t2 :
+  @eqit E _ R1 R2 RR true b2 t1 (Tau t2) -> eqit RR true b2 t1 t2.
+Proof.
+  intros. punfold H. red in H. simpl in *.
+  remember (TauF t2) as tt2. genobs t1 ot1.
+  hinduction H before b2; intros; try discriminate.
+  - inv Heqtt2. pclearbot. pstep. red. simpobs. econstructor; eauto. pstep_reverse.
+  - red in IHeqitF. pstep. red; simpobs. econstructor; eauto. pstep_reverse.
+  - inv Heqtt2. punfold_reverse H.
+Qed.
+
+Lemma eqit_inv_Tau {E R1 R2 RR} `{enc : EncodedType E} b1 b2 t1 t2 :
+  @eqit E _ R1 R2 RR b1 b2 (Tau t1) (Tau t2) -> eqit RR b1 b2 t1 t2.
+Proof with eauto with entree.
+  intros. punfold H. red in H. simpl in *.
+  remember (TauF t1) as tt1. remember (TauF t2) as tt2.
+  hinduction H before b2; intros; try discriminate.
+  - inv Heqtt1. inv Heqtt2. pclearbot. eauto.
+  - inv Heqtt1. inv H.
+    + pclearbot. punfold REL. pstep. red. simpobs...
+    + pstep. red. simpobs. econstructor; eauto. pstep_reverse. apply IHeqitF; eauto.
+    + eauto with entree.
+  - inv Heqtt2. inv H.
+    + pclearbot. punfold REL. pstep. red. simpobs...
+    + eauto with entree.
+    + pstep. red. simpobs. econstructor; auto. pstep_reverse. apply IHeqitF; eauto.
 Qed.
 
 Lemma eqit_flip {E R1 R2} `{EncodedType E} RR b1 b2 : 
@@ -243,22 +284,6 @@ Proof.
   eapply geuttgen_cong_eqit; intros; subst; eauto.
 Qed.
 
-#[global] Instance geuttge_cong_euttge {E R1 R2 RR1 RR2 RS} `{EncodedType E} r rg
-       (LERR1: forall x x' y, (RR1 x x': Prop) -> (RS x' y: Prop) -> RS x y)
-       (LERR2: forall x y y', (RR2 y y': Prop) -> RS x y' -> RS x y):
-  Proper (euttge RR1 ==> eq_itree RR2 ==> flip impl)
-         (gpaco2 (@eqit_ E _ R1 R2 RS true false id) (eqitC RS true false) r rg).
-Proof.
-  repeat intro. guclo eqit_clo_trans. eauto with entree.
-Qed.
-
-#[global] Instance geuttge_cong_euttge_eq {E R1 R2 RS} `{EncodedType E} r rg:
-  Proper (euttge eq ==> eq_itree eq ==> flip impl)
-         (gpaco2 (@eqit_ E _ R1 R2 RS true false id) (eqitC RS true false) r rg).
-Proof.
-  eapply geuttge_cong_euttge; intros; subst; eauto.
-Qed.
-
 #[global] Instance geutt_cong_euttge {E R1 R2 RR1 RR2 RS} `{EncodedType E} r rg
        (LERR1: forall x x' y, (RR1 x x': Prop) -> (RS x' y: Prop) -> RS x y)
        (LERR2: forall x y y', (RR2 y y': Prop) -> RS x y' -> RS x y):
@@ -274,6 +299,44 @@ Qed.
 Proof.
   eapply geutt_cong_euttge; intros; subst; eauto.
 Qed.
+
+#[global] Instance geuttge_cong_euttge {E R1 R2 RR1 RR2 RS b} `{EncodedType E} r rg
+       (LERR1: forall x x' y, (RR1 x x': Prop) -> (RS x' y: Prop) -> RS x y)
+       (LERR2: forall x y y', (RR2 y y': Prop) -> RS x y' -> RS x y):
+  Proper (euttge RR1 ==> eq_itree RR2 ==> flip impl)
+         (gpaco2 (@eqit_ E _ R1 R2 RS true b id) (eqitC RS true b) r rg).
+Proof.
+  repeat intro. destruct b. eapply geutt_cong_euttge; eauto.
+  eapply eqit_mon; try apply H1; eauto. 
+  guclo eqit_clo_trans.  eauto with entree.  
+Qed.
+
+#[global] Instance geuttge_cong_euttge_eq {E R1 R2 RS b} `{EncodedType E} r rg:
+  Proper (euttge eq ==> eq_itree eq ==> flip impl)
+         (gpaco2 (@eqit_ E _ R1 R2 RS true b id) (eqitC RS true b) r rg).
+Proof.
+  eapply geuttge_cong_euttge; intros; subst; eauto.
+Qed.
+
+#[global] Instance geuttge_cong_euttger {E R1 R2 RR1 RR2 RS b} `{EncodedType E} r rg
+       (LERR1: forall x x' y, (RR1 x x': Prop) -> (RS x' y: Prop) -> RS x y)
+       (LERR2: forall x y y', (RR2 y y': Prop) -> RS x y' -> RS x y):
+  Proper (eq_itree RR1 ==> euttge RR2 ==> flip impl)
+         (gpaco2 (@eqit_ E _ R1 R2 RS b true id) (eqitC RS b true) r rg).
+Proof.
+  repeat intro. destruct b. eapply geutt_cong_euttge; eauto.
+  eapply eqit_mon; try apply H0; eauto.
+  guclo eqit_clo_trans.  eauto with entree.  
+Qed.
+
+#[global] Instance geuttge_cong_euttger_eq {E R1 R2 RS b} `{EncodedType E} r rg:
+  Proper (eq_itree eq ==> euttge eq ==> flip impl)
+         (gpaco2 (@eqit_ E _ R1 R2 RS b true id) (eqitC RS b true) r rg).
+Proof.
+  eapply geuttge_cong_euttger; intros; subst; eauto.
+Qed.
+
+
 
 #[global] Instance eqitgen_cong_eqit {E R1 R2 RR1 RR2 RS} `{EncodedType E} b1 b2
        (LERR1: forall x x' y, (RR1 x x': Prop) -> (RS x' y: Prop) -> RS x y)
@@ -523,6 +586,104 @@ Proof.
   apply Reflexive_eqit. auto.
 Qed.
 
+(** *** Transitivity properties *)
+
+Lemma trans_rcompose {R} RR (TRANS : Transitive RR) :
+  forall x y : R, rcompose RR RR x y -> RR x y.
+Proof.
+  intros. repeat destruct H; eauto.
+Qed.
+
+Lemma eqit_trans {E R1 R2 R3} `{EncodedType E} (RR1: R1->R2->Prop) (RR2: R2->R3->Prop) b1 b2 t1 t2 t3
+      (INL: eqit RR1 b1 b2 t1 t2)
+      (INR: eqit RR2 b1 b2 t2 t3):
+  @eqit E _ _ _ (rcompose RR1 RR2) b1 b2 t1 t3.
+Proof.
+  revert_until b2. pcofix CIH. intros.
+  pstep. punfold INL. punfold INR. red in INL, INR |- *. genobs_clear t3 ot3.
+  hinduction INL before CIH; intros; subst; clear t1 t2.
+  - remember (RetF r2) as ot. hinduction INR before CIH; intros; inv Heqot; eauto with paco entree.
+    constructor. red. eexists. eauto.
+  - assert (DEC: (exists m3, ot3 = TauF m3) \/ (forall m3, ot3 <> TauF m3)).
+    { destruct ot3; eauto; right; red; intros; discriminate. }
+    destruct DEC as [EQ | EQ].
+    + destruct EQ as [m3 ?]; subst.
+      econstructor. right. pclearbot. eapply CIH; eauto with entree.
+      apply eqit_inv_Tau. auto with entree.
+    + inv INR; try (exfalso; eapply EQ; eauto; fail).
+      econstructor; eauto.
+      pclearbot. punfold REL. red in REL.
+      hinduction REL0 before CIH; intros; try (exfalso; eapply EQ; eauto; fail).
+      * remember (RetF r1) as ot.
+        hinduction REL0 before CIH; intros; inv Heqot; eauto with paco entree. constructor.
+        eexists. eauto.
+      * remember (VisF e k1) as ot.
+        hinduction REL0 before CIH; intros; try discriminate; [  | eauto with entree ].
+        inv Heqot.
+        econstructor. intros. right.
+        destruct (REL a), (REL0 a); try contradiction. 
+        apply inj_pair2 in H2. subst. eauto.
+      * eapply IHREL0; eauto. pstep_reverse.
+        destruct b1; inv CHECK0.
+        apply eqit_inv_Tau_r. eauto with entree.
+  - remember (VisF e k2) as ot.
+    hinduction INR before CIH; intros; try discriminate; [  | eauto with entree ].
+    inv Heqot. apply inj_pair2 in H2. subst. constructor.
+    pclearbot. right. eapply CIH; [apply REL0 | apply REL ].
+  - eauto with entree.
+  - remember (TauF t0) as ot.
+    hinduction INR before CIH; intros; try inversion Heqot; subst.
+    2,3: eauto 3 with itree.
+    eapply IHINL. pclearbot. punfold REL. eauto with entree.
+    constructor; eauto with entree.
+Qed.
+
+#[global] Instance Transitive_eqit {E} `{EncodedType E} {R: Type} (RR : R -> R -> Prop) (b1 b2: bool):
+  Transitive RR -> Transitive (@eqit E _ _ _ RR b1 b2).
+Proof.
+  red; intros. eapply eqit_mon, eqit_trans; eauto using (trans_rcompose RR).
+Qed.
+
+#[global] Instance Transitive_eqit_eq {E} `{EncodedType E} {R: Type} (b1 b2: bool):
+  Transitive (@eqit E _ R R eq b1 b2).
+Proof.
+  apply Transitive_eqit. repeat intro; subst; eauto.
+Qed.
+
+#[global] Instance Equivalence_eqit {E} `{EncodedType E} {R: Type} (RR : R -> R -> Prop) (b: bool):
+  Equivalence RR -> Equivalence (@eqit E _ R R RR b b).
+Proof.
+  constructor; try typeclasses eauto.
+Qed.
+
+#[global] Instance Equivalence_eqit_eq {E} `{EncodedType E} {R: Type} (b: bool):
+  Equivalence (@eqit E _ R R eq false false).
+Proof.
+  constructor; try typeclasses eauto.
+Qed.
+
+#[global] Instance Transitive_eutt {E R RR} `{EncodedType E} : Transitive RR -> Transitive (@eutt E _ R R RR).
+Proof.
+  red; intros. eapply eqit_mon, eqit_trans; eauto using (trans_rcompose RR).
+Qed.
+
+#[global] Instance Equivalence_eutt {E R RR} `{EncodedType E} : Equivalence RR -> Equivalence (@eutt E _ R R RR).
+Proof.
+  constructor; try typeclasses eauto.
+Qed.
+
+
+Lemma bind_ret_r {E R} `{EncodedType E} :
+  forall s : entree E R,
+    EnTree.bind s (fun x => Ret x) ≅ s.
+Proof.
+  ginit. gcofix CIH. intros.
+  destruct (observe s) eqn : Heq; symmetry in Heq; apply simpobs in Heq; rewrite <- Heq.
+  - rewrite bind_ret_l. apply Reflexive_eqit_gen. auto.
+  - rewrite bind_tau. gstep. constructor. gfinal. eauto.
+  - rewrite bind_vis. gstep. constructor. gfinal. eauto.
+Qed.
+
 Theorem bind_bind E R S T `{EncodedType E} :
   forall (s : entree E R) (k : R -> entree E S) (h : S -> entree E T),
     EnTree.bind (EnTree.bind s k) h ≅ EnTree.bind s (fun r => EnTree.bind (k r) h).
@@ -576,4 +737,26 @@ Proof.
     intros. inv H0.
     + gstep. constructor. gfinal. eauto.
     + gstep. constructor. auto.
+Qed.
+
+Theorem tau_euttge E R `{EncodedType E} : forall (t : entree E R), Tau t ≳ t.
+Proof.
+  intros. pstep. constructor. auto. pstep_reverse. apply Reflexive_eqit. auto.
+Qed.
+
+Theorem tau_eutt E R `{EncodedType E} : forall (t : entree E R), Tau t ≈ t.
+Proof.
+  intros. pstep. constructor. auto. pstep_reverse. apply Reflexive_eqit. auto.
+Qed.
+
+#[global] Instance Eq1_entree {E} `{EncodedType E} : Eq1 (@entree E _) :=
+  fun A m1 m2 => @eq_itree E _ _ _ eq m1 m2.
+
+#[global] Instance MonadLaws_entree {E} `{EncodedType E} : MonadLawsE (@entree E _).
+Proof.
+constructor.
+- intros. apply bind_ret_l.
+- intros. apply bind_ret_r.
+- intros. apply bind_bind.
+- intros. apply eqit_bind_proper.
 Qed.

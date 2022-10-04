@@ -58,6 +58,19 @@ Definition mtree MR A : Type@{entree_u} :=
   entree (denote_mrec_ctx MR) A.
 Notation mtree' MR A := (entree' (denote_mrec_ctx MR) A).
 
+Equations bring_to_front (MR : mrec_ctx) {In : Type} {Out : EncodedType In}
+          (x : var (In && Out) MR)
+          (e : denote_mrec_ctx MR) :
+  {e' : (In + denote_mrec_ctx (remove (In && Out) MR x )) & encodes e' -> encodes e } :=
+bring_to_front ((In && Out) :: MR) (VarZ _ MR ) (inl i) := (inl i && id);
+bring_to_front ((In && Out) :: MR) (VarZ _ MR ) (inr e) := (inr e && id);
+bring_to_front ((T1 && T2) :: MR) (VarS  _ MR y) (inl i) := (inr (inl i) && id );
+bring_to_front ((T1 && T2) :: MR) (VarS _ _ MR y) (inr e) :=
+  match bring_to_front MR y e with
+  | ((inl i) && f) => inl i && f
+  | ((inr e) && f) => (inr (inr e)) && f end.
+(*
+
 Equations bring_to_front {A : Type} (MR : mrec_ctx) (In : Type) (Out : EncodedType In)
           (x : var (In && Out) MR)
           (e : denote_mrec_ctx MR)
@@ -111,23 +124,73 @@ Proof.
       apply inj_pair2 in H0. subst. auto.
 Qed.
 
+Lemma bring_to_front_e_inl :  forall A MR In Out (x : var (In && Out) MR) (e : denote_mrec_ctx MR) (k1 k2 : encodes e -> A)
+                                i1 i2 k1' k2',
+    bring_to_front MR In Out x e k1 = inl (i1 && k1') -> bring_to_front MR In Out x e k2 = inl (i2 && k2') ->
+    i1 = i2.
+Proof.
+  intros A MR In Out x. dependent induction x.
+  - intros [ | ]; intros; try discriminate. simp bring_to_front in H, H0.
+    injection H. injection H0. intros. subst. auto.
+  - destruct b. cbn in *. intros [ | ]; intros; try discriminate.
+     simp bring_to_front in H, H0. 
+     destruct (bring_to_front l In Out x d k1) eqn : Heq1; destruct s; try discriminate.
+     destruct (bring_to_front l In Out x d k2) eqn : Heq2; destruct s; try discriminate.
+     injection H. injection H0. intros. subst. eapply IHx; eauto.
+Qed.
+
+Lemma bring_to_front_e_inr :  forall A MR In Out (x : var (In && Out) MR) (e : denote_mrec_ctx MR) (k1 k2 : encodes e -> A)
+                                e1 e2 k1' k2',
+    bring_to_front MR In Out x e k1 = inr (e1 && k1') -> bring_to_front MR In Out x e k2 = inr (e2 && k2') ->
+    e1 = e2.
+Proof.
+  intros A MR In Out x. dependent induction x.
+  - intros [ | ]; intros; try discriminate. simp bring_to_front in H, H0.
+    injection H. injection H0. intros. subst. auto.
+  - destruct b. cbn in *. intros [ | ]; intros; try discriminate.
+    + simp bring_to_front in H, H0. injection H. injection H0. intros. subst. auto.
+    + simp bring_to_front in H, H0.
+      destruct (bring_to_front l In Out x d k1) eqn : Heq1; destruct s; try discriminate.
+      destruct (bring_to_front l In Out x d k2) eqn : Heq2; destruct s; try discriminate.
+      injection H. injection H0. intros. subst. eapply IHx in Heq1; eauto. subst.
+      auto.
+Qed.
+
+Lemma bring_to_front_e_contra : forall A MR In Out (x : var (In && Out) MR) (e : denote_mrec_ctx MR) (k1 k2 : encodes e -> A)
+                                i1 e2 k1' k2',
+    bring_to_front MR In Out x e k1 = inl (i1 && k1') ->
+    bring_to_front MR In Out x e k2 = inr (e2 && k2') -> False.
+Proof.
+  intros A MR In Out x. dependent induction x.
+  - intros [ | ]; intros; try discriminate.
+  - destruct b. intros [ | ]; intros; try discriminate. simp bring_to_front in H, H0.
+    destruct (bring_to_front l In Out x d k1) eqn : Heq1; destruct s; try discriminate.
+    destruct (bring_to_front l In Out x d k2) eqn : Heq2; destruct s; try discriminate.
+    injection H0. intros. subst. injection H. intros. subst. eapply IHx in Heq1; eauto.
+Qed.
+    
+
+(* Lemma bring_to_front_encodes : forall A MR In Out (x : var (In && Out) MR) (e : denote_mrec_ctx MR) k e k',
+    bring_to_front MR In Out x e k = *)
+*)
 Section interp_mtree.
-Context (MR : mrec_ctx) (In : Type) (Out : EncodedType In) (x : var (In && Out) MR).
+Context (MR : mrec_ctx) (In : Type) (Out : EncodedType In) (x : var (In && Out) MR) {A : Type}.
 
 Context (body : forall i : In, mtree MR (encodes i)).
 
-CoFixpoint interp_mtree' {A} (om : mtree' MR A) : mtree (remove (In && Out) MR x) A :=
+CoFixpoint interp_mtree' (om : mtree' MR A) : mtree (remove (In && Out) MR x) A :=
   match om with
   | RetF r => Ret r
   | TauF t => Tau (interp_mtree' (observe t))
   | VisF e k => 
-      match bring_to_front MR In Out x e k with
-      | inl (i && k') => Tau (interp_mtree' (observe (EnTree.bind (body i) k')))
-      | inr (e' && k') => Vis e' (fun x  => interp_mtree' (observe (k' x)) )
-      end
+      match bring_to_front MR x e with
+      | inl i && f => Tau (interp_mtree' (observe (EnTree.bind (body i) (fun x => k (f x)) )) )
+      | inr e' && f => Vis e' (fun x => interp_mtree' (observe (k (f x)) ) )
+      end 
   end.
 
-Definition interp_mtree {A} (m : mtree MR A) : mtree (remove (In && Out) MR x) A :=
+
+Definition interp_mtree (m : mtree MR A) : mtree (remove (In && Out) MR x) A :=
   interp_mtree' (observe m).
 
 End interp_mtree.
@@ -198,4 +261,62 @@ Definition callm {MR T1} {T2 : EncodedType T1} (x : var (T1 && T2) MR) (v : T1) 
   let '(d && f) := call x v in
   bind (EnTree.trigger d) (fun x => Ret (f x)).
 
-                        
+
+Inductive position {T1 T2} : forall {MR : mrec_ctx}, var (T1 && T2) MR -> T1 -> denote_mrec_ctx MR -> Prop := 
+| pos_varZ MR v : position (VarZ _ MR) v (inl v)
+| pos_varS T1' T2' MR v e y : position y v e -> position (VarS _ (T1' && T2') MR y) v (inr e)
+.
+
+Lemma call_position {MR T1} {T2 : EncodedType T1} (x : var (T1 && T2) MR) : 
+  forall v : T1 , position x v (projT1 (call x v)).
+Proof.
+  dependent induction x.
+  - intros. simp call. constructor.
+  - destruct b. intros. simp call. 
+    specialize (IHx T1 T2 x eq_refl JMeq_refl v).
+    destruct (call x v). constructor. auto.
+Qed.
+
+Lemma bring_to_front_position {MR In Out} (x : var (In && Out) MR) (i : In) (e : denote_mrec_ctx MR) : 
+  position x i e -> projT1 (bring_to_front MR x e) = inl i.
+Proof.
+  intro Hpos. dependent induction Hpos.
+  - simp bring_to_front. auto. 
+  - simp bring_to_front. destruct (bring_to_front MR y e).
+    destruct x; try discriminate. cbn in *. injection IHHpos. intros. subst.
+    auto.
+Qed.
+
+Lemma bring_to_front_call {MR In Out} (x : var (In && Out) MR) (v : In) : 
+  projT1 (bring_to_front MR x (projT1 (call x v))) = inl v.
+Proof.
+  apply bring_to_front_position. apply call_position.
+Qed.
+
+Lemma call_cont {MR T1} {T2 : EncodedType T1} (x : var (T1 && T2) MR) (v : T1) : 
+  projT2 (call x v) ~= (@id (encodes v)).
+Proof.
+  revert v. dependent induction x.
+  - intros. simp call. auto.
+  - destruct b. intros. simp call. 
+    specialize (IHx T1 T2 x eq_refl JMeq_refl v). destruct (call x v).
+    auto.
+Qed.
+
+Lemma bring_to_front_cont {MR In Out} (x : var (In && Out) MR) (i : In) (e : denote_mrec_ctx MR) : 
+  projT2 (bring_to_front MR x e) ~= (@id (encodes e)).
+Proof.
+  revert e. dependent induction x.
+  - intros [ | ]; simp bring_to_front; auto.
+  - destruct b. intros [ | ]; simp bring_to_front; auto.
+    specialize (IHx In Out x eq_refl JMeq_refl i d).
+    destruct (bring_to_front l x d). cbn in *. destruct x1; auto.
+Qed.
+(*
+Lemma bring_to_front_call_cont {MR In Out} (x : var (In && Out) MR) (v : In) : 
+  projT2 (bring_to_front MR x (projT1 (call x v)))
+*)
+
+(* made progress need to also need to know that 
+   e; e0 is id, definitely true
+*)
