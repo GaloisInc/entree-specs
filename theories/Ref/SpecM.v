@@ -290,6 +290,30 @@ Definition TriggerS {E} `{EncodedType E} {Γ} (e : E) : SpecM E Γ (encodes e) :
 Definition ErrorS {E} `{EncodedType E} {Γ} A (str : string) : SpecM E Γ A :=
   bind (trigger (mkErrorE str)) (fun (x:void) => match x with end).
 
+#[global] Instance ReSum_nil_FunStack (E : Type) (Γ : FunStack) :
+  ReSum (SpecEvent (FunStackE E nil)) (SpecEvent (FunStackE E Γ)) :=
+  fun e => match e with
+           | Spec_vis (inl el) => Spec_vis (resum el)
+           | Spec_vis (inr er) => Spec_vis (resum er)
+           | Spec_forall T => Spec_forall T
+           | Spec_exists T => Spec_exists T
+           end.
+
+#[global] Instance ReSumRet_nil_FunStack (E : Type) `{EncodedType E} (Γ : FunStack) :
+  ReSumRet (SpecEvent (FunStackE E nil)) (SpecEvent (FunStackE E Γ)) :=
+  fun e =>
+    match e return encodes (ReSum_nil_FunStack E Γ e) -> encodes e with
+    | Spec_vis (inl el) => fun x => resum_ret el x
+    | Spec_vis (inr er) => fun x => resum_ret er x
+    | Spec_forall T => fun x => x
+    | Spec_exists T => fun x => x
+    end.
+
+
+(* Lift a SpecM in the empty FunStack to an arbitrary FunStack *)
+Definition liftStackS {E} `{EncodedType E} {Γ} A (t:SpecM E nil A) : SpecM E Γ A :=
+  resumEntree A t.
+
 (* Compute the type forall a b c ... . SpecM ... (R a b c ...) from an lrt *)
 (*
 Fixpoint LRTType E `{EncodedType E} Γ (lrt : LetRecType) : Type@{entree_u} :=

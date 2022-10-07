@@ -22,4 +22,12 @@ Class ReSumRet E1 E2 `{EncodedType E1} `{EncodedType E2} `{ReSum E1 E2} : Type :
 Definition trigger {E1 E2 : Type} `{EncodedType E1} `{EncodedType E2} `{ReSum E1 E2} `{ReSumRet E1 E2} 
            (e : E1) : entree E2 (encodes e) :=
   Vis (resum e) (fun x : encodes (resum e) => Ret (resum_ret e x)).
-  
+
+(* Use resum and resum_ret to map the events in an entree to another type *)
+CoFixpoint resumEntree {E1 E2 : Type} `{EncodedType E1} `{EncodedType E2}
+           `{ReSum E1 E2} `{ReSumRet E1 E2} A (t : entree E1 A) : entree E2 A :=
+  match observe t with
+  | RetF r => Ret r
+  | TauF t => Tau (resumEntree A t)
+  | VisF e k => Vis (resum e) (fun x => resumEntree A (k (resum_ret e x)))
+  end.
