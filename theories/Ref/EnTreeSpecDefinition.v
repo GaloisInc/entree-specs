@@ -30,7 +30,7 @@ Arguments Spec_forall {_} _.
 Arguments Spec_exists {_} _.
 
 
-#[global] Instance SpecEventEncoded E `{EncodedType E} : EncodedType (SpecEvent E) :=
+#[global] Instance SpecEventEncoding E `{EncodingType E} : EncodingType (SpecEvent E) :=
   fun e => match e with
                    | Spec_vis e => encodes e
                    | Spec_forall T => T
@@ -38,17 +38,17 @@ Arguments Spec_exists {_} _.
 
 #[global] Instance SpecEventReSum E1 E2 `{ReSum E1 E2} : ReSum E1 (SpecEvent E2) :=
   fun e => Spec_vis (resum e).
-#[global] Instance SpecEventReSumRet E1 E2 {EncE1 : EncodedType E1} {EncE2 : EncodedType E2} {Res : ReSum E1 E2}
+#[global] Instance SpecEventReSumRet E1 E2 {EncE1 : EncodingType E1} {EncE2 : EncodingType E2} {Res : ReSum E1 E2}
  {ResRet : ReSumRet E1 E2} : ReSumRet E1 (SpecEvent E2) := fun e x => @resum_ret _ _ _ _ _ ResRet e x.
 
-Definition entree_spec E `{EncodedType E} R := entree (SpecEvent E) R.
+Definition entree_spec E `{EncodingType E} R := entree (SpecEvent E) R.
 Notation entree_spec' E R := (entree' (SpecEvent E) R).
 
 Create HintDb entree_spec.
 
 Section refines.
 
-Context {E1 E2 : Type} `{EncodedType E1} `{EncodedType E2} {R1 R2 : Type}.
+Context {E1 E2 : Type} `{EncodingType E1} `{EncodingType E2} {R1 R2 : Type}.
 
 Context (RPre : E1 -> E2 -> Prop) (RPost : forall (e1 : E1) (e2 : E2), encodes e1 -> encodes e2 -> Prop) (RR : R1 -> R2 -> Prop).
 
@@ -86,13 +86,13 @@ Definition refines := paco2 refines_ bot2.
 
 End refines.
 
-Definition assume_spec {E} `{EncodedType E} (P : Prop) : entree_spec E unit :=
+Definition assume_spec {E} `{EncodingType E} (P : Prop) : entree_spec E unit :=
   Vis (Spec_forall P) (fun _ => Ret tt).
-Definition assert_spec {E} `{EncodedType E} (P : Prop) : entree_spec E unit :=
+Definition assert_spec {E} `{EncodingType E} (P : Prop) : entree_spec E unit :=
   Vis (Spec_exists P) (fun _ => Ret tt).
-Definition forall_spec {E} `{EncodedType E} (A : Type) : entree_spec E A :=
+Definition forall_spec {E} `{EncodingType E} (A : Type) : entree_spec E A :=
   Vis (Spec_forall A) (fun a => Ret a).
-Definition exists_spec {E} `{EncodedType E} (A : Type) : entree_spec E A :=
+Definition exists_spec {E} `{EncodingType E} (A : Type) : entree_spec E A :=
   Vis (Spec_exists A) (fun a => Ret a).
 
 (* 

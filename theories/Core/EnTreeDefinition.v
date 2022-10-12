@@ -8,7 +8,7 @@ Require Import HeterogeneousRelations.
 
 Section entree.
 
-Context (E : Type@{entree_u}) `{EncodedType E} (R : Type@{entree_u}).
+Context (E : Type@{entree_u}) `{EncodingType E} (R : Type@{entree_u}).
 
 Variant entreeF (F : Type@{entree_u} ) : Type@{entree_u} :=
   | RetF (r : R)
@@ -30,7 +30,7 @@ Notation Tau t := {| _observe := TauF t |}.
 Notation Ret r := {| _observe := RetF r |}.
 Notation Vis e k := {| _observe := VisF e k |}.
 
-Definition observe {E R} `{EncodedType E} (t : entree E R) : entree' E R :=
+Definition observe {E R} `{EncodingType E} (t : entree E R) : entree' E R :=
   _observe _ _ t.
 
 
@@ -43,7 +43,7 @@ Create HintDb itree.
 
 Module EnTree.
 
-Definition subst' {E : Type@{entree_u}} `{EncodedType E} {R S : Type@{entree_u}}
+Definition subst' {E : Type@{entree_u}} `{EncodingType E} {R S : Type@{entree_u}}
            (k : R -> entree E S) : entree' E R -> entree E S  :=
   cofix _subst (ot : entree' E R) :=
     match ot with
@@ -52,15 +52,15 @@ Definition subst' {E : Type@{entree_u}} `{EncodedType E} {R S : Type@{entree_u}}
     | VisF e k => Vis e (fun x => _subst (observe (k x)))
     end.
 
-Definition subst {E : Type@{entree_u}} `{EncodedType E} {R S : Type@{entree_u}}
+Definition subst {E : Type@{entree_u}} `{EncodingType E} {R S : Type@{entree_u}}
            (k : R -> entree E S) : entree E R -> entree E S :=
   fun t => subst' k (observe t).
 
-Definition bind {E} `{EncodedType E} {R S : Type@{entree_u}} 
+Definition bind {E} `{EncodingType E} {R S : Type@{entree_u}} 
            (t : entree E R) (k : R -> entree E S) :=
   subst k t.
 
-Definition iter {E} `{EncodedType E} {I R : Type@{entree_u}}
+Definition iter {E} `{EncodingType E} {I R : Type@{entree_u}}
            (body : I -> entree E (I + R) ) : I -> entree E R :=
   cofix _iter i :=
     bind (body i) (fun ir => match ir with
@@ -68,13 +68,13 @@ Definition iter {E} `{EncodedType E} {I R : Type@{entree_u}}
                           | inr r => Ret r
                           end).
 
-Definition map {E} `{EncodedType E} {R S} (f : R -> S) (t : entree E R) :=
+Definition map {E} `{EncodingType E} {R S} (f : R -> S) (t : entree E R) :=
   bind t (fun r => Ret (f r)).
 
-Definition trigger {E} `{EncodedType E} (e : E) : entree E (encodes e) :=
+Definition trigger {E} `{EncodingType E} (e : E) : entree E (encodes e) :=
   Vis e (fun x => Ret x).
 
-CoFixpoint spin {E R} `{EncodedType E} : entree E R := Tau spin.
+CoFixpoint spin {E R} `{EncodingType E} : entree E R := Tau spin.
 
 (* are there multiple definitions of trigger ? *)
 
@@ -96,10 +96,10 @@ Notation "' p <- t1 ;; t2" :=
 
 End EnTreeNotations.
 
-#[global] Instance Functor_entree {E} `{EncodedType E} : Functor (entree E) :=
+#[global] Instance Functor_entree {E} `{EncodingType E} : Functor (entree E) :=
   { fmap := @EnTree.map E _ }.
 
-#[global] Instance Applicative_entree {E} `{EncodedType E} : Applicative (entree E) :=
+#[global] Instance Applicative_entree {E} `{EncodingType E} : Applicative (entree E) :=
   {
     pure := fun _  x => Ret x;
     ap := fun _ _ f x =>
@@ -107,13 +107,13 @@ End EnTreeNotations.
 
   }.
 
-#[global] Instance Monad_entree {E} `{EncodedType E} : Monad (entree E) :=
+#[global] Instance Monad_entree {E} `{EncodingType E} : Monad (entree E) :=
   {
     ret := fun _ x => Ret x;
     bind := @EnTree.bind E _;
   }.
 
-#[global] Instance MonadIter_entree {E} `{EncodedType E} : MonadIter (entree E) :=
+#[global] Instance MonadIter_entree {E} `{EncodingType E} : MonadIter (entree E) :=
   fun _ _ => EnTree.iter.
 
 (* Import ITree basics*)
