@@ -1,7 +1,7 @@
 -R . EnTree
 
 theories/Basics/HeterogeneousRelations.v
-theories/Basics/Cardinality.v
+theories/Basics/QuantType.v
 theories/Core/EnTreeDefinition.v
 theories/Core/SubEvent.v
 theories/Eq/Eqit.v

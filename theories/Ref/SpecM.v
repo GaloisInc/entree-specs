@@ -6,7 +6,7 @@ From ITree Require Import
  .
 From EnTree Require Import
      Basics.HeterogeneousRelations
-     Basics.Cardinality
+     Basics.QuantType
      Core.EnTreeDefinition
      Core.SubEvent
      Eq.Eqit
@@ -287,9 +287,9 @@ Definition AssumeS {E} {Γ} (P : Prop) : SpecM E Γ unit :=
   assume_spec P.
 Definition AssertS {E} {Γ} (P : Prop) : SpecM E Γ unit :=
   assert_spec P.
-Definition ForallS {E} {Γ} (A : Type) `{HasCard A} : SpecM E Γ A :=
+Definition ForallS {E} {Γ} (A : Type) `{QuantType A} : SpecM E Γ A :=
   forall_spec A.
-Definition ExistsS {E} {Γ} (A : Type) `{HasCard A} : SpecM E Γ A :=
+Definition ExistsS {E} {Γ} (A : Type) `{QuantType A} : SpecM E Γ A :=
   exists_spec A.
 Definition TriggerS {E:EvType} {Γ} (e : E) : SpecM E Γ (encodes e) := trigger e.
 Definition ErrorS {E} {Γ} A (str : string) : SpecM E Γ A :=

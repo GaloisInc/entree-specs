@@ -15,7 +15,7 @@ From ITree Require Import
 
 From EnTree Require Import
      Basics.HeterogeneousRelations
-     Basics.Cardinality
+     Basics.QuantType
      Core.EnTreeDefinition
      Core.SubEvent
 .
@@ -25,8 +25,8 @@ Local Open Scope entree_scope.
 
 Variant SpecEvent (E : Type@{entree_u}) : Type@{entree_u} :=
   | Spec_vis (e : E)
-  | Spec_forall (k : Cardinality)
-  | Spec_exists (k : Cardinality).
+  | Spec_forall (k : QuantEnc)
+  | Spec_exists (k : QuantEnc).
 Arguments Spec_vis {_} _.
 Arguments Spec_forall {_} _.
 Arguments Spec_exists {_} _.
@@ -92,13 +92,13 @@ Definition refines := paco2 refines_ bot2.
 End refines.
 
 Definition assume_spec {E} `{EncodingType E} (P : Prop) : entree_spec E unit :=
-  Vis (Spec_forall (Card_prop P)) (fun _ => Ret tt).
+  Vis (Spec_forall (QEnc_prop P)) (fun _ => Ret tt).
 Definition assert_spec {E} `{EncodingType E} (P : Prop) : entree_spec E unit :=
-  Vis (Spec_exists (Card_prop P)) (fun _ => Ret tt).
-Definition forall_spec {E} `{EncodingType E} (A : Type) `{HasCard A} : entree_spec E A :=
-  Vis (Spec_forall (cardinality (A:=A))) (fun a => Ret (card_enum a)).
-Definition exists_spec {E} `{EncodingType E} (A : Type) `{HasCard A} : entree_spec E A :=
-  Vis (Spec_exists (cardinality (A:=A))) (fun a => Ret (card_enum a)).
+  Vis (Spec_exists (QEnc_prop P)) (fun _ => Ret tt).
+Definition forall_spec {E} `{EncodingType E} (A : Type) `{QuantType A} : entree_spec E A :=
+  Vis (Spec_forall (quantEnc (A:=A))) (fun a => Ret (quantEnum a)).
+Definition exists_spec {E} `{EncodingType E} (A : Type) `{QuantType A} : entree_spec E A :=
+  Vis (Spec_exists (quantEnc (A:=A))) (fun a => Ret (quantEnum a)).
 
 (* 
    need padded refines
