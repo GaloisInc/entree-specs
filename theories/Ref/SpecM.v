@@ -266,13 +266,13 @@ Definition mkFunStackE' E Γ fnum n
   : ReSumRet (LRTInput (nthLRT lrts n)) (FunStackE E (lrts :: Γ)) :=
   fun args o => unmapLRTsOutput n lrts args o.
 
-(* An EvType is an event type E plus an encoding function for it *)
+(* An EvType is an event type E plus a return type for each event in E *)
 Record EvType : Type :=
   { evTypeType :> Type@{entree_u};
-    evTypeEncodes : evTypeType -> Type@{entree_u} }.
+    evRetType : evTypeType -> Type@{entree_u} }.
 
 Instance EncodingType_EvType (E:EvType) : EncodingType E :=
-  fun e => evTypeEncodes E e.
+  fun e => evRetType E e.
 
 (* The SpecM monad is the entree_spec monad with FunStackE as the event type *)
 Definition SpecM (E:EvType) Γ A : Type@{entree_u} :=
