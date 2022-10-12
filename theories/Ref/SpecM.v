@@ -282,9 +282,9 @@ Definition AssumeS {E} `{EncodedType E} {Γ} (P : Prop) : SpecM E Γ unit :=
   assume_spec P.
 Definition AssertS {E} `{EncodedType E} {Γ} (P : Prop) : SpecM E Γ unit :=
   assert_spec P.
-Definition ForallS {E} `{EncodedType E} {Γ} (A : Set) : SpecM E Γ A :=
+Definition ForallS {E} `{EncodedType E} {Γ} (A : Type) : SpecM E Γ A :=
   forall_spec A.
-Definition ExistsS {E} `{EncodedType E} {Γ} (A : Set) : SpecM E Γ A :=
+Definition ExistsS {E} `{EncodedType E} {Γ} (A : Type) : SpecM E Γ A :=
   exists_spec A.
 Definition TriggerS {E} `{EncodedType E} {Γ} (e : E) : SpecM E Γ (encodes e) := trigger e.
 Definition ErrorS {E} `{EncodedType E} {Γ} A (str : string) : SpecM E Γ A :=

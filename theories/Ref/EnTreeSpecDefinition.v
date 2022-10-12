@@ -90,9 +90,9 @@ Definition assume_spec {E} `{EncodedType E} (P : Prop) : entree_spec E unit :=
   Vis (Spec_forall P) (fun _ => Ret tt).
 Definition assert_spec {E} `{EncodedType E} (P : Prop) : entree_spec E unit :=
   Vis (Spec_exists P) (fun _ => Ret tt).
-Definition forall_spec {E} `{EncodedType E} (A : Set) : entree_spec E A :=
+Definition forall_spec {E} `{EncodedType E} (A : Type) : entree_spec E A :=
   Vis (Spec_forall A) (fun a => Ret a).
-Definition exists_spec {E} `{EncodedType E} (A : Set) : entree_spec E A :=
+Definition exists_spec {E} `{EncodedType E} (A : Type) : entree_spec E A :=
   Vis (Spec_exists A) (fun a => Ret a).
 
 (* 
