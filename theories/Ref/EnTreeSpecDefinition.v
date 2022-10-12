@@ -14,6 +14,7 @@ From ITree Require Import
 
 From EnTree Require Import
      Basics.HeterogeneousRelations
+     Basics.Cardinality
      Core.EnTreeDefinition
      Core.SubEvent
 .
@@ -23,8 +24,8 @@ Local Open Scope entree_scope.
 
 Variant SpecEvent (E : Type@{entree_u}) : Type@{entree_u} :=
   | Spec_vis (e : E)
-  | Spec_forall (T : Type)
-  | Spec_exists (T : Type).
+  | Spec_forall (k : Cardinality)
+  | Spec_exists (k : Cardinality).
 Arguments Spec_vis {_} _.
 Arguments Spec_forall {_} _.
 Arguments Spec_exists {_} _.
@@ -33,8 +34,8 @@ Arguments Spec_exists {_} _.
 #[global] Instance SpecEventEncoding E `{EncodingType E} : EncodingType (SpecEvent E) :=
   fun e => match e with
                    | Spec_vis e => encodes e
-                   | Spec_forall T => T
-                   | Spec_exists T => T end.
+                   | Spec_forall k => encodes k
+                   | Spec_exists k => encodes k end.
 
 #[global] Instance SpecEventReSum E1 E2 `{ReSum E1 E2} : ReSum E1 (SpecEvent E2) :=
   fun e => Spec_vis (resum e).
@@ -87,13 +88,13 @@ Definition refines := paco2 refines_ bot2.
 End refines.
 
 Definition assume_spec {E} `{EncodingType E} (P : Prop) : entree_spec E unit :=
-  Vis (Spec_forall P) (fun _ => Ret tt).
+  Vis (Spec_forall (Card_prop P)) (fun _ => Ret tt).
 Definition assert_spec {E} `{EncodingType E} (P : Prop) : entree_spec E unit :=
-  Vis (Spec_exists P) (fun _ => Ret tt).
-Definition forall_spec {E} `{EncodingType E} (A : Type) : entree_spec E A :=
-  Vis (Spec_forall A) (fun a => Ret a).
-Definition exists_spec {E} `{EncodingType E} (A : Type) : entree_spec E A :=
-  Vis (Spec_exists A) (fun a => Ret a).
+  Vis (Spec_exists (Card_prop P)) (fun _ => Ret tt).
+Definition forall_spec {E} `{EncodingType E} (A : Type) `{HasCard A} : entree_spec E A :=
+  Vis (Spec_forall (cardinality (A:=A))) (fun a => Ret (card_enum a)).
+Definition exists_spec {E} `{EncodingType E} (A : Type) `{HasCard A} : entree_spec E A :=
+  Vis (Spec_exists (cardinality (A:=A))) (fun a => Ret (card_enum a)).
 
 (* 
    need padded refines

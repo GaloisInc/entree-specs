@@ -6,6 +6,7 @@ From ITree Require Import
  .
 From EnTree Require Import
      Basics.HeterogeneousRelations
+     Basics.Cardinality
      Core.EnTreeDefinition
      Core.SubEvent
      Eq.Eqit
@@ -282,9 +283,9 @@ Definition AssumeS {E} `{EncodingType E} {Γ} (P : Prop) : SpecM E Γ unit :=
   assume_spec P.
 Definition AssertS {E} `{EncodingType E} {Γ} (P : Prop) : SpecM E Γ unit :=
   assert_spec P.
-Definition ForallS {E} `{EncodingType E} {Γ} (A : Type) : SpecM E Γ A :=
+Definition ForallS {E} `{EncodingType E} {Γ} (A : Type) `{HasCard A} : SpecM E Γ A :=
   forall_spec A.
-Definition ExistsS {E} `{EncodingType E} {Γ} (A : Type) : SpecM E Γ A :=
+Definition ExistsS {E} `{EncodingType E} {Γ} (A : Type) `{HasCard A} : SpecM E Γ A :=
   exists_spec A.
 Definition TriggerS {E} `{EncodingType E} {Γ} (e : E) : SpecM E Γ (encodes e) := trigger e.
 Definition ErrorS {E} `{EncodingType E} {Γ} A (str : string) : SpecM E Γ A :=
