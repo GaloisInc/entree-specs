@@ -266,32 +266,36 @@ Definition mkFunStackE' E Γ fnum n
   : ReSumRet (LRTInput (nthLRT lrts n)) (FunStackE E (lrts :: Γ)) :=
   fun args o => unmapLRTsOutput n lrts args o.
 
+(* An EvType is an event type E plus an encoding function for it *)
+Record EvType : Type :=
+  { evTypeType :> Type@{entree_u};
+    evTypeEncodes : evTypeType -> Type@{entree_u} }.
 
-#[global] Instance Monad_entree_spec {E} `{EncodingType E} : Monad (entree_spec E) :=
-  Monad_entree.
+Instance EncodingType_EvType (E:EvType) : EncodingType E :=
+  fun e => evTypeEncodes E e.
 
 (* The SpecM monad is the entree_spec monad with FunStackE as the event type *)
-Definition SpecM (E : Type@{entree_u}) `{EncodingType E} Γ A : Type@{entree_u} :=
+Definition SpecM (E:EvType) Γ A : Type@{entree_u} :=
   entree_spec (FunStackE E Γ) A.
 
-Definition RetS {E} `{EncodingType E} {Γ A} (a : A) : SpecM E Γ A := ret a.
-Definition BindS {E} `{EncodingType E} {Γ A B} (m : SpecM E Γ A) (k : A -> SpecM E Γ B) :=
+Definition RetS {E} {Γ A} (a : A) : SpecM E Γ A := ret a.
+Definition BindS {E} {Γ A B} (m : SpecM E Γ A) (k : A -> SpecM E Γ B) :=
   bind m k.
-Definition IterS {E} `{EncodingType E} {Γ A B} (body : A -> SpecM E Γ (A + B)) :
+Definition IterS {E} {Γ A B} (body : A -> SpecM E Γ (A + B)) :
   A -> SpecM E Γ B := EnTree.iter body.
-Definition AssumeS {E} `{EncodingType E} {Γ} (P : Prop) : SpecM E Γ unit :=
+Definition AssumeS {E} {Γ} (P : Prop) : SpecM E Γ unit :=
   assume_spec P.
-Definition AssertS {E} `{EncodingType E} {Γ} (P : Prop) : SpecM E Γ unit :=
+Definition AssertS {E} {Γ} (P : Prop) : SpecM E Γ unit :=
   assert_spec P.
-Definition ForallS {E} `{EncodingType E} {Γ} (A : Type) `{HasCard A} : SpecM E Γ A :=
+Definition ForallS {E} {Γ} (A : Type) `{HasCard A} : SpecM E Γ A :=
   forall_spec A.
-Definition ExistsS {E} `{EncodingType E} {Γ} (A : Type) `{HasCard A} : SpecM E Γ A :=
+Definition ExistsS {E} {Γ} (A : Type) `{HasCard A} : SpecM E Γ A :=
   exists_spec A.
-Definition TriggerS {E} `{EncodingType E} {Γ} (e : E) : SpecM E Γ (encodes e) := trigger e.
-Definition ErrorS {E} `{EncodingType E} {Γ} A (str : string) : SpecM E Γ A :=
+Definition TriggerS {E:EvType} {Γ} (e : E) : SpecM E Γ (encodes e) := trigger e.
+Definition ErrorS {E} {Γ} A (str : string) : SpecM E Γ A :=
   bind (trigger (mkErrorE str)) (fun (x:void) => match x with end).
 
-#[global] Instance ReSum_nil_FunStack (E : Type) (Γ : FunStack) :
+#[global] Instance ReSum_nil_FunStack E (Γ : FunStack) :
   ReSum (SpecEvent (FunStackE E nil)) (SpecEvent (FunStackE E Γ)) :=
   fun e => match e with
            | Spec_vis (inl el) => Spec_vis (resum el)
@@ -300,7 +304,7 @@ Definition ErrorS {E} `{EncodingType E} {Γ} A (str : string) : SpecM E Γ A :=
            | Spec_exists T => Spec_exists T
            end.
 
-#[global] Instance ReSumRet_nil_FunStack (E : Type) `{EncodingType E} (Γ : FunStack) :
+#[global] Instance ReSumRet_nil_FunStack (E:EvType) (Γ : FunStack) :
   ReSumRet (SpecEvent (FunStackE E nil)) (SpecEvent (FunStackE E Γ)) :=
   fun e =>
     match e return encodes (ReSum_nil_FunStack E Γ e) -> encodes e with
@@ -312,7 +316,7 @@ Definition ErrorS {E} `{EncodingType E} {Γ} A (str : string) : SpecM E Γ A :=
 
 
 (* Lift a SpecM in the empty FunStack to an arbitrary FunStack *)
-Definition liftStackS {E} `{EncodingType E} {Γ} A (t:SpecM E nil A) : SpecM E Γ A :=
+Definition liftStackS {E} {Γ} A (t:SpecM E nil A) : SpecM E Γ A :=
   resumEntree A t.
 
 (* Compute the type forall a b c ... . SpecM ... (R a b c ...) from an lrt *)
@@ -323,25 +327,25 @@ Fixpoint LRTType E `{EncodingType E} Γ (lrt : LetRecType) : Type@{entree_u} :=
   | LRT_Fun A rest => forall (a : A), LRTType E Γ (rest a)
   end.
 *)
-Definition LRTType E `{EncodingType E} Γ lrt : Type@{entree_u} :=
+Definition LRTType E Γ lrt : Type@{entree_u} :=
   lrtPi lrt (fun args => SpecM E Γ (LRTOutput lrt args)).
 
 (* Create a recursive call to a function in the top-most frame *)
-Definition CallS E `{EncodingType E} Γ Frame n : LRTType E (Frame :: Γ) (nthLRT Frame n) :=
+Definition CallS E Γ Frame n : LRTType E (Frame :: Γ) (nthLRT Frame n) :=
   lrtLambda
     (nthLRT Frame n)
     (fun args => SpecM E (Frame :: Γ) (LRTOutput _ args))
     (fun args => trigger args).
 
 (* Build the right-nested tuple type of a list of functions of type LRTType *)
-Fixpoint LRTsTuple E `{EncodingType E} Γ (lrts : LetRecTypes) : Type :=
+Fixpoint LRTsTuple E Γ (lrts : LetRecTypes) : Type :=
   match lrts with
   | nil => unit
   | lrt :: lrts' => LRTType E Γ lrt * LRTsTuple E Γ lrts'
   end.
 
 (* Convert an LRTsTuple to a function from an LRTsInput to an LRTsOutput *)
-Fixpoint LRTsTupleFun E `{EncodingType E} Γ (lrts : LetRecTypes) :
+Fixpoint LRTsTupleFun E Γ (lrts : LetRecTypes) :
   LRTsTuple E Γ lrts -> forall args, SpecM E Γ (LRTsOutput lrts args) :=
   match lrts return LRTsTuple E Γ lrts ->
                     forall args, SpecM E Γ (LRTsOutput lrts args) with
@@ -354,14 +358,14 @@ Fixpoint LRTsTupleFun E `{EncodingType E} Γ (lrts : LetRecTypes) :
       end
   end.
 
-#[global] Instance SpecM_Monad {E} `{EncodingType E} Γ : Monad (SpecM E Γ) :=
+#[global] Instance SpecM_Monad {E} Γ : Monad (SpecM E Γ) :=
   {|
     ret := fun A a => RetS a;
     bind := fun A B m k => BindS m k;
   |}.
 
 (* Create a multi-way fixed point of a sequence of functions *)
-Definition MultiFixS E `{EncodingType E} Γ Frame
+Definition MultiFixS E Γ Frame
            (bodies : LRTsTuple E (Frame :: Γ) Frame) n :
   LRTType E Γ (nthLRT Frame n) :=
   lrtLambda
@@ -411,7 +415,7 @@ End interpWithState.
 
 (* Corecursively looks for performances of exceptional effects. If an
    exceptional performance is caught, then `catch` is performed instead. *)
-Program CoFixpoint try_catch {E} `{EncodingType E} {Γ} {A} {B}
+Program CoFixpoint try_catch {E:EvType} {Γ} {A} {B}
     (is_exceptional : FunStackE E Γ -> option A)
     (catch : A -> SpecM E Γ B) :
     SpecM E Γ B -> SpecM E Γ B :=

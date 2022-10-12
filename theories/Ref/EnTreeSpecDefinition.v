@@ -10,6 +10,7 @@ From ITree Require Import
      Basics.Basics
      Basics.Tacs
      Basics.HeterogeneousRelations
+     Basics.Monad
      Eq.Paco2.
 
 From EnTree Require Import
@@ -44,6 +45,9 @@ Arguments Spec_exists {_} _.
 
 Definition entree_spec E `{EncodingType E} R := entree (SpecEvent E) R.
 Notation entree_spec' E R := (entree' (SpecEvent E) R).
+
+#[global] Instance Monad_entree_spec {E} `{EncodingType E} : Monad (entree_spec E) :=
+  Monad_entree.
 
 Create HintDb entree_spec.
 
