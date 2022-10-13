@@ -23,7 +23,7 @@ From Paco Require Import paco.
 Local Open Scope entree_scope.
 
 Section padded.
-Context {E : Type} `{EncodedType E} {R : Type}.
+Context {E : Type} `{EncodingType E} {R : Type}.
 
 Variant paddedF (F : entree E R -> Prop) : entree' E R -> Prop :=
   | paddedF_Ret r : paddedF F (RetF r)
@@ -80,7 +80,7 @@ Qed.
 
 End padded.
 
-Theorem pad_is_padded {E : Type} `{EncodedType E} {R : Type} : forall t : entree E R, padded (pad t).
+Theorem pad_is_padded {E : Type} `{EncodingType E} {R : Type} : forall t : entree E R, padded (pad t).
 Proof with eauto with entree_spec.
   pcofix CIH. intros. pstep. unfold pad.
   destruct (observe t); eauto. constructor. constructor. right. eauto.
@@ -89,7 +89,7 @@ Qed.
 
 #[global] Hint Resolve pad_is_padded : entree_spec.
 
-Theorem pad_eutt {E : Type} `{EncodedType E} {R : Type} : forall t : entree E R, t ≈ pad t.
+Theorem pad_eutt {E : Type} `{EncodingType E} {R : Type} : forall t : entree E R, t ≈ pad t.
 Proof with eauto with entree_spec.
 (*easier to do with gpaco*)
 Admitted.

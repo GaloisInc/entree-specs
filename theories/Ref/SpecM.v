@@ -6,6 +6,7 @@ From ITree Require Import
  .
 From EnTree Require Import
      Basics.HeterogeneousRelations
+     Basics.QuantType
      Core.EnTreeDefinition
      Core.SubEvent
      Eq.Eqit
@@ -89,7 +90,7 @@ Fixpoint lrtApply lrt
 (* Compute the output type (R a b c ...) from a LetRecType that represents
    forall a b c..., SpecM ... (R a b c ...) and a dependent tuple of arguments
    to a function of that type *)
-Fixpoint LRTOutput lrt : EncodedType (LRTInput lrt) :=
+Fixpoint LRTOutput lrt : EncodingType (LRTInput lrt) :=
   match lrt with
   | LRT_Ret R => fun _ : unit => R
   | LRT_Fun A rest => fun args =>
@@ -97,7 +98,7 @@ Fixpoint LRTOutput lrt : EncodedType (LRTInput lrt) :=
                         LRTOutput (rest a) args'
   end.
 
-#[global] Instance LRTOutputEncoded lrt : EncodedType (LRTInput lrt) := LRTOutput lrt.
+#[global] Instance LRTOutputEncoding lrt : EncodingType (LRTInput lrt) := LRTOutput lrt.
 
 (* A list of LetRecTypes for a collection of mutually recursive functions bound
    by a single use of multiFixS *)
@@ -121,7 +122,7 @@ Fixpoint LRTsOutput (lrts : LetRecTypes) : LRTsInput lrts -> Type@{entree_u} :=
                              end
   end.
 
-#[global] Instance LRTsOutputEncoded lrt : EncodedType (LRTsInput lrt) := LRTsOutput lrt.
+#[global] Instance LRTsOutputEncoding lrt : EncodingType (LRTsInput lrt) := LRTsOutput lrt.
 
 (* A version of nth_default that does primary recursion on the list *)
 Fixpoint nth_default' {A} (d : A) (l : list A) n : A :=
@@ -179,7 +180,7 @@ Definition FunStack := list LetRecTypes.
 Inductive ErrorE : Set :=
 | mkErrorE : string -> ErrorE.
 
-#[global] Instance EncodedType_ErrorE : EncodedType ErrorE := fun _ => void.
+#[global] Instance EncodingType_ErrorE : EncodingType ErrorE := fun _ => void.
 
 (* Create an event type for either an event in E or a recursive call in a stack
    Γ of recursive functions in scope *)
@@ -190,7 +191,7 @@ Fixpoint FunStackE (E : Type) (Γ : FunStack) : Type@{entree_u} :=
   end.
 
 (* Compute the output type for a FunStackE event *)
-Fixpoint FunStackE_encodes (E : Type) `{EncodedType E} (Γ : FunStack) :
+Fixpoint FunStackE_encodes (E : Type) `{EncodingType E} (Γ : FunStack) :
   FunStackE E Γ -> Type@{entree_u} :=
   match Γ return FunStackE E Γ -> Type with
   | nil => fun e => encodes e
@@ -200,7 +201,7 @@ Fixpoint FunStackE_encodes (E : Type) `{EncodedType E} (Γ : FunStack) :
                            end
   end.
 
-#[global] Instance FunStackE_encodes' (E : Type) `{EncodedType E} (Γ : FunStack) : EncodedType (FunStackE E Γ) :=
+#[global] Instance FunStackE_encodes' (E : Type) `{EncodingType E} (Γ : FunStack) : EncodingType (FunStackE E Γ) :=
   FunStackE_encodes E Γ.
 
 (* Embed an underlying event into the FunStackE event type *)
@@ -211,7 +212,7 @@ Fixpoint FunStackE_embed_ev (E : Type) Γ (e : ErrorE + E) : FunStackE E Γ :=
   end.
 
 (* Map the output of a FunStackE event for an E to the output type of E *)
-Fixpoint FunStackE_embed_ev_unmap (E : Type) `{EncodedType E} Γ e
+Fixpoint FunStackE_embed_ev_unmap (E : Type) `{EncodingType E} Γ e
   : encodes (FunStackE_embed_ev E Γ e) -> encodes e :=
   match Γ return encodes (FunStackE_embed_ev E Γ e) -> encodes e with
   | nil => fun o => o
@@ -221,14 +222,14 @@ Fixpoint FunStackE_embed_ev_unmap (E : Type) `{EncodedType E} Γ e
 #[global] Instance ReSum_FunStackE_E (E : Type) (Γ : FunStack) : ReSum E (FunStackE E Γ) :=
   fun e => FunStackE_embed_ev E Γ (inr e).
 
-#[global] Instance ReSumRet_FunStackE_E (E : Type) `{EncodedType E} Γ :
+#[global] Instance ReSumRet_FunStackE_E (E : Type) `{EncodingType E} Γ :
   ReSumRet E (FunStackE E Γ) :=
   fun e => FunStackE_embed_ev_unmap E Γ (inr e).
 
 #[global] Instance ReSum_FunStackE_Error (E : Type) (Γ : FunStack) : ReSum ErrorE (FunStackE E Γ) :=
   fun e => FunStackE_embed_ev E Γ (inl e).
 
-#[global] Instance ReSumRet_FunStackE_Error (E : Type) `{EncodedType E} Γ :
+#[global] Instance ReSumRet_FunStackE_Error (E : Type) `{EncodingType E} Γ :
   ReSumRet ErrorE (FunStackE E Γ) :=
   fun e => FunStackE_embed_ev_unmap E Γ (inl e).
 
@@ -261,62 +262,90 @@ Definition mkFunStackE' E Γ fnum n
   fun args => inl (mkLRTsInput n lrts args).
 
 (* Map the return value for embedding a call in the top level to a FunStackE *)
-#[global] Instance FunStackE_lrt_resum_ret (E : Type) `{EncodedType E} Γ lrts n
+#[global] Instance FunStackE_lrt_resum_ret (E : Type) `{EncodingType E} Γ lrts n
   : ReSumRet (LRTInput (nthLRT lrts n)) (FunStackE E (lrts :: Γ)) :=
   fun args o => unmapLRTsOutput n lrts args o.
 
+(* An EvType is an event type E plus a return type for each event in E *)
+Record EvType : Type :=
+  { evTypeType :> Type@{entree_u};
+    evRetType : evTypeType -> Type@{entree_u} }.
 
-#[global] Instance Monad_entree_spec {E} `{EncodedType E} : Monad (entree_spec E) :=
-  Monad_entree.
+Instance EncodingType_EvType (E:EvType) : EncodingType E :=
+  fun e => evRetType E e.
 
 (* The SpecM monad is the entree_spec monad with FunStackE as the event type *)
-Definition SpecM (E : Type@{entree_u}) `{EncodedType E} Γ A : Type@{entree_u} :=
+Definition SpecM (E:EvType) Γ A : Type@{entree_u} :=
   entree_spec (FunStackE E Γ) A.
 
-Definition RetS {E} `{EncodedType E} {Γ A} (a : A) : SpecM E Γ A := ret a.
-Definition BindS {E} `{EncodedType E} {Γ A B} (m : SpecM E Γ A) (k : A -> SpecM E Γ B) :=
+Definition RetS {E} {Γ A} (a : A) : SpecM E Γ A := ret a.
+Definition BindS {E} {Γ A B} (m : SpecM E Γ A) (k : A -> SpecM E Γ B) :=
   bind m k.
-Definition IterS {E} `{EncodedType E} {Γ A B} (body : A -> SpecM E Γ (A + B)) :
+Definition IterS {E} {Γ A B} (body : A -> SpecM E Γ (A + B)) :
   A -> SpecM E Γ B := EnTree.iter body.
-Definition AssumeS {E} `{EncodedType E} {Γ} (P : Prop) : SpecM E Γ unit :=
+Definition AssumeS {E} {Γ} (P : Prop) : SpecM E Γ unit :=
   assume_spec P.
-Definition AssertS {E} `{EncodedType E} {Γ} (P : Prop) : SpecM E Γ unit :=
+Definition AssertS {E} {Γ} (P : Prop) : SpecM E Γ unit :=
   assert_spec P.
-Definition ForallS {E} `{EncodedType E} {Γ} (A : Set) : SpecM E Γ A :=
+Definition ForallS {E} {Γ} (A : Type) `{QuantType A} : SpecM E Γ A :=
   forall_spec A.
-Definition ExistsS {E} `{EncodedType E} {Γ} (A : Set) : SpecM E Γ A :=
+Definition ExistsS {E} {Γ} (A : Type) `{QuantType A} : SpecM E Γ A :=
   exists_spec A.
-Definition TriggerS {E} `{EncodedType E} {Γ} (e : E) : SpecM E Γ (encodes e) := trigger e.
-Definition ErrorS {E} `{EncodedType E} {Γ} A (str : string) : SpecM E Γ A :=
+Definition TriggerS {E:EvType} {Γ} (e : E) : SpecM E Γ (encodes e) := trigger e.
+Definition ErrorS {E} {Γ} A (str : string) : SpecM E Γ A :=
   bind (trigger (mkErrorE str)) (fun (x:void) => match x with end).
+
+#[global] Instance ReSum_nil_FunStack E (Γ : FunStack) :
+  ReSum (SpecEvent (FunStackE E nil)) (SpecEvent (FunStackE E Γ)) :=
+  fun e => match e with
+           | Spec_vis (inl el) => Spec_vis (resum el)
+           | Spec_vis (inr er) => Spec_vis (resum er)
+           | Spec_forall T => Spec_forall T
+           | Spec_exists T => Spec_exists T
+           end.
+
+#[global] Instance ReSumRet_nil_FunStack (E:EvType) (Γ : FunStack) :
+  ReSumRet (SpecEvent (FunStackE E nil)) (SpecEvent (FunStackE E Γ)) :=
+  fun e =>
+    match e return encodes (ReSum_nil_FunStack E Γ e) -> encodes e with
+    | Spec_vis (inl el) => fun x => resum_ret el x
+    | Spec_vis (inr er) => fun x => resum_ret er x
+    | Spec_forall T => fun x => x
+    | Spec_exists T => fun x => x
+    end.
+
+
+(* Lift a SpecM in the empty FunStack to an arbitrary FunStack *)
+Definition liftStackS {E} {Γ} A (t:SpecM E nil A) : SpecM E Γ A :=
+  resumEntree A t.
 
 (* Compute the type forall a b c ... . SpecM ... (R a b c ...) from an lrt *)
 (*
-Fixpoint LRTType E `{EncodedType E} Γ (lrt : LetRecType) : Type@{entree_u} :=
+Fixpoint LRTType E `{EncodingType E} Γ (lrt : LetRecType) : Type@{entree_u} :=
   match lrt with
   | LRT_Ret R => SpecM E Γ R
   | LRT_Fun A rest => forall (a : A), LRTType E Γ (rest a)
   end.
 *)
-Definition LRTType E `{EncodedType E} Γ lrt : Type@{entree_u} :=
+Definition LRTType E Γ lrt : Type@{entree_u} :=
   lrtPi lrt (fun args => SpecM E Γ (LRTOutput lrt args)).
 
 (* Create a recursive call to a function in the top-most frame *)
-Definition CallS E `{EncodedType E} Γ Frame n : LRTType E (Frame :: Γ) (nthLRT Frame n) :=
+Definition CallS E Γ Frame n : LRTType E (Frame :: Γ) (nthLRT Frame n) :=
   lrtLambda
     (nthLRT Frame n)
     (fun args => SpecM E (Frame :: Γ) (LRTOutput _ args))
     (fun args => trigger args).
 
 (* Build the right-nested tuple type of a list of functions of type LRTType *)
-Fixpoint LRTsTuple E `{EncodedType E} Γ (lrts : LetRecTypes) : Type :=
+Fixpoint LRTsTuple E Γ (lrts : LetRecTypes) : Type :=
   match lrts with
   | nil => unit
   | lrt :: lrts' => LRTType E Γ lrt * LRTsTuple E Γ lrts'
   end.
 
 (* Convert an LRTsTuple to a function from an LRTsInput to an LRTsOutput *)
-Fixpoint LRTsTupleFun E `{EncodedType E} Γ (lrts : LetRecTypes) :
+Fixpoint LRTsTupleFun E Γ (lrts : LetRecTypes) :
   LRTsTuple E Γ lrts -> forall args, SpecM E Γ (LRTsOutput lrts args) :=
   match lrts return LRTsTuple E Γ lrts ->
                     forall args, SpecM E Γ (LRTsOutput lrts args) with
@@ -329,14 +358,14 @@ Fixpoint LRTsTupleFun E `{EncodedType E} Γ (lrts : LetRecTypes) :
       end
   end.
 
-#[global] Instance SpecM_Monad {E} `{EncodedType E} Γ : Monad (SpecM E Γ) :=
+#[global] Instance SpecM_Monad {E} Γ : Monad (SpecM E Γ) :=
   {|
     ret := fun A a => RetS a;
     bind := fun A B m k => BindS m k;
   |}.
 
 (* Create a multi-way fixed point of a sequence of functions *)
-Definition MultiFixS E `{EncodedType E} Γ Frame
+Definition MultiFixS E Γ Frame
            (bodies : LRTsTuple E (Frame :: Γ) Frame) n :
   LRTType E Γ (nthLRT Frame n) :=
   lrtLambda
@@ -372,7 +401,7 @@ Definition StateT S M A := S -> M (S * A)%type.
                                | (s'', inr r) => ret (inr (s'', r))
                                end)) (s,i).
 
-Definition interpWithState {E1 E2} `{EncodedType E1} `{EncodedType E2} {St}
+Definition interpWithState {E1 E2} `{EncodingType E1} `{EncodingType E2} {St}
            (h : forall e:E1, StateT St (entree E2) (encodes e)) {A} :
   entree E1 A -> StateT St (entree E2) A :=
   iter (fun t =>
@@ -386,7 +415,7 @@ End interpWithState.
 
 (* Corecursively looks for performances of exceptional effects. If an
    exceptional performance is caught, then `catch` is performed instead. *)
-Program CoFixpoint try_catch {E} `{EncodedType E} {Γ} {A} {B} 
+Program CoFixpoint try_catch {E:EvType} {Γ} {A} {B}
     (is_exceptional : FunStackE E Γ -> option A)
     (catch : A -> SpecM E Γ B) :
     SpecM E Γ B -> SpecM E Γ B :=
