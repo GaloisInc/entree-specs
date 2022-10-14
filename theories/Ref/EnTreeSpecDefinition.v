@@ -100,6 +100,53 @@ Definition forall_spec {E} `{EncodingType E} (A : Type) `{QuantType A} : entree_
 Definition exists_spec {E} `{EncodingType E} (A : Type) `{QuantType A} : entree_spec E A :=
   Vis (Spec_exists (quantEnc (A:=A))) (fun a => Ret (quantEnum a)).
 
+
+Lemma forall_spec_correctr {E1 E2} `{EncodingType E1} `{EncodingType E2} 
+      (A : Type) `{QuantType A} R1 R2  RPre RPost RR
+      (k : A -> entree_spec E2 R1) (t : entree_spec E1 R2) :
+  (forall a : A, refines RPre RPost RR t (k a)) ->
+  refines RPre RPost RR t (EnTree.bind (forall_spec A) k).
+Proof.
+  intros. pstep. red. cbn. constructor. cbn. intros. simpl.
+  pstep_reverse. auto with entree_spec. apply monotone_refines_.
+  apply H2.
+Qed.
+
+Lemma forall_spec_correctl {E1 E2} `{EncodingType E1} `{EncodingType E2} 
+      (A : Type) `{QuantType A} R1 R2  RPre RPost RR
+      (k : A -> entree_spec E2 R1) (t : entree_spec E1 R2) :
+  (exists a : A, refines RPre RPost RR (k a) t) ->
+  refines RPre RPost RR (EnTree.bind (forall_spec A) k) t.
+Proof.
+  intros. destruct H2 as [a Ha]. pstep. red.
+  specialize (quantEnumSurjective a) as Hq. econstructor.
+  Unshelve. 2 : exact (quantEnumInv a). rewrite Hq. simpl. pstep_reverse.
+  apply monotone_refines_.
+Qed.
+
+Lemma exists_spec_correctr {E1 E2} `{EncodingType E1} `{EncodingType E2} 
+      (A : Type) `{QuantType A} R1 R2  RPre RPost RR
+      (k : A -> entree_spec E2 R1) (t : entree_spec E1 R2) :
+  (exists a : A, refines RPre RPost RR t (k a)) ->
+  refines RPre RPost RR t (EnTree.bind (exists_spec A) k).
+Proof.
+  intros. destruct H2 as [a Ha]. pstep. red.
+  specialize (quantEnumSurjective a) as Hq. econstructor.
+  Unshelve. 2 : exact (quantEnumInv a). rewrite Hq. simpl. pstep_reverse.
+  apply monotone_refines_.
+Qed.
+
+Lemma exists_spec_correctl {E1 E2} `{EncodingType E1} `{EncodingType E2} 
+      (A : Type) `{QuantType A} R1 R2  RPre RPost RR
+      (k : A -> entree_spec E2 R1) (t : entree_spec E1 R2) :
+  (forall a : A, refines RPre RPost RR t (k a)) ->
+  refines RPre RPost RR t (EnTree.bind (forall_spec A) k).
+Proof.
+  intros. pstep. red. cbn. constructor. cbn. intros. simpl.
+  pstep_reverse. auto with entree_spec. apply monotone_refines_.
+  apply H2.
+Qed.
+
 (* 
    need padded refines
    Tomorrow write headers for important theorems and lemmas, not necessarily important to prove them yet 
