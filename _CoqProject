@@ -8,4 +8,6 @@ theories/Eq/Eqit.v
 theories/Ref/Padded.v
 theories/Ref/EnTreeSpecDefinition.v
 theories/Ref/MRecSpec.v
+theories/Ref/EnTreeSpecFacts.v
 theories/Ref/SpecM.v
+theories/Ref/Automation.v
