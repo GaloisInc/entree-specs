@@ -1,4 +1,10 @@
-From Coq Require Export Morphisms Setoid Program.Equality.
+From Coq Require Export
+     Morphisms
+     Setoid
+     Program.Equality
+     Lists.List
+.
+
 From EnTree Require Import
      Basics.HeterogeneousRelations
      Basics.QuantType
@@ -125,7 +131,7 @@ Lemma spec_refines_forall_l E1 E2 Γ1 Γ2 R1 R2 A `{QuantType A}
 Admitted.
 
 
-(** Refinement rules for the SpecM combinators **)
+(** Refinement rules for if-then-else **)
 
 Lemma spec_refines_if_r E1 E2 Γ1 Γ2 R1 R2
       RPre RPost RR (t1 : SpecM E1 Γ1 R1) (t2 t3 : SpecM E2 Γ2 R2) b :
@@ -162,4 +168,83 @@ Lemma spec_refines_if_bind_l E1 E2 Γ1 Γ2 R1 R2 A
 Proof.
   intros; destruct b; eauto.
 Qed.
+
+
+(** Refinement rules for lists **)
+
+Lemma spec_refines_match_list_r E1 E2 Γ1 Γ2 RPre RPost R1 R2 RR A
+      (t1 : SpecM E1 Γ1 R1) (t2 : A -> list A -> SpecM E2 Γ2 R2)
+      (t3 : SpecM E2 Γ2 R2) xs :
+  (forall x xs', xs = x :: xs' -> spec_refines RPre RPost RR t1 (t2 x xs')) ->
+  (xs = nil -> spec_refines RPre RPost RR t1 t3) ->
+  spec_refines RPre RPost RR t1 (match xs with | x :: xs' => t2 x xs' | nil => t3 end).
+Proof.
+  intros. destruct xs; eauto.
+Qed.
+
+Lemma spec_refines_match_list_l E1 E2 Γ1 Γ2 RPre RPost R1 R2 RR A
+      (t3 : SpecM E2 Γ2 R2)
+      (t1 : A -> list A -> SpecM E1 Γ1 R1) (t2 : SpecM E1 Γ1 R1) xs :
+  (forall x xs', xs = x :: xs' -> spec_refines RPre RPost RR (t1 x xs') t3) ->
+  (xs = nil -> spec_refines RPre RPost RR t2 t3) ->
+  spec_refines RPre RPost RR (match xs with | x :: xs' => t1 x xs' | nil => t2 end) t3.
+Proof.
+  intros. destruct xs; eauto.
+Qed.
+
+Lemma spec_refines_match_list_bind_r B E1 E2 Γ1 Γ2 RPre RPost R1 R2 RR A
+      (t1 : SpecM E1 Γ1 R1)
+      (t2 : A -> list A -> SpecM E2 Γ2 B) (t3 : SpecM E2 Γ2 B)
+      (t4 : B -> SpecM E2 Γ2 R2) xs :
+  spec_refines RPre RPost RR t1 (match xs with | x :: xs' => t2 x xs' >>= t4 | nil => t3 >>= t4 end) ->
+  spec_refines RPre RPost RR t1 ((match xs with | x :: xs' => t2 x xs' | nil => t3 end) >>= t4).
+Proof.
+  intros. destruct xs; eauto.
+Qed.
+
+Lemma spec_refines_match_list_bind_l B E1 E2 Γ1 Γ2 RPre RPost R1 R2 RR A
+      (t3 : SpecM E2 Γ2 R2)
+      (t1 : A -> list A -> SpecM E1 Γ1 B) (t2 : SpecM E1 Γ1 B)
+      (t4 : B -> SpecM E1 Γ1 R1) xs :
+  spec_refines RPre RPost RR (match xs with | x :: xs' => t1 x xs' >>= t4 | nil => t2 >>= t4 end) t3 ->
+  spec_refines RPre RPost RR ((match xs with | x :: xs' => t1 x xs' | nil => t2 end) >>= t4) t3.
+Proof.
+  intros. destruct xs; eauto.
+Qed.
+
+
+(** Refinement rules for pairs **)
+
+Lemma spec_refines_match_pair_r E1 E2 Γ1 Γ2 RPre RPost R1 R2 RR A B
+      (t1 : SpecM E1 Γ1 R1) (t2 : A -> B -> SpecM E2 Γ2 R2) pr :
+  (forall x y, pr = (x, y) -> spec_refines RPre RPost RR t1 (t2 x y)) ->
+  spec_refines RPre RPost RR t1 (match pr with | (x,y) => t2 x y end).
+Proof.
+  intros. destruct pr; eauto.
+Qed.
+Lemma spec_refines_match_pair_l E1 E2 Γ1 Γ2 RPre RPost R1 R2 RR A B
+      (t1 : A -> B -> SpecM E1 Γ1 R1) (t2 : SpecM E2 Γ2 R2) pr :
+  (forall x y, pr = (x, y) -> spec_refines RPre RPost RR (t1 x y) t2) ->
+  spec_refines RPre RPost RR (match pr with | (x,y) => t1 x y end) t2.
+Proof.
+  intros. destruct pr; eauto.
+Qed.
+
+Lemma spec_refines_match_pair_bind_r C E1 E2 Γ1 Γ2 RPre RPost R1 R2 RR A B
+      (t1 : SpecM E1 Γ1 R1) (t2 : A -> B -> SpecM E2 Γ2 C)
+      (t3 : C -> SpecM E2 Γ2 R2) pr :
+  spec_refines RPre RPost RR t1 (match pr with | (x,y) => t2 x y >>= t3 end) ->
+  spec_refines RPre RPost RR t1 ((match pr with | (x,y) => t2 x y end) >>= t3).
+Proof.
+  intros. destruct pr; eauto.
+Qed.
+Lemma spec_refines_match_pair_bind_l C E1 E2 Γ1 Γ2 RPre RPost R1 R2 RR A B
+      (t1 : A -> B -> SpecM E1 Γ1 C) (t2 : SpecM E2 Γ2 R2)
+      (t3 : C -> SpecM E1 Γ1 R1) pr :
+  spec_refines RPre RPost RR (match pr with | (x,y) => t1 x y >>= t3 end) t2 ->
+  spec_refines RPre RPost RR ((match pr with | (x,y) => t1 x y end) >>= t3) t2.
+Proof.
+  intros. destruct pr; eauto.
+Qed.
+
 
