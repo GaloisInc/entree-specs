@@ -28,8 +28,8 @@ Context {E : Type} `{EncodingType E} {R : Type}.
 Variant paddedF (F : entree E R -> Prop) : entree' E R -> Prop :=
   | paddedF_Ret r : paddedF F (RetF r)
   | paddedF_Tau t : F t -> paddedF F (TauF t)
-  | paddedF_Vis (e : E) (k : encodes e -> entree E R) : 
-    (forall a, exists t, observe (k a) = TauF t /\ F t ) -> paddedF F (VisF e k)
+  | paddedF_Vis e (k : encodes e -> entree E R) :
+    (forall a, F (k a)) -> paddedF F (VisF e (fun a => (Tau (k a))))
 .
 Hint Constructors paddedF : entree_spec.
 
@@ -38,17 +38,16 @@ Definition padded_ sim := fun t => paddedF sim (observe t).
 Lemma padded_monotone_ : monotone1 padded_.
 Proof with eauto with entree_spec. 
   red. unfold padded_. intros. 
-  induction IN... econstructor. intros. specialize (H0 a). 
-  destruct H0 as [? [? ?] ]. eauto.
+  induction IN...
 Qed.
 
 Hint Resolve padded_monotone_ : entree_spec.
 
 Definition padded := paco1 padded_ bot1.
 
-Lemma padded_VisF_inv e k F : paddedF F (VisF e k) -> (forall a : encodes e, exists t, observe (k a) = TauF t /\ F t).
+Lemma padded_VisF_inv e k F : paddedF F (VisF e k) -> exists k', forall a, k a ≅ Tau (k' a).
 Proof with eauto with entree_spec.
-  intros. dependent destruction H0...
+  intros. dependent destruction H0... eexists. reflexivity.
 Qed.
 
 
@@ -84,15 +83,25 @@ Theorem pad_is_padded {E : Type} `{EncodingType E} {R : Type} : forall t : entre
 Proof with eauto with entree_spec.
   pcofix CIH. intros. pstep. unfold pad.
   destruct (observe t); eauto. constructor. constructor. right. eauto.
-  econstructor. intros. eexists. split; [reflexivity | ]. right. eauto.
+  econstructor. intros. eauto.
 Qed.
-
+#[global] Hint Resolve padded_monotone_ : paco.
+#[global] Hint Resolve padded_monotone_ : entree_spec.
 #[global] Hint Resolve pad_is_padded : entree_spec.
 
 Theorem pad_eutt {E : Type} `{EncodingType E} {R : Type} : forall t : entree E R, t ≈ pad t.
 Proof with eauto with entree_spec.
-(*easier to do with gpaco*)
-Admitted.
+  ginit. gcofix CIH. intros.
+  unfold pad.
+  destruct (observe t) eqn : Ht; symmetry in Ht; apply simpobs in Ht.
+  - rewrite <- Ht. gstep. constructor. auto.
+  - rewrite <- Ht. gstep. red. cbn. constructor.
+    gfinal. eauto.
+  - rewrite <- Ht. gstep. red. cbn.
+    constructor. intros. red.
+    rewrite tau_euttge.
+    gfinal. eauto.
+Qed.
 
 (* Lemma padded_bind *)
 (* Lemma padded_iter*)

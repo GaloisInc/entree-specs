@@ -31,12 +31,17 @@ Arguments Spec_vis {_} _.
 Arguments Spec_forall {_} _.
 Arguments Spec_exists {_} _.
 
+Definition SpecEvent_encodes E `{EncodingType E} (e : SpecEvent E) :=
+  match e with
+  | Spec_vis e => encodes e
+  | Spec_forall k => encodes k
+  | Spec_exists k => encodes k
+  end.
+
+
 
 #[global] Instance SpecEventEncoding E `{EncodingType E} : EncodingType (SpecEvent E) :=
-  fun e => match e with
-                   | Spec_vis e => encodes e
-                   | Spec_forall k => encodes k
-                   | Spec_exists k => encodes k end.
+  SpecEvent_encodes E.
 
 #[global] Instance SpecEventReSum E1 E2 `{ReSum E1 E2} : ReSum E1 (SpecEvent E2) :=
   fun e => Spec_vis (resum e).
