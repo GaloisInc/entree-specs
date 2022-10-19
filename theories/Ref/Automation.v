@@ -253,18 +253,18 @@ Qed.
 
 Lemma spec_refines_call_bind (E1 E2 : EvType) Γ1 Γ2 Frame1 Frame2 R1 R2
       (RPre : SpecPreRel E1 E2 (Frame1 :: Γ1) (Frame2 :: Γ2))
-      (RPost : SpecPostRel E1 E2 _ _)
+      (RPost : SpecPostRel E1 E2 (Frame1 :: Γ1) (Frame2 :: Γ2))
       RR (args1 : LRTsInput Frame1) (args2 : LRTsInput Frame2)
-      (k1 : encodes args1 -> SpecM E1 _ R1)
-      (k2 : encodes args2 -> SpecM E2 _ R2) :
-  RPre (resum args1) (resum args2) ->
+      (k1 : encodes args1 -> SpecM E1 (Frame1 :: Γ1) R1)
+      (k2 : encodes args2 -> SpecM E2 (Frame2 :: Γ2) R2) :
+  RPre (inl args1) (inl args2) ->
   (forall r1 r2,
-      RPost (resum args1) (resum args2) r1 r2 ->
+      RPost (inl args1) (inl args2) r1 r2 ->
       spec_refines RPre RPost RR (k1 (resum_ret args1 r1)) (k2 (resum_ret args2 r2))) ->
   spec_refines RPre RPost RR (Call1 _ _ _ args1 >>= k1) (Call1 _ _ _ args2 >>= k2).
 Admitted.
 
-(* Add a precondition relation to a new frame on the FunStack *)
+(* Add a precondition relation for a new frame on the FunStack *)
 Definition pushPreRel (E1 E2 : EvType) Γ1 Γ2 Frame1 Frame2
            (precond : Rel (LRTsInput Frame1) (LRTsInput Frame2))
            (RPre : SpecPreRel E1 E2 Γ1 Γ2) :
@@ -275,7 +275,7 @@ Definition pushPreRel (E1 E2 : EvType) Γ1 Γ2 Frame1 Frame2
                | _, _ => False
                end.
 
-(* Add a postcondition relation to a new frame on the FunStack *)
+(* Add a postcondition relation for a new frame on the FunStack *)
 Definition pushPostRel (E1 E2 : EvType) Γ1 Γ2 Frame1 Frame2
            (postcond : PostRel (LRTsInput Frame1) (LRTsInput Frame2))
            (RPost : SpecPostRel E1 E2 Γ1 Γ2) :
