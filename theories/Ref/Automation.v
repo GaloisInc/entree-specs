@@ -251,24 +251,27 @@ Qed.
 
 (** Refinement rules for recursion **)
 
-Lemma spec_refines_call_bind (E1 E2 : EvType) Γ1 Γ2 Frame1 Frame2 R1 R2
-      (RPre : SpecPreRel E1 E2 (Frame1 :: Γ1) (Frame2 :: Γ2))
-      (RPost : SpecPostRel E1 E2 (Frame1 :: Γ1) (Frame2 :: Γ2))
-      RR (args1 : LRTsInput Frame1) (args2 : LRTsInput Frame2)
-      (k1 : encodes args1 -> SpecM E1 (Frame1 :: Γ1) R1)
-      (k2 : encodes args2 -> SpecM E2 (Frame2 :: Γ2) R2) :
-  RPre (inl args1) (inl args2) ->
+(* The bind of one recursive call refines the bind of another if the recursive
+   calls are in the current RPre and, for all return values for them in RPost,
+   the bind continuations refine each other *)
+Lemma spec_refines_call_bind (E1 E2 : EvType) Γ1 Γ2 frame1 frame2 R1 R2
+      (RPre : SpecPreRel E1 E2 (frame1 :: Γ1) (frame2 :: Γ2))
+      (RPost : SpecPostRel E1 E2 (frame1 :: Γ1) (frame2 :: Γ2))
+      RR (call1 : FrameCall frame1) (call2 : FrameCall frame2)
+      (k1 : FrameCallOut frame1 call1 -> SpecM E1 (frame1 :: Γ1) R1)
+      (k2 : FrameCallOut frame2 call2 -> SpecM E2 (frame2 :: Γ2) R2) :
+  RPre (inl call1) (inl call2) ->
   (forall r1 r2,
-      RPost (inl args1) (inl args2) r1 r2 ->
-      spec_refines RPre RPost RR (k1 (resum_ret args1 r1)) (k2 (resum_ret args2 r2))) ->
-  spec_refines RPre RPost RR (Call1 _ _ _ args1 >>= k1) (Call1 _ _ _ args2 >>= k2).
+      RPost (inl call1) (inl call2) r1 r2 ->
+      spec_refines RPre RPost RR (k1 (resum_ret call1 r1)) (k2 (resum_ret call2 r2))) ->
+  spec_refines RPre RPost RR (CallS _ _ _ call1 >>= k1) (CallS _ _ _ call2 >>= k2).
 Admitted.
 
 (* Add a precondition relation for a new frame on the FunStack *)
-Definition pushPreRel (E1 E2 : EvType) Γ1 Γ2 Frame1 Frame2
-           (precond : Rel (LRTsInput Frame1) (LRTsInput Frame2))
+Definition pushPreRel {E1 E2 : EvType} {Γ1 Γ2 frame1 frame2}
+           (precond : Rel (FrameCall frame1) (FrameCall frame2))
            (RPre : SpecPreRel E1 E2 Γ1 Γ2) :
-  SpecPreRel E1 E2 (Frame1 :: Γ1) (Frame2 :: Γ2) :=
+  SpecPreRel E1 E2 (frame1 :: Γ1) (frame2 :: Γ2) :=
   fun a1 a2 => match a1,a2 with
                | inl args1, inl args2 => precond args1 args2
                | inr a1', inr a2' => RPre a1' a2'
@@ -276,12 +279,42 @@ Definition pushPreRel (E1 E2 : EvType) Γ1 Γ2 Frame1 Frame2
                end.
 
 (* Add a postcondition relation for a new frame on the FunStack *)
-Definition pushPostRel (E1 E2 : EvType) Γ1 Γ2 Frame1 Frame2
-           (postcond : PostRel (LRTsInput Frame1) (LRTsInput Frame2))
+Definition pushPostRel {E1 E2 : EvType} {Γ1 Γ2 frame1 frame2}
+           (postcond : PostRel (FrameCall frame1) (FrameCall frame2))
            (RPost : SpecPostRel E1 E2 Γ1 Γ2) :
-  SpecPostRel E1 E2 (Frame1 :: Γ1) (Frame2 :: Γ2) :=
+  SpecPostRel E1 E2 (frame1 :: Γ1) (frame2 :: Γ2) :=
   fun a1 a2 => match a1,a2 with
                | inl args1, inl args2 => postcond args1 args2
                | inr a1', inr a2' => RPost a1' a2'
                | _, _ => fun _ _ => False
                end.
+
+(* The bind of one multifix refines the bind of another if: the recursive calls
+   which start the multifixes are related to each other by the supplied
+   precondition; the bodies of the multifixes refine each other and return
+   values that satisfy the supplied postcondition for all calls that satisfy the
+   precondition; and that the bind continuations refine each other for all
+   outputs in the supplied postcondition *)
+Lemma spec_refines_multifix_bind (E1 E2 : EvType) Γ1 Γ2 frame1 frame2 R1 R2
+      (RPre : SpecPreRel E1 E2 Γ1 Γ2) (RPost : SpecPostRel E1 E2 Γ1 Γ2) RR
+      (bodies1 : FrameTuple E1 (frame1 :: Γ1) frame1)
+      (bodies2 : FrameTuple E2 (frame2 :: Γ2) frame2)
+      (call1 : FrameCall frame1) (call2 : FrameCall frame2)
+      (k1 : FrameCallOut frame1 call1 -> SpecM E1 Γ1 R1)
+      (k2 : FrameCallOut frame2 call2 -> SpecM E2 Γ2 R2)
+      (precond : Rel (FrameCall frame1) (FrameCall frame2))
+      (postcond : PostRel (FrameCall frame1) (FrameCall frame2)) :
+  precond call1 call2 ->
+  (forall call1' call2',
+      precond call1' call2' ->
+      spec_refines (pushPreRel precond RPre) (pushPostRel postcond RPost)
+                   (postcond call1' call2')
+                   (applyFrameTuple _ _ _ bodies1 call1')
+                   (applyFrameTuple _ _ _ bodies2 call2')) ->
+  (forall r1 r2,
+      postcond call1 call2 r1 r2 ->
+      spec_refines RPre RPost RR (k1 r1) (k2 r2)) ->
+  spec_refines RPre RPost RR
+               (MultiFixS E1 Γ1 frame1 bodies1 call1 >>= k1)
+               (MultiFixS E2 Γ2 frame2 bodies2 call2 >>= k2).
+Admitted.
