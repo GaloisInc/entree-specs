@@ -350,8 +350,8 @@ Definition LRTType E Γ lrt : Type@{entree_u} :=
 
 (* Create a recursive call to a function in the top-most frame *)
 Definition CallS E Γ frame (call : FrameCall frame) :
-  SpecM E (frame :: Γ) (encodes call) :=
-  trigger call.
+  SpecM E (frame :: Γ) (FrameCallOut frame call) :=
+  trigger (H2:=@SpecEventReSumRet _ _ _ _ _ _) call.
 
 (* Build the right-nested tuple type of a list of functions in a RecFrame *)
 Fixpoint FrameTuple E Γ (frame : RecFrame) : Type :=
