@@ -274,7 +274,7 @@ Definition pushPreRel {E1 E2 : EvType} {Γ1 Γ2 frame1 frame2}
   SpecPreRel E1 E2 (frame1 :: Γ1) (frame2 :: Γ2) :=
   fun a1 a2 => match a1,a2 with
                | inl args1, inl args2 => precond args1 args2
-               | inr a1', inr a2' => RPre a1' a2'
+               | inr ev1, inr ev2 => RPre ev1 ev2
                | _, _ => False
                end.
 
@@ -285,7 +285,7 @@ Definition pushPostRel {E1 E2 : EvType} {Γ1 Γ2 frame1 frame2}
   SpecPostRel E1 E2 (frame1 :: Γ1) (frame2 :: Γ2) :=
   fun a1 a2 => match a1,a2 with
                | inl args1, inl args2 => postcond args1 args2
-               | inr a1', inr a2' => RPost a1' a2'
+               | inr ev1, inr ev2 => RPost ev1 ev2
                | _, _ => fun _ _ => False
                end.
 
@@ -317,4 +317,86 @@ Lemma spec_refines_multifix_bind (E1 E2 : EvType) Γ1 Γ2 frame1 frame2 R1 R2
   spec_refines RPre RPost RR
                (MultiFixS E1 Γ1 frame1 bodies1 call1 >>= k1)
                (MultiFixS E2 Γ2 frame2 bodies2 call2 >>= k2).
+Admitted.
+
+(* Build a RecFrame with a single, unary function *)
+Definition unary1Frame (A B : Type) : RecFrame :=
+  cons (LRT_Fun A (fun _ => LRT_Ret B)) nil.
+
+(* Repeat a specification n times *)
+Fixpoint trepeat {E Γ R} (n : nat) (s : SpecM E Γ R) : SpecM E Γ unit :=
+  match n with
+  | 0 => Ret tt
+  | S m => s;; trepeat m s
+  end.
+
+(* The total correctness specification *)
+Definition total_spec {E Γ A B} `{QuantType B}
+           (pre : A -> Prop) (post : A -> B -> Prop) (a : A) : SpecM E Γ B :=
+  AssumeS (pre a);;
+  b <- ExistsS B;;
+  AssertS (post a b);;
+  Ret b.
+
+(* The one-step unfolding of total_spec with recursive calls *)
+Definition total_spec_fix_body {E Γ A B} `{QuantType A} `{QuantType B}
+           (pre : A -> Prop) (post : A -> B -> Prop) (rdec : A -> A -> Prop)
+           (a : A) : SpecM E (unary1Frame A B :: Γ) B :=
+  AssumeS (pre a);;
+  n <- ExistsS nat;;
+  trepeat n (a' <- ExistsS A;;
+             AssertS (pre a' /\ rdec a' a);;
+             CallS E Γ _ (mkFrameCall (unary1Frame A B) 0 a'));;
+  b <- exists_spec B;;
+  AssertS (post a b);;
+  Ret b.
+
+(* Add a precondition relation for proving total_spec refinement *)
+Definition pushTSPreRel {E1 E2 : EvType} {Γ1 Γ2 frame1 A2 B2}
+           (pre : A2 -> Prop) (preEq : Rel (FrameCall frame1) A2)
+           (RPre : SpecPreRel E1 E2 Γ1 Γ2) :
+  SpecPreRel E1 E2 (frame1 :: Γ1) (unary1Frame A2 B2 :: Γ2) :=
+  fun a1 a2 => match a1,a2 with
+               | inl args1, inl (inl (existT _ a2 _)) =>
+                 pre a2 /\ preEq args1 a2
+               | inr ev1, inr ev2 => RPre ev1 ev2
+               | _, _ => False
+               end.
+
+(* Add a postcondition relation for proving total_spec refinement *)
+Definition pushTSPostRel {E1 E2 : EvType} {Γ1 Γ2 frame1 A2 B2}
+           (post : A2 -> B2 -> Prop)
+           (postEq : forall call1', A2 -> FrameCallOut frame1 call1' -> B2 -> Prop)
+           (RPost : SpecPostRel E1 E2 Γ1 Γ2) :
+  SpecPostRel E1 E2 (frame1 :: Γ1) (unary1Frame A2 B2 :: Γ2) :=
+  fun a1 a2 => match a1,a2 return encodes a1 -> encodes a2 -> Prop with
+               | inl args1, inl (inl (existT _ a2 _)) =>
+                 fun r1 b2 => post a2 b2 /\ postEq args1 a2 r1 b2
+               | inr a1', inr a2' => RPost a1' a2'
+               | _, _ => fun _ _ => False
+               end.
+
+Lemma spec_refines_total_spec (E1 E2 : EvType) Γ1 Γ2 frame1
+      A2 B2 `{QuantType A2} `{QuantType B2}
+      (RPre : SpecPreRel E1 E2 Γ1 Γ2) (RPost : SpecPostRel E1 E2 Γ1 Γ2)
+      (bodies1 : FrameTuple E1 (frame1 :: Γ1) frame1)
+      (call1 : FrameCall frame1) (a2 : A2)
+      (RR : Rel (FrameCallOut frame1 call1) B2)
+      (preEq : Rel (FrameCall frame1) A2)
+      (postEq : forall call1' a2', FrameCallOut frame1 call1' -> B2 -> Prop)
+      (pre : A2 -> Prop) (post : A2 -> B2 -> Prop)
+      (rdec : A2 -> A2 -> Prop) :
+  well_founded rdec ->
+  pre a2 -> preEq call1 a2 ->
+  (forall r1 r2, postEq call1 a2 r1 r2 -> RR r1 r2) ->
+  (forall call1' a2',
+      pre a2' -> preEq call1' a2' ->
+      spec_refines (pushTSPreRel pre preEq RPre)
+                   (pushTSPostRel post postEq RPost)
+                   (postEq call1' a2')
+                   (applyFrameTuple _ _ _ bodies1 call1')
+                   (total_spec_fix_body pre post rdec a2')) ->
+  spec_refines RPre RPost RR
+               (MultiFixS E1 Γ1 frame1 bodies1 call1)
+               (total_spec pre post a2).
 Admitted.
