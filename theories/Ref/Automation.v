@@ -94,7 +94,7 @@ Instance ReSum_FunStack_EvType (E : EvType) Γ : ReSum E (FunStackE E Γ) :=
 Instance ReSumRet_FunStack_EvType (E : EvType) Γ : ReSumRet E (FunStackE E Γ) :=
   ReSumRet_FunStackE_E _ _.
 
-Lemma spec_refines_trigger (E1 E2 : EvType) Γ1 Γ2 R1 R2
+Lemma spec_refines_trigger_bind (E1 E2 : EvType) Γ1 Γ2 R1 R2
       (RPre : SpecPreRel E1 E2 Γ1 Γ2) (RPost : SpecPostRel E1 E2 Γ1 Γ2)
       RR (e1 : E1) (e2 : E2)
       (k1 : encodes e1 -> SpecM E1 Γ1 R1)
@@ -130,6 +130,7 @@ Lemma spec_refines_forall_l E1 E2 Γ1 Γ2 R1 R2 A `{QuantType A}
   spec_refines RPre RPost RR (ForallS A >>= kphi) phi.
 Admitted.
 
+(* FIXME: need rules to add binds to all the unary combinators *)
 
 (** Refinement rules for if-then-else **)
 
@@ -248,3 +249,39 @@ Proof.
 Qed.
 
 
+(** Refinement rules for recursion **)
+
+Lemma spec_refines_call_bind (E1 E2 : EvType) Γ1 Γ2 Frame1 Frame2 R1 R2
+      (RPre : SpecPreRel E1 E2 (Frame1 :: Γ1) (Frame2 :: Γ2))
+      (RPost : SpecPostRel E1 E2 _ _)
+      RR (args1 : LRTsInput Frame1) (args2 : LRTsInput Frame2)
+      (k1 : encodes args1 -> SpecM E1 _ R1)
+      (k2 : encodes args2 -> SpecM E2 _ R2) :
+  RPre (resum args1) (resum args2) ->
+  (forall r1 r2,
+      RPost (resum args1) (resum args2) r1 r2 ->
+      spec_refines RPre RPost RR (k1 (resum_ret args1 r1)) (k2 (resum_ret args2 r2))) ->
+  spec_refines RPre RPost RR (Call1 _ _ _ args1 >>= k1) (Call1 _ _ _ args2 >>= k2).
+Admitted.
+
+(* Add a precondition relation to a new frame on the FunStack *)
+Definition pushPreRel (E1 E2 : EvType) Γ1 Γ2 Frame1 Frame2
+           (precond : Rel (LRTsInput Frame1) (LRTsInput Frame2))
+           (RPre : SpecPreRel E1 E2 Γ1 Γ2) :
+  SpecPreRel E1 E2 (Frame1 :: Γ1) (Frame2 :: Γ2) :=
+  fun a1 a2 => match a1,a2 with
+               | inl args1, inl args2 => precond args1 args2
+               | inr a1', inr a2' => RPre a1' a2'
+               | _, _ => False
+               end.
+
+(* Add a postcondition relation to a new frame on the FunStack *)
+Definition pushPostRel (E1 E2 : EvType) Γ1 Γ2 Frame1 Frame2
+           (postcond : PostRel (LRTsInput Frame1) (LRTsInput Frame2))
+           (RPost : SpecPostRel E1 E2 Γ1 Γ2) :
+  SpecPostRel E1 E2 (Frame1 :: Γ1) (Frame2 :: Γ2) :=
+  fun a1 a2 => match a1,a2 with
+               | inl args1, inl args2 => postcond args1 args2
+               | inr a1', inr a2' => RPost a1' a2'
+               | _, _ => fun _ _ => False
+               end.

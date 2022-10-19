@@ -257,14 +257,25 @@ Definition mkFunStackE' E Γ fnum n
   mkFunStackE E Γ fnum (mkLRTsInput n _ args).
 
 (* Embed a call in the top level of the FunStack into a FunStackE *)
-#[global] Instance FunStackE_lrt_resum (E : Type) (Γ : FunStack) lrts n :
+#[global] Instance ReSum_LRTInput_FunStackE (E : Type) (Γ : FunStack) lrts n :
   ReSum (LRTInput (nthLRT lrts n)) (FunStackE E (lrts :: Γ)) :=
   fun args => inl (mkLRTsInput n lrts args).
 
 (* Map the return value for embedding a call in the top level to a FunStackE *)
-#[global] Instance FunStackE_lrt_resum_ret (E : Type) `{EncodingType E} Γ lrts n
+#[global] Instance ReSumRet_LRTInput_FunStackE (E : Type) `{EncodingType E} Γ lrts n
   : ReSumRet (LRTInput (nthLRT lrts n)) (FunStackE E (lrts :: Γ)) :=
   fun args o => unmapLRTsOutput n lrts args o.
+
+(* Embed a call in the top level of the FunStack into a FunStackE *)
+#[global] Instance ReSum_LRTsInput_FunStackE (E : Type) (Γ : FunStack) lrts :
+  ReSum (LRTsInput lrts) (FunStackE E (lrts :: Γ)) :=
+  fun args => inl args.
+
+(* Map the return value for embedding a call in the top level to a FunStackE *)
+#[global] Instance ReSumRet_LRTsInput_FunStackE (E : Type) `{EncodingType E} Γ lrts :
+  ReSumRet (LRTsInput lrts) (FunStackE E (lrts :: Γ)) :=
+  fun args o => o.
+
 
 (* An EvType is an event type E plus a return type for each event in E *)
 Record EvType : Type :=
@@ -330,12 +341,19 @@ Fixpoint LRTType E `{EncodingType E} Γ (lrt : LetRecType) : Type@{entree_u} :=
 Definition LRTType E Γ lrt : Type@{entree_u} :=
   lrtPi lrt (fun args => SpecM E Γ (LRTOutput lrt args)).
 
+(* Create a recursive call to a function in the top-most frame using a single
+argument that bundles all the arguments into a nested dependent product *)
+Definition Call1 E Γ Frame (args : LRTsInput Frame) :
+  SpecM E (Frame :: Γ) (encodes args) :=
+  trigger args.
+
 (* Create a recursive call to a function in the top-most frame *)
 Definition CallS E Γ Frame n : LRTType E (Frame :: Γ) (nthLRT Frame n) :=
   lrtLambda
     (nthLRT Frame n)
     (fun args => SpecM E (Frame :: Γ) (LRTOutput _ args))
-    (fun args => trigger args).
+    (fun args =>
+       bind (Call1 _ _ _ (resum args)) (fun ret => Ret (resum_ret args ret))).
 
 (* Build the right-nested tuple type of a list of functions of type LRTType *)
 Fixpoint LRTsTuple E Γ (lrts : LetRecTypes) : Type :=
