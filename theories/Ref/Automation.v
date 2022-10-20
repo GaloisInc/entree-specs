@@ -258,8 +258,8 @@ Lemma spec_refines_call_bind (E1 E2 : EvType) Γ1 Γ2 frame1 frame2 R1 R2
       (RPre : SpecPreRel E1 E2 (frame1 :: Γ1) (frame2 :: Γ2))
       (RPost : SpecPostRel E1 E2 (frame1 :: Γ1) (frame2 :: Γ2))
       RR (call1 : FrameCall frame1) (call2 : FrameCall frame2)
-      (k1 : FrameCallOut frame1 call1 -> SpecM E1 (frame1 :: Γ1) R1)
-      (k2 : FrameCallOut frame2 call2 -> SpecM E2 (frame2 :: Γ2) R2) :
+      (k1 : FrameCallRet frame1 call1 -> SpecM E1 (frame1 :: Γ1) R1)
+      (k2 : FrameCallRet frame2 call2 -> SpecM E2 (frame2 :: Γ2) R2) :
   RPre (inl call1) (inl call2) ->
   (forall r1 r2,
       RPost (inl call1) (inl call2) r1 r2 ->
@@ -300,8 +300,8 @@ Lemma spec_refines_multifix_bind (E1 E2 : EvType) Γ1 Γ2 frame1 frame2 R1 R2
       (bodies1 : FrameTuple E1 (frame1 :: Γ1) frame1)
       (bodies2 : FrameTuple E2 (frame2 :: Γ2) frame2)
       (call1 : FrameCall frame1) (call2 : FrameCall frame2)
-      (k1 : FrameCallOut frame1 call1 -> SpecM E1 Γ1 R1)
-      (k2 : FrameCallOut frame2 call2 -> SpecM E2 Γ2 R2)
+      (k1 : FrameCallRet frame1 call1 -> SpecM E1 Γ1 R1)
+      (k2 : FrameCallRet frame2 call2 -> SpecM E2 Γ2 R2)
       (precond : Rel (FrameCall frame1) (FrameCall frame2))
       (postcond : PostRel (FrameCall frame1) (FrameCall frame2)) :
   precond call1 call2 ->
@@ -357,7 +357,7 @@ Definition pushTSPreRel {E1 E2 : EvType} {Γ1 Γ2 frame1 A2 B2}
            (RPre : SpecPreRel E1 E2 Γ1 Γ2) :
   SpecPreRel E1 E2 (frame1 :: Γ1) (unary1Frame A2 B2 :: Γ2) :=
   fun a1 a2 => match a1,a2 with
-               | inl args1, inl (inl (existT _ a2 _)) =>
+               | inl args1, inl (FrameCallOfArgs _ 0 (existT _ a2 _)) =>
                  pre a2 /\ preEq args1 a2
                | inr ev1, inr ev2 => RPre ev1 ev2
                | _, _ => False
@@ -366,11 +366,11 @@ Definition pushTSPreRel {E1 E2 : EvType} {Γ1 Γ2 frame1 A2 B2}
 (* Add a postcondition relation for proving total_spec refinement *)
 Definition pushTSPostRel {E1 E2 : EvType} {Γ1 Γ2 frame1 A2 B2}
            (post : A2 -> B2 -> Prop)
-           (postEq : forall call1', A2 -> FrameCallOut frame1 call1' -> B2 -> Prop)
+           (postEq : forall call1', A2 -> FrameCallRet frame1 call1' -> B2 -> Prop)
            (RPost : SpecPostRel E1 E2 Γ1 Γ2) :
   SpecPostRel E1 E2 (frame1 :: Γ1) (unary1Frame A2 B2 :: Γ2) :=
   fun a1 a2 => match a1,a2 return encodes a1 -> encodes a2 -> Prop with
-               | inl args1, inl (inl (existT _ a2 _)) =>
+               | inl args1, inl (FrameCallOfArgs _ 0 (existT _ a2 _)) =>
                  fun r1 b2 => post a2 b2 /\ postEq args1 a2 r1 b2
                | inr a1', inr a2' => RPost a1' a2'
                | _, _ => fun _ _ => False
@@ -381,9 +381,9 @@ Lemma spec_refines_total_spec (E1 E2 : EvType) Γ1 Γ2 frame1
       (RPre : SpecPreRel E1 E2 Γ1 Γ2) (RPost : SpecPostRel E1 E2 Γ1 Γ2)
       (bodies1 : FrameTuple E1 (frame1 :: Γ1) frame1)
       (call1 : FrameCall frame1) (a2 : A2)
-      (RR : Rel (FrameCallOut frame1 call1) B2)
+      (RR : Rel (FrameCallRet frame1 call1) B2)
       (preEq : Rel (FrameCall frame1) A2)
-      (postEq : forall call1' a2', FrameCallOut frame1 call1' -> B2 -> Prop)
+      (postEq : forall call1' a2', FrameCallRet frame1 call1' -> B2 -> Prop)
       (pre : A2 -> Prop) (post : A2 -> B2 -> Prop)
       (rdec : A2 -> A2 -> Prop) :
   well_founded rdec ->
