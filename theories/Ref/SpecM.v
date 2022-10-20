@@ -98,25 +98,25 @@ Fixpoint LRTOutput lrt : EncodingType (LRTInput lrt) :=
    same time *)
 Definition RecFrame := list LetRecType.
 
-(* The type of a recursive call to one of the functions in a RecFrame *)
-Fixpoint FrameCall (frame : RecFrame) : Type@{entree_u} :=
+(* Arguments for a recursive call to one of the functions in a RecFrame *)
+Fixpoint FrameCallArgs (frame : RecFrame) : Type@{entree_u} :=
   match frame with
   | nil => void
-  | lrt :: frame' => LRTInput lrt + (FrameCall frame')
+  | lrt :: frame' => LRTInput lrt + (FrameCallArgs frame')
   end.
 
-(* The output type for calling a recursive function in a RecFrame *)
-Fixpoint FrameCallOut (frame : RecFrame) : FrameCall frame -> Type@{entree_u} :=
-  match frame return FrameCall frame -> Type with
+(* The return type for calling a recursive function in a RecFrame *)
+Fixpoint FrameCallRet (frame : RecFrame) : FrameCallArgs frame -> Type@{entree_u} :=
+  match frame return FrameCallArgs frame -> Type with
   | nil => fun x => match x with end
   | lrt :: frame' => fun x => match x with
                               | inl args => LRTOutput lrt args
-                              | inr e => FrameCallOut frame' e
+                              | inr e => FrameCallRet frame' e
                               end
   end.
 
-#[global] Instance FrameCallOutEncoding lrt : EncodingType (FrameCall lrt) :=
-  FrameCallOut lrt.
+#[global] Instance FrameCallRetEncoding lrt : EncodingType (FrameCallArgs lrt) :=
+  FrameCallRet lrt.
 
 (* A version of nth_default that does primary recursion on the list *)
 Fixpoint nth_default' {A} (d : A) (l : list A) n : A :=
@@ -132,45 +132,53 @@ Fixpoint nth_default' {A} (d : A) (l : list A) n : A :=
 Definition nthLRT (frame : RecFrame) n : LetRecType :=
   nth_default' (LRT_Fun void (fun _ => LRT_Ret void)) frame n.
 
-(* Embed an LRTInput (nthLRT frame n) into an FrameCall frame *)
-Fixpoint embedFrameCall (frame : RecFrame) n
-  : LRTInput (nthLRT frame n) -> FrameCall frame :=
-  match frame return LRTInput (nthLRT frame n) -> FrameCall frame with
+(* Embed an LRTInput (nthLRT frame n) into an FrameCallArgs frame *)
+Fixpoint embedFrameCallArgs (frame : RecFrame) n
+  : LRTInput (nthLRT frame n) -> FrameCallArgs frame :=
+  match frame return LRTInput (nthLRT frame n) -> FrameCallArgs frame with
   | nil => fun x => match projT1 x with end
   | lrt :: frame' =>
-    match n return LRTInput (nthLRT (lrt :: frame') n) -> FrameCall (lrt :: frame') with
+    match n return LRTInput (nthLRT (lrt :: frame') n) -> FrameCallArgs (lrt :: frame') with
     | 0 => fun args => inl args
-    | S n' => fun args => inr (embedFrameCall frame' n' args)
+    | S n' => fun args => inr (embedFrameCallArgs frame' n' args)
     end
   end.
 
+(* A call to a recursive function in a frame with a particular output type *)
+Inductive FrameCall (frame : RecFrame) : Type -> Type :=
+  EmbedFrameCall n (args : LRTInput (nthLRT frame n)) :
+    FrameCall frame (LRTOutput (nthLRT frame n) args).
+
 (* Make a recursive call from its individual arguments *)
 Definition mkFrameCall (frame : RecFrame) n
-  : lrtPi (nthLRT frame n) (fun _ => FrameCall frame) :=
-  lrtLambda (nthLRT frame n) (fun _ => FrameCall frame) (embedFrameCall frame n).
+  : lrtPi (nthLRT frame n)
+          (fun args => FrameCall frame (LRTOutput (nthLRT frame n) args)) :=
+  lrtLambda (nthLRT frame n)
+            (fun args => FrameCall frame (LRTOutput (nthLRT frame n) args))
+            (EmbedFrameCall frame n).
 
 (* Get the output of a recursive call at the correct type for that call *)
 Fixpoint getCallOutput frame n :
-  forall args, FrameCallOut frame (embedFrameCall frame n args) ->
+  forall args, FrameCallRet frame (embedFrameCallArgs frame n args) ->
                LRTOutput (nthLRT frame n) args :=
-  match frame return forall args, FrameCallOut frame (embedFrameCall frame n args) ->
+  match frame return forall args, FrameCallRet frame (embedFrameCallArgs frame n args) ->
                                   LRTOutput (nthLRT frame n) args with
   | nil => fun x => match projT1 x with end
   | lrt :: frame' =>
     match n return
           forall args,
-            FrameCallOut (lrt :: frame') (embedFrameCall (lrt :: frame') n args) ->
+            FrameCallRet (lrt :: frame') (embedFrameCallArgs (lrt :: frame') n args) ->
             LRTOutput (nthLRT (lrt :: frame') n) args with
     | 0 => fun args o => o
     | S n' => getCallOutput frame' n'
     end
   end.
 
-(* ReSum instances for embedding the nth LRTInput into an FrameCall *)
+(* ReSum instances for embedding the nth LRTInput into a FrameCallArgs *)
 #[global] Instance FrameCall_ReSum frame n :
-  ReSum (LRTInput (nthLRT frame n)) (FrameCall frame) := embedFrameCall frame n.
+  ReSum (LRTInput (nthLRT frame n)) (FrameCallArgs frame) := embedFrameCallArgs frame n.
 #[global] Instance FrameCall_ReSumRet frame n :
-  ReSumRet (LRTInput (nthLRT frame n)) (FrameCall frame) :=
+  ReSumRet (LRTInput (nthLRT frame n)) (FrameCallArgs frame) :=
   getCallOutput frame n.
 
 (* A FunStack is a list of RecFrame representing all of the functions bound
@@ -188,7 +196,7 @@ Inductive ErrorE : Set :=
 Fixpoint FunStackE (E : Type) (Γ : FunStack) : Type@{entree_u} :=
   match Γ with
   | nil => ErrorE + E
-  | frame :: Γ' => FrameCall frame + FunStackE E Γ'
+  | frame :: Γ' => FrameCallArgs frame + FunStackE E Γ'
   end.
 
 (* Compute the output type for a FunStackE event *)
@@ -197,7 +205,7 @@ Fixpoint FunStackE_encodes (E : Type) `{EncodingType E} (Γ : FunStack) :
   match Γ return FunStackE E Γ -> Type with
   | nil => fun e => encodes e
   | frame :: Γ' => fun e => match e with
-                            | inl args => FrameCallOut frame args
+                            | inl args => FrameCallRet frame args
                             | inr args => FunStackE_encodes E Γ' args
                             end
   end.
@@ -239,12 +247,12 @@ Fixpoint FunStackE_embed_ev_unmap (E : Type) `{EncodingType E} Γ e
 Definition nthFrame (Γ : FunStack) fnum : RecFrame :=
   nth_default' nil Γ fnum.
 
-(* Embed an FrameCall for the fnum-th frame of a FunStack into FunStackE *)
-Fixpoint mkFunStackE E Γ fnum : FrameCall (nthFrame Γ fnum) -> FunStackE E Γ :=
-  match Γ return FrameCall (nthFrame Γ fnum) -> FunStackE E Γ with
+(* Embed a FrameCallArgs for the fnum-th frame of a FunStack into FunStackE *)
+Fixpoint mkFunStackE E Γ fnum : FrameCallArgs (nthFrame Γ fnum) -> FunStackE E Γ :=
+  match Γ return FrameCallArgs (nthFrame Γ fnum) -> FunStackE E Γ with
   | nil => fun x => match x with end
   | frame :: Γ' =>
-    match fnum return FrameCall (nthFrame (frame :: Γ') fnum) ->
+    match fnum return FrameCallArgs (nthFrame (frame :: Γ') fnum) ->
                       FunStackE E (frame :: Γ') with
     | 0 => fun args => inl args
     | S fnum' => fun args => inr (mkFunStackE E Γ' fnum' args)
@@ -255,12 +263,12 @@ Fixpoint mkFunStackE E Γ fnum : FrameCall (nthFrame Γ fnum) -> FunStackE E Γ 
    into FunStackE *)
 Definition mkFunStackE' E Γ fnum n
            (args:LRTInput (nthLRT (nthFrame Γ fnum) n)) : FunStackE E Γ :=
-  mkFunStackE E Γ fnum (embedFrameCall _ n args).
+  mkFunStackE E Γ fnum (embedFrameCallArgs _ n args).
 
 (* Embed a call in the top level of the FunStack into a FunStackE *)
 #[global] Instance ReSum_LRTInput_FunStackE (E : Type) (Γ : FunStack) frame n :
   ReSum (LRTInput (nthLRT frame n)) (FunStackE E (frame :: Γ)) :=
-  fun args => inl (embedFrameCall frame n args).
+  fun args => inl (embedFrameCallArgs frame n args).
 
 (* Map the return value for embedding a call in the top level to a FunStackE *)
 #[global] Instance ReSumRet_LRTInput_FunStackE (E : Type) `{EncodingType E} Γ frame n
@@ -269,12 +277,12 @@ Definition mkFunStackE' E Γ fnum n
 
 (* Embed a call in the top level of the FunStack into a FunStackE *)
 #[global] Instance ReSum_FrameCall_FunStackE (E : Type) (Γ : FunStack) frame :
-  ReSum (FrameCall frame) (FunStackE E (frame :: Γ)) :=
+  ReSum (FrameCallArgs frame) (FunStackE E (frame :: Γ)) :=
   fun args => inl args.
 
 (* Map the return value for embedding a call in the top level to a FunStackE *)
 #[global] Instance ReSumRet_FrameCall_FunStackE (E : Type) `{EncodingType E} Γ frame :
-  ReSumRet (FrameCall frame) (FunStackE E (frame :: Γ)) :=
+  ReSumRet (FrameCallArgs frame) (FunStackE E (frame :: Γ)) :=
   fun args o => o.
 
 
@@ -348,10 +356,17 @@ Fixpoint LRTType E `{EncodingType E} Γ (lrt : LetRecType) : Type@{entree_u} :=
 Definition LRTType E Γ lrt : Type@{entree_u} :=
   lrtPi lrt (fun args => SpecM E Γ (LRTOutput lrt args)).
 
+(* Create a recursive call to a function in the top-most using args *)
+Definition CallArgs E Γ frame (args : FrameCallArgs frame) :
+  SpecM E (frame :: Γ) (FrameCallRet frame args) :=
+  trigger (H2:=@SpecEventReSumRet _ _ _ _ _ _) args.
+
 (* Create a recursive call to a function in the top-most frame *)
-Definition CallS E Γ frame (call : FrameCall frame) :
-  SpecM E (frame :: Γ) (FrameCallOut frame call) :=
-  trigger (H2:=@SpecEventReSumRet _ _ _ _ _ _) call.
+Definition CallS E Γ frame R (call : FrameCall frame R) :
+  SpecM E (frame :: Γ) R :=
+  match call in FrameCall _ R return SpecM E (frame :: Γ) R with
+  | EmbedFrameCall _ n args => trigger args
+  end.
 
 (* Build the right-nested tuple type of a list of functions in a RecFrame *)
 Fixpoint FrameTuple E Γ (frame : RecFrame) : Type :=
@@ -360,26 +375,31 @@ Fixpoint FrameTuple E Γ (frame : RecFrame) : Type :=
   | lrt :: frame' => LRTType E Γ lrt * FrameTuple E Γ frame'
   end.
 
-(* Apply a FrameTuple to a FrameCall to get a FrameCallOut *)
+(* Apply a FrameTuple to a FrameCall to get a FrameCallRet *)
 Fixpoint applyFrameTuple E Γ (frame : RecFrame) :
-  FrameTuple E Γ frame -> forall call, SpecM E Γ (FrameCallOut frame call) :=
+  FrameTuple E Γ frame -> forall call, SpecM E Γ (FrameCallRet frame call) :=
   match frame return FrameTuple E Γ frame ->
-                     forall call, SpecM E Γ (FrameCallOut frame call) with
+                     forall call, SpecM E Γ (FrameCallRet frame call) with
   | nil => fun _ x => match x with end
   | lrt :: frame' =>
     fun fs call =>
-      match call return SpecM E Γ (FrameCallOut (lrt :: frame') call) with
+      match call return SpecM E Γ (FrameCallRet (lrt :: frame') call) with
       | inl callL => lrtApply lrt _ (fst fs) callL
       | inr callR => applyFrameTuple E Γ frame' (snd fs) callR
       end
   end.
 
 (* Create a multi-way fixed point of a sequence of functions *)
+(*
 Definition MultiFixS E Γ frame
-           (bodies : FrameTuple E (frame :: Γ) frame)
-           (call : FrameCall frame) : SpecM E Γ (FrameCallOut frame call) :=
-  mrec_spec (applyFrameTuple E (frame :: Γ) frame bodies) call.
-
+           (bodies : FrameTuple E (frame :: Γ) frame) R
+           (call : FrameCall frame R) : SpecM E Γ R :=
+  match call in FrameCall _ R return SpecM E (frame :: Γ) R with
+  | EmbedFrameCall _ n args =>
+    
+    mrec_spec (applyFrameTuple E (frame :: Γ) frame bodies) args
+  end.
+*)
 
 Section interpWithState.
 Import ExtLib.Structures.Functor.
