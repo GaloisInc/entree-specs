@@ -30,6 +30,15 @@ Definition SpecPreRel (E1 E2 : EvType) Γ1 Γ2 :=
 Definition SpecPostRel (E1 E2 : EvType) Γ1 Γ2 :=
   PostRel (FunStackE E1 Γ1) (FunStackE E2 Γ2).
 
+(* The precondition requiring events on both sides to be equal *)
+Variant eqPreRel {E Γ} : SpecPreRel E E Γ Γ :=
+  | eqPreRel_refl e : eqPreRel e e.
+
+(* The postcondition requiring return values on both sides to be equal *)
+Variant eqPostRel {E Γ} : SpecPostRel E E Γ Γ :=
+  | eqPostRel_refl e a : eqPostRel e e a a.
+
+(* Spec refinement = padded refinement *)
 Definition spec_refines {E1 E2 : EvType} {Γ1 Γ2}
            (RPre : SpecPreRel E1 E2 Γ1 Γ2) (RPost : SpecPostRel E1 E2 Γ1 Γ2)
            {R1 R2} (RR : Rel R1 R2)
@@ -249,6 +258,40 @@ Proof.
 Qed.
 
 
+(** The trepeat combinator **)
+
+(* Repeat a specification n times *)
+Fixpoint trepeat {E Γ R} (n : nat) (s : SpecM E Γ R) : SpecM E Γ unit :=
+  match n with
+  | 0 => Ret tt
+  | S m => s;; trepeat m s
+  end.
+
+Lemma spec_refines_trepeat_zero_r E1 E2 Γ1 Γ2 R1 R2 RPre RPost RR
+      (t1 : SpecM E1 Γ1 R1) (t2 : SpecM E2 Γ2 R2) :
+  spec_refines RPre RPost RR t1 (Ret tt) ->
+  spec_refines RPre RPost RR t1 (trepeat 0 t2).
+Proof. eauto. Qed.
+
+Lemma spec_refines_trepeat_suc_r E1 E2 Γ1 Γ2 R1 R2 RPre RPost RR
+      (t1 : SpecM E1 Γ1 R1) n (t2 : SpecM E2 Γ2 R2) :
+  spec_refines RPre RPost RR t1 (t2 ;; trepeat n t2) ->
+  spec_refines RPre RPost RR t1 (trepeat (S n) t2).
+Proof. eauto. Qed.
+
+Lemma spec_refines_trepeat_bind_zero_r E1 E2 Γ1 Γ2 R1 R2 R3 RPre RPost RR
+      (t1 : SpecM E1 Γ1 R1) (t2 : SpecM E2 Γ2 R2) (t3 : unit -> SpecM E2 Γ2 R3) :
+  spec_refines RPre RPost RR t1 (t3 tt) ->
+  spec_refines RPre RPost RR t1 (trepeat 0 t2 >>= t3).
+Proof. eauto. Qed.
+
+Lemma spec_refines_trepeat_bind_suc_r E1 E2 Γ1 Γ2 R1 R2 R3 RPre RPost RR
+      (t1 : SpecM E1 Γ1 R1) n (t2 : SpecM E2 Γ2 R2) (t3 : unit -> SpecM E2 Γ2 R3) :
+  spec_refines RPre RPost RR t1 (t2 ;; (trepeat n t2 >>= t3)) ->
+  spec_refines RPre RPost RR t1 (trepeat (S n) t2 >>= t3).
+Proof. simpl; rewrite bind_bind; eauto. Qed.
+
+
 (** Refinement rules for recursion **)
 
 (* The bind of one recursive call refines the bind of another if the recursive
@@ -323,13 +366,6 @@ Admitted.
 Definition unary1Frame (A B : Type) : RecFrame :=
   cons (LRT_Fun A (fun _ => LRT_Ret B)) nil.
 
-(* Repeat a specification n times *)
-Fixpoint trepeat {E Γ R} (n : nat) (s : SpecM E Γ R) : SpecM E Γ unit :=
-  match n with
-  | 0 => Ret tt
-  | S m => s;; trepeat m s
-  end.
-
 (* The total correctness specification *)
 Definition total_spec {E Γ A B} `{QuantType B}
            (pre : A -> Prop) (post : A -> B -> Prop) (a : A) : SpecM E Γ B :=
@@ -400,3 +436,225 @@ Lemma spec_refines_total_spec (E1 E2 : EvType) Γ1 Γ2 frame1
                (MultiFixS E1 Γ1 frame1 bodies1 call1)
                (total_spec pre post a2).
 Admitted.
+
+
+(***
+ *** Hints for automation
+ ***)
+
+Create HintDb refines.
+Create HintDb prepostcond.
+
+(* If nothing else works, shelve the current refinement goal *)
+#[global] Hint Extern 999 (spec_refines _ _ _ _ _) => shelve : refines.
+
+(* RelGoal marks a relation goal *)
+Definition RelGoal (goal : Prop) := goal.
+
+#[global] Hint Opaque RelGoal : refines.
+
+(* If nothing else works for a RelGoal, try reflexivity and then shelve it *)
+#[global] Hint Extern 999 (RelGoal _) =>
+  unfold RelGoal; (reflexivity || shelve) : refines.
+
+
+(** IntroArg Definition and Hints **)
+
+(* Classes of variables and their associated naming conventions *)
+Inductive ArgName := Any | RetAny | Hyp | Exists | Forall | If | Match.
+Ltac argName n :=
+  match n with
+  | Any      => fresh "a"
+  | RetAny   => fresh "r"
+  | Hyp      => fresh "H"
+  | Exists   => fresh "e_exists"
+  | Forall   => fresh "e_forall"
+  | If       => fresh "e_if"
+  | Match    => fresh "e_match"
+  end.
+
+(* IntroArg marks a goal which introduces a variable. This is used to control
+   how variables are introduced, allowing them to be eliminated and to give them
+   meaningful names using argName above *)
+Polymorphic Definition IntroArg (n : ArgName) A (goal : A -> Type) :=
+  forall a, goal a.
+
+#[global] Hint Opaque IntroArg : refines prepostcond.
+
+Polymorphic Lemma IntroArg_fold n A goal : forall a, IntroArg n A goal -> goal a.
+Proof. intros a H; exact (H a). Qed.
+
+(* Polymorphic Lemma IntroArg_unfold n A (goal : A -> Prop) : (forall a, goal a) -> IntroArg n A goal. *)
+(* Proof. unfold IntroArg; intro H; exact H. Qed. *)
+
+Ltac IntroArg_intro e := intro e.
+
+Ltac IntroArg_forget := let e := fresh in intro e; clear e.
+
+Polymorphic Lemma IntroArg_eta n A (f : A -> Type) x goal :
+  IntroArg n (f x) goal ->
+  IntroArg n ((fun x' => f x') x) goal.
+Proof. eauto. Qed.
+
+Polymorphic Lemma IntroArg_and n P Q (goal : P /\ Q -> Prop)
+  : IntroArg n P (fun p => IntroArg n Q (fun q => goal (conj p q))) -> IntroArg n _ goal.
+Proof. intros H [ p q ]; apply H. Qed.
+
+Polymorphic Lemma IntroArg_pushPreRel_inl n E1 E2 Γ1 Γ2 frame1 frame2
+            (precond : Rel (FrameCall frame1) (FrameCall frame2))
+            (RPre : SpecPreRel E1 E2 Γ1 Γ2) e1 e2 (goal : _ -> Prop) :
+  IntroArg n (precond e1 e2) goal ->
+  IntroArg n (@pushPreRel E1 E2 Γ1 Γ2 frame1 frame2
+                          precond RPre (inl e1) (inl e2)) goal.
+Proof. intro H. apply H. Qed.
+
+Polymorphic Lemma IntroArg_pushPreRel_inr n E1 E2 Γ1 Γ2 frame1 frame2
+            (precond : Rel (FrameCall frame1) (FrameCall frame2))
+            (RPre : SpecPreRel E1 E2 Γ1 Γ2) e1 e2 (goal : _ -> Prop) :
+  IntroArg n (RPre e1 e2) goal ->
+  IntroArg n (@pushPreRel E1 E2 Γ1 Γ2 frame1 frame2
+                          precond RPre (inr e1) (inr e2)) goal.
+Proof. intro H. apply H. Qed.
+
+Polymorphic Lemma IntroArg_pushPostRel_inl n E1 E2 Γ1 Γ2 frame1 frame2
+            (postcond : PostRel (FrameCall frame1) (FrameCall frame2))
+            (RPost : SpecPostRel E1 E2 Γ1 Γ2)
+            (call1 : FrameCall frame1) (call2 : FrameCall frame2)
+            r1 r2 (goal : _ -> Prop) :
+  IntroArg n (postcond _ _ r1 r2) goal ->
+  IntroArg n (@pushPostRel E1 E2 Γ1 Γ2 frame1 frame2
+                           postcond RPost (inl call1) (inl call2) r1 r2) goal.
+Proof. intro H. apply H. Qed.
+
+Polymorphic Lemma IntroArg_pushPostRel_inr n E1 E2 Γ1 Γ2 frame1 frame2
+            (postcond : PostRel (FrameCall frame1) (FrameCall frame2))
+            (RPost : SpecPostRel E1 E2 Γ1 Γ2)
+            e1 e2 r1 r2 (goal : _ -> Prop) :
+  IntroArg n (RPost _ _ r1 r2) goal ->
+  IntroArg n (@pushPostRel E1 E2 Γ1 Γ2 frame1 frame2
+                           postcond RPost (inr e1) (inr e2) r1 r2) goal.
+Proof. intro H. apply H. Qed.
+
+
+Polymorphic Lemma IntroArg_pushTSPreRel_inl n E1 E2 Γ1 Γ2 frame1 A2 B2
+            (pre : A2 -> Prop) (preEq : Rel (FrameCall frame1) A2)
+            (RPre : SpecPreRel E1 E2 Γ1 Γ2)
+            args1 a2 (goal : _ -> Prop) :
+  IntroArg n (pre a2 /\ preEq args1 a2) goal ->
+  IntroArg n (@pushTSPreRel E1 E2 Γ1 Γ2 frame1 A2 B2
+                            pre preEq RPre (inl args1)
+                            (inl (mkFrameCall (unary1Frame A2 B2) 0 a2))) goal.
+Proof. intro H. apply H. Qed.
+
+Polymorphic Lemma IntroArg_pushTSPreRel_inr n E1 E2 Γ1 Γ2 frame1 A2 B2
+            (pre : A2 -> Prop) (preEq : Rel (FrameCall frame1) A2)
+            (RPre : SpecPreRel E1 E2 Γ1 Γ2)
+            e1 e2 (goal : _ -> Prop) :
+  IntroArg n (RPre e1 e2) goal ->
+  IntroArg n (@pushTSPreRel E1 E2 Γ1 Γ2 frame1 A2 B2
+                            pre preEq RPre (inr e1) (inr e2)) goal.
+Proof. intro H. apply H. Qed.
+
+Polymorphic Lemma IntroArg_pushTSPostRel_inl n E1 E2 Γ1 Γ2 frame1 A2 B2
+            (post : A2 -> B2 -> Prop)
+            (postEq : forall call1', A2 -> FrameCallRet frame1 call1' -> B2 -> Prop)
+            (RPost : SpecPostRel E1 E2 Γ1 Γ2)
+            args1 a2 r1 b2 (goal : _ -> Prop) :
+  IntroArg n (post a2 b2 /\ postEq args1 a2 r1 b2) goal ->
+  IntroArg n (@pushTSPostRel E1 E2 Γ1 Γ2 frame1 A2 B2
+                             post postEq RPost (inl args1)
+                             (inl (mkFrameCall (unary1Frame A2 B2) 0 a2)) r1 b2) goal.
+Proof. intro H. apply H. Qed.
+
+Polymorphic Lemma IntroArg_pushTSPostRel_inr n E1 E2 Γ1 Γ2 frame1 A2 B2
+            (post : A2 -> B2 -> Prop)
+            (postEq : forall call1', A2 -> FrameCallRet frame1 call1' -> B2 -> Prop)
+            (RPost : SpecPostRel E1 E2 Γ1 Γ2)
+            e1 e2 r1 r2 (goal : _ -> Prop) :
+  IntroArg n (RPost e1 e2 r1 r2) goal ->
+  IntroArg n (@pushTSPostRel E1 E2 Γ1 Γ2 frame1 A2 B2
+                             post postEq RPost (inr e1) (inr e2) r1 r2) goal.
+Proof. intro H. apply H. Qed.
+
+Ltac IntroArg_intro_dependent_destruction n :=
+  let e := argName n in
+    IntroArg_intro e; dependent destruction e.
+
+(* FIXME: not sure what this needs to be...
+Ltac IntroArg_base_tac n A g :=
+  lazymatch A with
+  | (fun _ => _) _ => simple apply IntroArg_eta
+  | _ /\ _ => simple apply IntroArg_and
+  | sumPreRel _ _ _ _ (inl1 _) (inl1 _) => simple apply IntroArg_sumPreRel_inl
+  | sumPreRel _ _ _ _ (inl1 _) (ReSum_inl _ _ _ _ _ _ _) => apply IntroArg_sumPreRel_inl
+  | sumPreRel _ _ _ _ (ReSum_inl _ _ _ _ _ _ _) (inl1 _) => apply IntroArg_sumPreRel_inl
+  | sumPreRel _ _ _ _ (ReSum_inl _ _ _ _ _ _ _) (ReSum_inl _ _ _ _ _ _ _) => apply IntroArg_sumPreRel_inl
+  | sumPreRel _ _ _ _ (inr1 _) (inr1 _) => simple apply IntroArg_sumPreRel_inr
+  | sumPreRel _ _ _ _ (inr1 _) (ReSum_inr _ _ _ _ _ _ _) => apply IntroArg_sumPreRel_inr
+  | sumPreRel _ _ _ _ (ReSum_inr _ _ _ _ _ _ _) (inr1 _) => apply IntroArg_sumPreRel_inr
+  | sumPreRel _ _ _ _ (ReSum_inr _ _ _ _ _ _ _) (ReSum_inr _ _ _ _ _ _ _) => apply IntroArg_sumPreRel_inr
+  | sumPreRel _ _ _ _ (inl1 _) (inr1 _) => IntroArg_intro_dependent_destruction n
+  | sumPreRel _ _ _ _ (inl1 _) (ReSum_inr _ _ _ _ _ _ _) => IntroArg_intro_dependent_destruction n
+  | sumPreRel _ _ _ _ (ReSum_inl _ _ _ _ _ _ _) (inr1 _) => IntroArg_intro_dependent_destruction n
+  | sumPreRel _ _ _ _ (ReSum_inl _ _ _ _ _ _ _) (ReSum_inr _ _ _ _ _ _ _) => IntroArg_intro_dependent_destruction n
+  | sumPreRel _ _ _ _ (inr1 _) (inl1 _) => IntroArg_intro_dependent_destruction n
+  | sumPreRel _ _ _ _ (inr1 _) (ReSum_inl _ _ _ _ _ _ _) => IntroArg_intro_dependent_destruction n
+  | sumPreRel _ _ _ _ (ReSum_inr _ _ _ _ _ _ _) (inl1 _) => IntroArg_intro_dependent_destruction n
+  | sumPreRel _ _ _ _ (ReSum_inr _ _ _ _ _ _ _) (ReSum_inl _ _ _ _ _ _ _) => IntroArg_intro_dependent_destruction n
+  | sumPostRel _ _ _ _ (inl1 _) (inl1 _) _ _ => simple apply IntroArg_sumPostRel_inl
+  | sumPostRel _ _ _ _ (inl1 _) (ReSum_inl _ _ _ _ _ _ _) _ _ => apply IntroArg_sumPostRel_inl
+  | sumPostRel _ _ _ _ (ReSum_inl _ _ _ _ _ _ _) (inl1 _) _ _ => apply IntroArg_sumPostRel_inl
+  | sumPostRel _ _ _ _ (ReSum_inl _ _ _ _ _ _ _) (ReSum_inl _ _ _ _ _ _ _) _ _ => apply IntroArg_sumPostRel_inl
+  | sumPostRel _ _ _ _ (inr1 _) (inr1 _) _ _ => simple apply IntroArg_sumPostRel_inr
+  | sumPostRel _ _ _ _ (inr1 _) (ReSum_inr _ _ _ _ _ _ _) _ _ => apply IntroArg_sumPostRel_inr
+  | sumPostRel _ _ _ _ (ReSum_inr _ _ _ _ _ _ _) (inr1 _) _ _ => apply IntroArg_sumPostRel_inr
+  | sumPostRel _ _ _ _ (ReSum_inr _ _ _ _ _ _ _) (ReSum_inr _ _ _ _ _ _ _) _ _ => apply IntroArg_sumPostRel_inr
+  | sumPostRel _ _ _ _ (inl1 _) (inr1 _) _ _ => IntroArg_intro_dependent_destruction n
+  | sumPostRel _ _ _ _ (inl1 _) (ReSum_inr _ _ _ _ _ _ _) _ _ => IntroArg_intro_dependent_destruction n
+  | sumPostRel _ _ _ _ (ReSum_inl _ _ _ _ _ _ _) (inr1 _) _ _ => IntroArg_intro_dependent_destruction n
+  | sumPostRel _ _ _ _ (ReSum_inl _ _ _ _ _ _ _) (ReSum_inr _ _ _ _ _ _ _) _ _ => IntroArg_intro_dependent_destruction n
+  | sumPostRel _ _ _ _ (inr1 _) (inl1 _) _ _ => IntroArg_intro_dependent_destruction n
+  | sumPostRel _ _ _ _ (inr1 _) (ReSum_inl _ _ _ _ _ _ _) _ _ => IntroArg_intro_dependent_destruction n
+  | sumPostRel _ _ _ _ (ReSum_inr _ _ _ _ _ _ _) (inl1 _) _ _ => IntroArg_intro_dependent_destruction n
+  | sumPostRel _ _ _ _ (ReSum_inr _ _ _ _ _ _ _) (ReSum_inl _ _ _ _ _ _ _) _ _ => IntroArg_intro_dependent_destruction n
+  | eqPostRel _ _ _ _ _ _ => apply IntroArg_eqPostRel
+  | OnCallPreRel _ _ _ _ _ _ _ (Call _) (Call _) => simple apply IntroArg_OnCallPreRel_i
+  | OnCallPostRel _ _ _ _ _ _ _ _ _ (Call _) (Call _) _ _ => simple apply IntroArg_OnCallPostRel_i
+  | true  = true  => IntroArg_intro_dependent_destruction n
+  | false = false => IntroArg_intro_dependent_destruction n
+  | true  = false => IntroArg_intro_dependent_destruction n
+  | false = true  => IntroArg_intro_dependent_destruction n
+  end.
+
+Hint Extern 101 (IntroArg ?n ?A ?g) => IntroArg_base_tac n A g : refines prepostcond.
+*)
+
+#[global] Hint Extern 102 (IntroArg ?n (@eq bool _ _) _) =>
+  let e := argName n in IntroArg_intro e; rewrite e in * : refines prepostcond.
+
+#[global] Hint Extern 199 (IntroArg ?n (?x = ?y) _) =>
+  let e := argName n in IntroArg_intro e;
+    try first [ is_var x; subst x | is_var y; subst y ] : refines.
+
+#[global] Hint Extern 999 (IntroArg ?n _ _) =>
+  let e := argName n in IntroArg_intro e : refines prepostcond.
+
+
+(** Hints for Relation Goals **)
+
+#[global] Lemma RelGoal_beta A (f : A -> Prop) x :
+  RelGoal (f x) -> RelGoal ((fun x' => f x') x).
+Proof. eauto. Qed.
+
+#[global] Hint Extern 101 (RelGoal ((fun _ => _) _)) =>
+  simple apply RelGoal_beta.
+
+Lemma RelGoal_eqPreRel_refl {E Γ e} :
+  RelGoal (@eqPreRel E Γ e e).
+Proof. constructor. Qed.
+
+#[global] Hint Extern 101 (RelGoal (eqPreRel _ _ _ _)) =>
+  apply RelGoal_eqPreRel_refl : refines.
+
+
+(* FIXME: add RelGoal versions of the IntroArg rules for pushPreRel and friends *)
