@@ -354,6 +354,25 @@ Definition MultiFixS E Γ frame
            (call : FrameCall frame) : SpecM E Γ (FrameCallRet frame call) :=
   mrec_spec (applyFrameTuple E (frame :: Γ) frame bodies) call.
 
+
+(** Notations in terms of the SpecM combinators **)
+Module SpecMNotations.
+
+Notation "t1 >>= k2" := (BindS t1 k2)
+                        (at level 58, left associativity) : entree_scope.
+Notation "x <- t1 ;; t2" := (BindS t1 (fun x => t2) )
+                        (at level 61, t1 at next level, right associativity) : entree_scope.
+Notation "t1 ;; t2" := (BindS t1 (fun _ => t2))
+                       (at level 61, right associativity) : entree_scope.
+Notation "' p <- t1 ;; t2" :=
+  (BindS t1 (fun x_ => match x_ with p => t2 end) )
+  (at level 61, t1 at next level, p pattern, right associativity) : entree_scope.
+
+End SpecMNotations.
+
+
+(* Interpreting SpecM computations in the state monad *)
+
 Section interpWithState.
 Import ExtLib.Structures.Functor.
 
