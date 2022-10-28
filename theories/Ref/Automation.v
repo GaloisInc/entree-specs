@@ -19,7 +19,7 @@ From EnTree Require Import
      Eq.Eqit
 .
 
-Import EnTreeNotations.
+Import SpecMNotations.
 Local Open Scope entree_scope.
 
 (***
@@ -356,7 +356,9 @@ Lemma spec_refines_trepeat_bind_suc_r E1 E2 Γ1 Γ2 R1 R2 R3 RPre RPost RR
       (t1 : SpecM E1 Γ1 R1) n (t2 : SpecM E2 Γ2 R2) (t3 : unit -> SpecM E2 Γ2 R3) :
   spec_refines RPre RPost RR t1 (t2 ;; (trepeat n t2 >>= t3)) ->
   spec_refines RPre RPost RR t1 (trepeat (S n) t2 >>= t3).
-Proof. simpl; rewrite bind_bind; eauto. Qed.
+Proof.
+  unfold BindS; simpl; unfold BindS, Monad.bind. rewrite Eqit.bind_bind. eauto.
+Qed.
 
 
 (** Refinement rules for recursion **)
@@ -831,10 +833,168 @@ Proof. intro H. apply H. Qed.
 
 (** Refinement hints using IntroArg and RelGoal **)
 
+(* Ret |= Ret *)
 Definition spec_refines_ret_IntroArg E1 E2 Γ1 Γ2 R1 R2 RPre RPost RR r1 r2 :
   (RelGoal (RR r1 r2 : Prop)) ->
   @spec_refines E1 E2 Γ1 Γ2 R1 R2 RPre RPost RR (RetS r1) (RetS r2) :=
   spec_refines_ret E1 E2 Γ1 Γ2 R1 R2 RPre RPost RR r1 r2.
 
-#[global] Hint Extern 102 (spec_refines _ _ _ (Ret _) (Ret _)) =>
+#[global] Hint Extern 102 (spec_refines _ _ _ (RetS _) (RetS _)) =>
   apply spec_refines_ret_IntroArg : refines.
+
+
+(* Monad laws *)
+
+#[global]
+Hint Extern 101 (spec_refines _ _ _ _ (RetS _ >>= _)) =>
+  simple apply spec_refines_ret_bind_r : refines.
+#[global]
+Hint Extern 101 (spec_refines _ _ _ (RetS _ >>= _) _) =>
+  simple apply spec_refines_ret_bind_l : refines.
+
+#[global]
+Hint Extern 101 (spec_refines _ _ _ _ ((_ >>= _) >>= _)) =>
+  simple apply spec_refines_bind_bind_r : refines.
+#[global]
+Hint Extern 101 (spec_refines _ _ _ ((_ >>= _) >>= _) _) =>
+  simple apply spec_refines_bind_bind_l : refines.
+
+
+(* Trigger |= Trigger *)
+
+Definition spec_refines_trigger_bind_IntroArg (E1 E2 : EvType) Γ1 Γ2 R1 R2
+      (RPre : SpecPreRel E1 E2 Γ1 Γ2) (RPost : SpecPostRel E1 E2 Γ1 Γ2)
+      RR (e1 : E1) (e2 : E2)
+      (k1 : encodes e1 -> SpecM E1 Γ1 R1)
+      (k2 : encodes e2 -> SpecM E2 Γ2 R2) :
+  RelGoal (RPre (resum e1) (resum e2)) ->
+  (IntroArg Any _ (fun a =>
+     IntroArg Any _ (fun b =>
+       IntroArg Hyp (RPost (resum e1) (resum e2) a b) (fun _ =>
+         spec_refines RPre RPost RR (k1 (resum_ret e1 a)) (k2 (resum_ret e2 b)))))) ->
+  spec_refines RPre RPost RR (TriggerS e1 >>= k1) (TriggerS e2 >>= k2) :=
+  spec_refines_trigger_bind E1 E2 Γ1 Γ2 R1 R2 RPre RPost RR e1 e2 k1 k2.
+
+#[global]
+Hint Extern 102 (spec_refines _ _ _ (TriggerS _ >>= _) (TriggerS _ >>= _)) =>
+  apply spec_refines_trigger_bind_IntroArg : refines.
+
+
+Definition spec_refines_exists_l_IntroArg E1 E2 Γ1 Γ2 R1 R2 A `{QuantType A}
+      RPre RPost RR (phi : SpecM E2 Γ2 R2) (kphi : A -> SpecM E1 Γ1 R1) :
+  (IntroArg Exists A (fun a =>spec_refines RPre RPost RR (kphi a) phi)) ->
+  spec_refines RPre RPost RR (ExistsS A >>= kphi) phi :=
+  spec_refines_exists_l E1 E2 Γ1 Γ2 R1 R2 A RPre RPost RR phi kphi.
+
+Definition spec_refines_forall_r_IntroArg E1 E2 Γ1 Γ2 R1 R2 A `{QuantType A}
+      RPre RPost RR (phi : SpecM E1 Γ1 R1) (kphi : A -> SpecM E2 Γ2 R2) :
+  (IntroArg Forall A (fun a => spec_refines RPre RPost RR phi (kphi a))) ->
+  spec_refines RPre RPost RR phi (ForallS A >>= kphi) :=
+  spec_refines_forall_r E1 E2 Γ1 Γ2 R1 R2 A RPre RPost RR phi kphi.
+
+#[global] Hint Extern 101 (spec_refines _ _ _ _ (ForallS _ >>= _)) =>
+  simple apply spec_refines_forall_r_IntroArg : refines.
+#[global] Hint Extern 101 (spec_refines _ _ _ (ExistsS _ >>= _) _) =>
+  simple apply spec_refines_exists_l_IntroArg : refines.
+
+#[global] Hint Extern 102 (spec_refines _ _ _ _ (ExistsS _ >>= _)) =>
+  unshelve (simple eapply spec_refines_exists_r); [shelve|] : refines.
+#[global] Hint Extern 102 (spec_refines _ _ _ (ForallS _ >>= _) _) =>
+  unshelve (simple eapply spec_refines_forall_l); [shelve|] : refines.
+
+
+Definition spec_refines_if_r_IntroArg E1 E2 Γ1 Γ2 R1 R2
+           RPre RPost RR (t1 : SpecM E1 Γ1 R1) (t2 t3 : SpecM E2 Γ2 R2) b :
+  (IntroArg If (b = true) (fun _ => spec_refines RPre RPost RR t1 t2)) ->
+  (IntroArg If (b = false) (fun _ => spec_refines RPre RPost RR t1 t3)) ->
+  spec_refines RPre RPost RR t1 (if b then t2 else t3) :=
+  spec_refines_if_r E1 E2 Γ1 Γ2 R1 R2 RPre RPost RR t1 t2 t3 b.
+
+Definition spec_refines_if_l_IntroArg E1 E2 Γ1 Γ2 R1 R2
+           RPre RPost RR (t1 t2 : SpecM E1 Γ1 R1) (t3 : SpecM E2 Γ2 R2) b :
+  (IntroArg If (b = true) (fun _ => spec_refines RPre RPost RR t1 t3)) ->
+  (IntroArg If (b = false) (fun _ => spec_refines RPre RPost RR t2 t3)) ->
+  spec_refines RPre RPost RR (if b then t1 else t2) t3 :=
+  spec_refines_if_l E1 E2 Γ1 Γ2 R1 R2 RPre RPost RR t1 t2 t3 b.
+
+#[global] Hint Extern 101 (spec_refines _ _ _ _ (if _ then _ else _)) =>
+  apply spec_refines_if_r_IntroArg : refines.
+#[global] Hint Extern 101 (spec_refines _ _ _ (if _ then _ else _) _) =>
+  apply spec_refines_if_l_IntroArg : refines.
+
+#[global] Hint Extern 101 (spec_refines _ _ _ _ ((if _ then _ else _) >>= _)) =>
+  apply spec_refines_if_bind_r : refines.
+#[global] Hint Extern 101 (spec_refines _ _ _ ((if _ then _ else _) >>= _) _) =>
+  apply spec_refines_if_bind_l : refines.
+
+
+Definition spec_refines_match_list_r_IntroArg E1 E2 Γ1 Γ2 RPre RPost R1 R2 RR A
+           (t1 : SpecM E1 Γ1 R1) (t2 : A -> list A -> SpecM E2 Γ2 R2)
+           (t3 : SpecM E2 Γ2 R2) xs :
+  (IntroArg Any A (fun x =>
+     IntroArg Any (list A) (fun xs' =>
+       IntroArg Match (xs = x :: xs') (fun _ =>
+         spec_refines RPre RPost RR t1 (t2 x xs'))))) ->
+  (IntroArg Match (xs = nil) (fun _ => spec_refines RPre RPost RR t1 t3)) ->
+  spec_refines RPre RPost RR t1 (match xs with
+                                 | x :: xs' => t2 x xs' | nil => t3 end) :=
+  spec_refines_match_list_r E1 E2 Γ1 Γ2 RPre RPost R1 R2 RR A t1 t2 t3 xs.
+
+Definition spec_refines_match_list_l_IntroArg E1 E2 Γ1 Γ2 RPre RPost R1 R2 RR A
+           (t3 : SpecM E2 Γ2 R2)
+           (t1 : A -> list A -> SpecM E1 Γ1 R1) (t2 : SpecM E1 Γ1 R1) xs :
+  (IntroArg Any A (fun x =>
+     IntroArg Any (list A) (fun xs' =>
+       IntroArg Match (xs = x :: xs') (fun _ =>
+         spec_refines RPre RPost RR (t1 x xs') t3)))) ->
+  (IntroArg Match (xs = nil) (fun _ => spec_refines RPre RPost RR t2 t3)) ->
+  spec_refines RPre RPost RR (match xs with
+                              | x :: xs' => t1 x xs' | nil => t2 end) t3 :=
+  spec_refines_match_list_l E1 E2 Γ1 Γ2 RPre RPost R1 R2 RR A t3 t1 t2 xs.
+
+#[global]
+Hint Extern 101 (spec_refines _ _ _ _ (match _ with | _ :: _ => _ | nil => _ end)) =>
+  apply spec_refines_match_list_r_IntroArg : refines.
+#[global]
+Hint Extern 101 (spec_refines _ _ _ (match _ with | _ :: _ => _ | nil => _ end) _) =>
+  apply spec_refines_match_list_l_IntroArg : refines.
+
+#[global]
+Hint Extern 101 (spec_refines _ _ _ _ ((match _ with | _ :: _ => _ | nil => _ end) >>= _)) =>
+  apply spec_refines_match_list_bind_r : refines.
+#[global]
+Hint Extern 101 (spec_refines _ _ _ ((match _ with | _ :: _ => _ | nil => _ end) >>= _) _) =>
+  apply spec_refines_match_list_bind_l : refines.
+
+
+Definition spec_refines_match_pair_r_IntroArg E1 E2 Γ1 Γ2 RPre RPost R1 R2 RR A B
+           (t1 : SpecM E1 Γ1 R1) (t2 : A -> B -> SpecM E2 Γ2 R2) pr :
+  (IntroArg Any A (fun x =>
+     IntroArg Any B (fun y =>
+       IntroArg Match (pr = (x, y)) (fun _ =>
+         spec_refines RPre RPost RR t1 (t2 x y))))) ->
+  spec_refines RPre RPost RR t1 (match pr with | (x,y) => t2 x y end) :=
+  spec_refines_match_pair_r E1 E2 Γ1 Γ2 RPre RPost R1 R2 RR A B t1 t2 pr.
+
+Definition spec_refines_match_pair_l_IntroArg E1 E2 Γ1 Γ2 RPre RPost R1 R2 RR A B
+           (t1 : A -> B -> SpecM E1 Γ1 R1) (t2 : SpecM E2 Γ2 R2) pr :
+  (IntroArg Any A (fun x =>
+     IntroArg Any B (fun y =>
+       IntroArg Match (pr = (x, y)) (fun _ =>
+         spec_refines RPre RPost RR (t1 x y) t2)))) ->
+  spec_refines RPre RPost RR (match pr with | (x,y) => t1 x y end) t2 :=
+  spec_refines_match_pair_l E1 E2 Γ1 Γ2 RPre RPost R1 R2 RR A B t1 t2 pr.
+
+#[global]
+Hint Extern 101 (spec_refines _ _ _ _ (match _ with | (_,_) => _ end)) =>
+  apply spec_refines_match_pair_r_IntroArg : refines.
+#[global]
+Hint Extern 101 (spec_refines _ _ _ (match _ with | (_,_) => _ end) _) =>
+  apply spec_refines_match_pair_l_IntroArg : refines.
+
+#[global]
+Hint Extern 101 (spec_refines _ _ _ _ ((match _ with | (_,_) => _ end) >>= _)) =>
+  apply spec_refines_match_pair_bind_r : refines.
+#[global]
+Hint Extern 101 (spec_refines _ _ _ ((match _ with | (_,_) => _ end) >>= _) _) =>
+  apply spec_refines_match_pair_bind_l : refines.
