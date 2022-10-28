@@ -3,6 +3,8 @@ From Coq Require Export
      Setoid
      Program.Equality
      Lists.List
+     Logic.EqdepFacts
+     Eqdep EqdepFacts
 .
 
 From EnTree Require Import
@@ -32,12 +34,11 @@ Definition SpecPostRel (E1 E2 : EvType) Γ1 Γ2 :=
   PostRel (FunStackE E1 Γ1) (FunStackE E2 Γ2).
 
 (* The precondition requiring events on both sides to be equal *)
-Variant eqPreRel {E Γ} : SpecPreRel E E Γ Γ :=
-  | eqPreRel_refl e : eqPreRel e e.
+Definition eqPreRel {E Γ} : SpecPreRel E E Γ Γ := eq.
 
 (* The postcondition requiring return values on both sides to be equal *)
-Variant eqPostRel {E Γ} : SpecPostRel E E Γ Γ :=
-  | eqPostRel_refl e a : eqPostRel e e a a.
+Definition eqPostRel {E Γ} : SpecPostRel E E Γ Γ :=
+  fun e1 e2 a1 a2 => eq_dep1 _ _ e1 a1 e2 a2.
 
 (* Spec refinement = padded refinement *)
 Definition spec_refines {E1 E2 : EvType} {Γ1 Γ2}
@@ -52,7 +53,7 @@ Instance Proper_spec_refines E1 E2 Γ1 Γ2 RPre RPost R1 R2 RR :
 Admitted.
 
 
-(** Monad laws for spec_refines **)
+(** Ret and bind laws for spec_refines **)
 
 Lemma spec_refines_ret E1 E2 Γ1 Γ2 R1 R2 RPre RPost RR r1 r2 :
   (RR r1 r2 : Prop) ->
@@ -514,15 +515,6 @@ Create HintDb prepostcond.
 (* If nothing else works, shelve the current refinement goal *)
 #[global] Hint Extern 999 (spec_refines _ _ _ _ _) => shelve : refines.
 
-(* RelGoal marks a relation goal *)
-Definition RelGoal (goal : Prop) := goal.
-
-#[global] Hint Opaque RelGoal : refines.
-
-(* If nothing else works for a RelGoal, try reflexivity and then shelve it *)
-#[global] Hint Extern 999 (RelGoal _) =>
-  unfold RelGoal; (reflexivity || shelve) : refines.
-
 
 (** IntroArg Definition and Hints **)
 
@@ -557,14 +549,23 @@ Ltac IntroArg_intro e := intro e.
 
 Ltac IntroArg_forget := let e := fresh in intro e; clear e.
 
-Polymorphic Lemma IntroArg_eta n A (f : A -> Type) x goal :
+Polymorphic Lemma IntroArg_beta n A (f : A -> Type) x goal :
   IntroArg n (f x) goal ->
   IntroArg n ((fun x' => f x') x) goal.
 Proof. eauto. Qed.
 
 Polymorphic Lemma IntroArg_and n P Q (goal : P /\ Q -> Prop)
-  : IntroArg n P (fun p => IntroArg n Q (fun q => goal (conj p q))) -> IntroArg n _ goal.
+  : IntroArg n P (fun p => IntroArg n Q (fun q => goal (conj p q))) ->
+    IntroArg n _ goal.
 Proof. intros H [ p q ]; apply H. Qed.
+
+Polymorphic Lemma IntroArg_eqPostRel n E Γ e a1 a2 (goal : _ -> Prop) :
+  IntroArg n (a1 = a2) (fun pf => goal (eq_dep1_intro _ _ _ _ _ _ (eq_refl e) pf)) ->
+  IntroArg n (@eqPostRel E Γ e e a1 a2) goal.
+Proof.
+  intros H H0; dependent destruction H0.
+  apply H.
+Qed.
 
 Polymorphic Lemma IntroArg_pushPreRel_inl n E1 E2 Γ1 Γ2 frame1 frame2
             (precond : Rel (FrameCall frame1) (FrameCall frame2))
@@ -646,54 +647,35 @@ Ltac IntroArg_intro_dependent_destruction n :=
   let e := argName n in
     IntroArg_intro e; dependent destruction e.
 
-(* FIXME: not sure what this needs to be...
 Ltac IntroArg_base_tac n A g :=
   lazymatch A with
-  | (fun _ => _) _ => simple apply IntroArg_eta
+  | (fun _ => _) _ => simple apply IntroArg_beta
   | _ /\ _ => simple apply IntroArg_and
-  | sumPreRel _ _ _ _ (inl1 _) (inl1 _) => simple apply IntroArg_sumPreRel_inl
-  | sumPreRel _ _ _ _ (inl1 _) (ReSum_inl _ _ _ _ _ _ _) => apply IntroArg_sumPreRel_inl
-  | sumPreRel _ _ _ _ (ReSum_inl _ _ _ _ _ _ _) (inl1 _) => apply IntroArg_sumPreRel_inl
-  | sumPreRel _ _ _ _ (ReSum_inl _ _ _ _ _ _ _) (ReSum_inl _ _ _ _ _ _ _) => apply IntroArg_sumPreRel_inl
-  | sumPreRel _ _ _ _ (inr1 _) (inr1 _) => simple apply IntroArg_sumPreRel_inr
-  | sumPreRel _ _ _ _ (inr1 _) (ReSum_inr _ _ _ _ _ _ _) => apply IntroArg_sumPreRel_inr
-  | sumPreRel _ _ _ _ (ReSum_inr _ _ _ _ _ _ _) (inr1 _) => apply IntroArg_sumPreRel_inr
-  | sumPreRel _ _ _ _ (ReSum_inr _ _ _ _ _ _ _) (ReSum_inr _ _ _ _ _ _ _) => apply IntroArg_sumPreRel_inr
-  | sumPreRel _ _ _ _ (inl1 _) (inr1 _) => IntroArg_intro_dependent_destruction n
-  | sumPreRel _ _ _ _ (inl1 _) (ReSum_inr _ _ _ _ _ _ _) => IntroArg_intro_dependent_destruction n
-  | sumPreRel _ _ _ _ (ReSum_inl _ _ _ _ _ _ _) (inr1 _) => IntroArg_intro_dependent_destruction n
-  | sumPreRel _ _ _ _ (ReSum_inl _ _ _ _ _ _ _) (ReSum_inr _ _ _ _ _ _ _) => IntroArg_intro_dependent_destruction n
-  | sumPreRel _ _ _ _ (inr1 _) (inl1 _) => IntroArg_intro_dependent_destruction n
-  | sumPreRel _ _ _ _ (inr1 _) (ReSum_inl _ _ _ _ _ _ _) => IntroArg_intro_dependent_destruction n
-  | sumPreRel _ _ _ _ (ReSum_inr _ _ _ _ _ _ _) (inl1 _) => IntroArg_intro_dependent_destruction n
-  | sumPreRel _ _ _ _ (ReSum_inr _ _ _ _ _ _ _) (ReSum_inl _ _ _ _ _ _ _) => IntroArg_intro_dependent_destruction n
-  | sumPostRel _ _ _ _ (inl1 _) (inl1 _) _ _ => simple apply IntroArg_sumPostRel_inl
-  | sumPostRel _ _ _ _ (inl1 _) (ReSum_inl _ _ _ _ _ _ _) _ _ => apply IntroArg_sumPostRel_inl
-  | sumPostRel _ _ _ _ (ReSum_inl _ _ _ _ _ _ _) (inl1 _) _ _ => apply IntroArg_sumPostRel_inl
-  | sumPostRel _ _ _ _ (ReSum_inl _ _ _ _ _ _ _) (ReSum_inl _ _ _ _ _ _ _) _ _ => apply IntroArg_sumPostRel_inl
-  | sumPostRel _ _ _ _ (inr1 _) (inr1 _) _ _ => simple apply IntroArg_sumPostRel_inr
-  | sumPostRel _ _ _ _ (inr1 _) (ReSum_inr _ _ _ _ _ _ _) _ _ => apply IntroArg_sumPostRel_inr
-  | sumPostRel _ _ _ _ (ReSum_inr _ _ _ _ _ _ _) (inr1 _) _ _ => apply IntroArg_sumPostRel_inr
-  | sumPostRel _ _ _ _ (ReSum_inr _ _ _ _ _ _ _) (ReSum_inr _ _ _ _ _ _ _) _ _ => apply IntroArg_sumPostRel_inr
-  | sumPostRel _ _ _ _ (inl1 _) (inr1 _) _ _ => IntroArg_intro_dependent_destruction n
-  | sumPostRel _ _ _ _ (inl1 _) (ReSum_inr _ _ _ _ _ _ _) _ _ => IntroArg_intro_dependent_destruction n
-  | sumPostRel _ _ _ _ (ReSum_inl _ _ _ _ _ _ _) (inr1 _) _ _ => IntroArg_intro_dependent_destruction n
-  | sumPostRel _ _ _ _ (ReSum_inl _ _ _ _ _ _ _) (ReSum_inr _ _ _ _ _ _ _) _ _ => IntroArg_intro_dependent_destruction n
-  | sumPostRel _ _ _ _ (inr1 _) (inl1 _) _ _ => IntroArg_intro_dependent_destruction n
-  | sumPostRel _ _ _ _ (inr1 _) (ReSum_inl _ _ _ _ _ _ _) _ _ => IntroArg_intro_dependent_destruction n
-  | sumPostRel _ _ _ _ (ReSum_inr _ _ _ _ _ _ _) (inl1 _) _ _ => IntroArg_intro_dependent_destruction n
-  | sumPostRel _ _ _ _ (ReSum_inr _ _ _ _ _ _ _) (ReSum_inl _ _ _ _ _ _ _) _ _ => IntroArg_intro_dependent_destruction n
+  | @pushPreRel _ _ _ _ _ _ _ _ (inl _) (inl _) =>
+    simple apply IntroArg_pushPreRel_inl
+  | @pushPreRel _ _ _ _ _ _ _ _ (inr _) (inr _) =>
+    simple apply IntroArg_pushPreRel_inr
+  | @pushPostRel _ _ _ _ _ _ _ _ (inl _) (inl _) _ _ =>
+    simple apply IntroArg_pushPostRel_inl
+  | @pushPostRel _ _ _ _ _ _ _ _ (inr _) (inr _) _ _ =>
+    simple apply IntroArg_pushPostRel_inr
+  | @pushTSPreRel _ _ _ _ _ _ _ _ _ _ (inl _) (inl _) =>
+    simple apply IntroArg_pushTSPreRel_inl
+  | @pushTSPreRel _ _ _ _ _ _ _ _ _ _ (inr _) (inr _) =>
+    simple apply IntroArg_pushTSPreRel_inr
+  | @pushTSPostRel _ _ _ _ _ _ _ _ _ _ (inl _) (inl _) _ _ =>
+    simple apply IntroArg_pushTSPostRel_inl
+  | @pushTSPostRel _ _ _ _ _ _ _ _ _ _ (inr _) (inr _) _ _ =>
+    simple apply IntroArg_pushTSPostRel_inr
   | eqPostRel _ _ _ _ _ _ => apply IntroArg_eqPostRel
-  | OnCallPreRel _ _ _ _ _ _ _ (Call _) (Call _) => simple apply IntroArg_OnCallPreRel_i
-  | OnCallPostRel _ _ _ _ _ _ _ _ _ (Call _) (Call _) _ _ => simple apply IntroArg_OnCallPostRel_i
   | true  = true  => IntroArg_intro_dependent_destruction n
   | false = false => IntroArg_intro_dependent_destruction n
   | true  = false => IntroArg_intro_dependent_destruction n
   | false = true  => IntroArg_intro_dependent_destruction n
   end.
 
-Hint Extern 101 (IntroArg ?n ?A ?g) => IntroArg_base_tac n A g : refines prepostcond.
-*)
+#[global] Hint Extern 101 (IntroArg ?n ?A ?g) =>
+  IntroArg_base_tac n A g : refines prepostcond.
 
 #[global] Hint Extern 102 (IntroArg ?n (@eq bool _ _) _) =>
   let e := argName n in IntroArg_intro e; rewrite e in * : refines prepostcond.
@@ -708,12 +690,23 @@ Hint Extern 101 (IntroArg ?n ?A ?g) => IntroArg_base_tac n A g : refines prepost
 
 (** Hints for Relation Goals **)
 
+(* RelGoal marks a relation goal *)
+Definition RelGoal (goal : Prop) := goal.
+
+#[global] Hint Opaque RelGoal : refines.
+
+(* If nothing else works for a RelGoal, try reflexivity and then shelve it *)
+#[global] Hint Extern 999 (RelGoal _) =>
+  unfold RelGoal; (reflexivity || shelve) : refines.
+
+
 #[global] Lemma RelGoal_beta A (f : A -> Prop) x :
   RelGoal (f x) -> RelGoal ((fun x' => f x') x).
 Proof. eauto. Qed.
 
 #[global] Hint Extern 101 (RelGoal ((fun _ => _) _)) =>
-  simple apply RelGoal_beta.
+  simple apply RelGoal_beta : refines.
+
 
 Lemma RelGoal_eqPreRel_refl {E Γ e} :
   RelGoal (@eqPreRel E Γ e e).
@@ -723,4 +716,125 @@ Proof. constructor. Qed.
   apply RelGoal_eqPreRel_refl : refines.
 
 
-(* FIXME: add RelGoal versions of the IntroArg rules for pushPreRel and friends *)
+Polymorphic Lemma RelGoal_pushPreRel_inl E1 E2 Γ1 Γ2 frame1 frame2
+            (precond : Rel (FrameCall frame1) (FrameCall frame2))
+            (RPre : SpecPreRel E1 E2 Γ1 Γ2) e1 e2 :
+  RelGoal (precond e1 e2) ->
+  RelGoal (@pushPreRel E1 E2 Γ1 Γ2 frame1 frame2 precond RPre (inl e1) (inl e2)).
+Proof. intro H. apply H. Qed.
+
+#[global] Hint Extern 101 (RelGoal
+                             (@pushPreRel _ _ _ _ _ _ _ _ (inl _) (inl _))) =>
+  apply RelGoal_pushPreRel_inl : refines.
+
+
+Polymorphic Lemma RelGoal_pushPreRel_inr E1 E2 Γ1 Γ2 frame1 frame2
+            (precond : Rel (FrameCall frame1) (FrameCall frame2))
+            (RPre : SpecPreRel E1 E2 Γ1 Γ2) e1 e2 :
+  RelGoal (RPre e1 e2) ->
+  RelGoal (@pushPreRel E1 E2 Γ1 Γ2 frame1 frame2 precond RPre (inr e1) (inr e2)).
+Proof. intro H. apply H. Qed.
+
+#[global] Hint Extern 101 (RelGoal
+                             (@pushPreRel _ _ _ _ _ _ _ _ (inr _) (inr _))) =>
+  apply RelGoal_pushPreRel_inr : refines.
+
+
+Polymorphic Lemma RelGoal_pushPostRel_inl E1 E2 Γ1 Γ2 frame1 frame2
+            (postcond : PostRel (FrameCall frame1) (FrameCall frame2))
+            (RPost : SpecPostRel E1 E2 Γ1 Γ2)
+            (call1 : FrameCall frame1) (call2 : FrameCall frame2)
+            r1 r2 :
+  RelGoal (postcond _ _ r1 r2) ->
+  RelGoal (@pushPostRel E1 E2 Γ1 Γ2 frame1 frame2
+                           postcond RPost (inl call1) (inl call2) r1 r2).
+Proof. intro H. apply H. Qed.
+
+#[global] Hint Extern 101 (RelGoal
+                             (@pushPostRel _ _ _ _ _ _ _ _ (inl _) (inl _))) =>
+  apply RelGoal_pushPostRel_inl : refines.
+
+
+Polymorphic Lemma RelGoal_pushPostRel_inr E1 E2 Γ1 Γ2 frame1 frame2
+            (postcond : PostRel (FrameCall frame1) (FrameCall frame2))
+            (RPost : SpecPostRel E1 E2 Γ1 Γ2)
+            e1 e2 r1 r2 :
+  RelGoal (RPost _ _ r1 r2) ->
+  RelGoal (@pushPostRel E1 E2 Γ1 Γ2 frame1 frame2
+                           postcond RPost (inr e1) (inr e2) r1 r2).
+Proof. intro H. apply H. Qed.
+
+#[global] Hint Extern 101 (RelGoal
+                             (@pushPostRel _ _ _ _ _ _ _ _ (inr _) (inr _))) =>
+  apply RelGoal_pushPostRel_inr : refines.
+
+
+Polymorphic Lemma RelGoal_pushTSPreRel_inl E1 E2 Γ1 Γ2 frame1 A2 B2
+            (pre : A2 -> Prop) (preEq : Rel (FrameCall frame1) A2)
+            (RPre : SpecPreRel E1 E2 Γ1 Γ2)
+            args1 a2 :
+  RelGoal (pre a2 /\ preEq args1 a2) ->
+  RelGoal (@pushTSPreRel E1 E2 Γ1 Γ2 frame1 A2 B2
+                            pre preEq RPre (inl args1)
+                            (inl (mkFrameCall (unary1Frame A2 B2) 0 a2))).
+Proof. intro H. apply H. Qed.
+
+#[global] Hint Extern 101 (RelGoal
+                             (@pushTSPreRel _ _ _ _ _ _ _ _ _ _ (inl _) (inl _))) =>
+  apply RelGoal_pushTSPreRel_inl : refines.
+
+
+Polymorphic Lemma RelGoal_pushTSPreRel_inr E1 E2 Γ1 Γ2 frame1 A2 B2
+            (pre : A2 -> Prop) (preEq : Rel (FrameCall frame1) A2)
+            (RPre : SpecPreRel E1 E2 Γ1 Γ2)
+            e1 e2 :
+  RelGoal (RPre e1 e2) ->
+  RelGoal (@pushTSPreRel E1 E2 Γ1 Γ2 frame1 A2 B2
+                            pre preEq RPre (inr e1) (inr e2)).
+Proof. intro H. apply H. Qed.
+
+#[global] Hint Extern 101 (RelGoal
+                             (@pushTSPreRel _ _ _ _ _ _ _ _ _ _ (inr _) (inr _))) =>
+  apply RelGoal_pushTSPreRel_inr : refines.
+
+
+Polymorphic Lemma RelGoal_pushTSPostRel_inl E1 E2 Γ1 Γ2 frame1 A2 B2
+            (post : A2 -> B2 -> Prop)
+            (postEq : forall call1', A2 -> FrameCallRet frame1 call1' -> B2 -> Prop)
+            (RPost : SpecPostRel E1 E2 Γ1 Γ2)
+            args1 a2 r1 b2 :
+  RelGoal (post a2 b2 /\ postEq args1 a2 r1 b2) ->
+  RelGoal (@pushTSPostRel E1 E2 Γ1 Γ2 frame1 A2 B2
+                             post postEq RPost (inl args1)
+                             (inl (mkFrameCall (unary1Frame A2 B2) 0 a2)) r1 b2).
+Proof. intro H. apply H. Qed.
+
+#[global] Hint Extern 101 (RelGoal
+                             (@pushTSPostRel _ _ _ _ _ _ _ _ _ _ (inl _) (inl _))) =>
+  apply RelGoal_pushTSPostRel_inl : refines.
+
+
+Polymorphic Lemma RelGoal_pushTSPostRel_inr E1 E2 Γ1 Γ2 frame1 A2 B2
+            (post : A2 -> B2 -> Prop)
+            (postEq : forall call1', A2 -> FrameCallRet frame1 call1' -> B2 -> Prop)
+            (RPost : SpecPostRel E1 E2 Γ1 Γ2)
+            e1 e2 r1 r2 :
+  RelGoal (RPost e1 e2 r1 r2) ->
+  RelGoal (@pushTSPostRel E1 E2 Γ1 Γ2 frame1 A2 B2
+                             post postEq RPost (inr e1) (inr e2) r1 r2).
+Proof. intro H. apply H. Qed.
+
+#[global] Hint Extern 101 (RelGoal
+                             (@pushTSPostRel _ _ _ _ _ _ _ _ _ _ (inr _) (inr _))) =>
+  apply RelGoal_pushTSPostRel_inr : refines.
+
+
+(** Refinement hints using IntroArg and RelGoal **)
+
+Definition spec_refines_ret_IntroArg E1 E2 Γ1 Γ2 R1 R2 RPre RPost RR r1 r2 :
+  (RelGoal (RR r1 r2 : Prop)) ->
+  @spec_refines E1 E2 Γ1 Γ2 R1 R2 RPre RPost RR (RetS r1) (RetS r2) :=
+  spec_refines_ret E1 E2 Γ1 Γ2 R1 R2 RPre RPost RR r1 r2.
+
+#[global] Hint Extern 102 (spec_refines _ _ _ (Ret _) (Ret _)) =>
+  apply spec_refines_ret_IntroArg : refines.
