@@ -12,6 +12,7 @@ From EnTree Require Import
      Core.SubEvent
      Ref.EnTreeSpecDefinition
      Ref.EnTreeSpecFacts
+     Ref.EnTreeSpecCombinatorFacts
      Ref.SpecM
      Eq.Eqit
 .
@@ -56,7 +57,9 @@ Admitted.
 Lemma spec_refines_ret E1 E2 Γ1 Γ2 R1 R2 RPre RPost RR r1 r2 :
   (RR r1 r2 : Prop) ->
   @spec_refines E1 E2 Γ1 Γ2 R1 R2 RPre RPost RR (RetS r1) (RetS r2).
-Admitted.
+Proof.
+  intros. apply padded_refines_ret. auto.
+Qed.
 
 Lemma spec_refines_ret_bind_r E1 E2 Γ1 Γ2 R1 R2 A
       RPre RPost RR (t1 : SpecM E1 Γ1 R1) r (k2 : A -> SpecM E2 Γ2 R2) :
@@ -103,6 +106,23 @@ Instance ReSum_FunStack_EvType (E : EvType) Γ : ReSum E (FunStackE E Γ) :=
 Instance ReSumRet_FunStack_EvType (E : EvType) Γ : ReSumRet E (FunStackE E Γ) :=
   ReSumRet_FunStackE_E _ _.
 
+Lemma encodes_ReSum_FunStack_EvType:
+  forall (E1 : EvType) (Γ1 : FunStack) (e1 : E1), encodes (ReSum_FunStack_EvType E1 Γ1 e1) = encodes e1.
+Proof.
+  intros E1 Γ1 e1.
+  induction Γ1. auto. cbn. setoid_rewrite IHΓ1. auto.
+Qed.
+
+Lemma type_eq_map_JMeq : forall (A B : Type), A = B -> exists fab : A -> B, 
+  forall a, (fab a) ~= a.
+Proof. 
+  intros. subst. exists id. auto.
+Qed.
+
+(*
+Lemma padded_refines_bind_type_eq E1 E2 `{EncodingType E1} `{EncodingType E2} R1 R2 R1' R2' S1 S2 
+      PRe RPost 
+*)
 Lemma spec_refines_trigger_bind (E1 E2 : EvType) Γ1 Γ2 R1 R2
       (RPre : SpecPreRel E1 E2 Γ1 Γ2) (RPost : SpecPostRel E1 E2 Γ1 Γ2)
       RR (e1 : E1) (e2 : E2)
@@ -113,31 +133,77 @@ Lemma spec_refines_trigger_bind (E1 E2 : EvType) Γ1 Γ2 R1 R2
       RPost (resum e1) (resum e2) a b ->
       spec_refines RPre RPost RR (k1 (resum_ret e1 a)) (k2 (resum_ret e2 b))) ->
   spec_refines RPre RPost RR (TriggerS e1 >>= k1) (TriggerS e2 >>= k2).
-Admitted.
+Proof.
+  intros.
+  specialize (encodes_ReSum_FunStack_EvType E1 Γ1 e1) as He1. 
+  specialize (encodes_ReSum_FunStack_EvType E2 Γ2 e2) as He2.
+  symmetry in He1, He2.
+  apply type_eq_map_JMeq in He1 as [fe1 Hfe1].
+  apply type_eq_map_JMeq in He2 as [fe2 Hfe2].
+  eapply padded_refines_bind with (RR := fun a b => (RPost (resum e1) (resum e2) (fe1 a) (fe2 b))).
+  - apply padded_refines_vis. auto.
+    intros. apply padded_refines_ret.
+    assert (fe1 (resum_ret e1 a) = a).
+    {
+      clear - Hfe1. induction Γ1; cbn; auto.
+      - apply JMeq_eq. auto.
+      - cbn. erewrite <- IHΓ1; eauto.
+    }
+    assert (fe2 (resum_ret e2 b) = b).
+    {
+      clear - Hfe2. induction Γ2; cbn; auto.
+      - apply JMeq_eq. auto.
+      - cbn. erewrite <- IHΓ2; eauto.
+    }
+    setoid_rewrite H2.  setoid_rewrite H3.
+    auto.
+  - intros. eapply H0 in H1.
+    assert (r1 = (resum_ret e1 (fe1 r1))).
+    {
+      clear - Hfe1.
+      induction Γ1; eauto. cbn. symmetry. apply JMeq_eq. auto.
+    }
+    assert (r2 = (resum_ret e2 (fe2 r2))).
+    {
+      clear - Hfe2.
+      induction Γ2; eauto. cbn. symmetry. apply JMeq_eq. auto.
+    }
+    rewrite H2, H3. auto.
+Qed.
 
 Lemma spec_refines_exists_r E1 E2 Γ1 Γ2 R1 R2 A `{QuantType A}
       RPre RPost RR (phi : SpecM E1 Γ1 R1) (kphi : A -> SpecM E2 Γ2 R2) a :
   spec_refines RPre RPost RR phi (kphi a) ->
   spec_refines RPre RPost RR phi (ExistsS A >>= kphi).
-Admitted.
+Proof.
+  intros.
+  apply padded_refines_exists_specr. eexists. eauto.
+Qed.
 
 Lemma spec_refines_exists_l E1 E2 Γ1 Γ2 R1 R2 A `{QuantType A}
-      RPre RPost RR (phi : SpecM E2 Γ2 R2) (kphi : A -> SpecM E1 Γ1 R1) a :
-  spec_refines RPre RPost RR (kphi a) phi ->
+      RPre RPost RR (phi : SpecM E2 Γ2 R2) (kphi : A -> SpecM E1 Γ1 R1) :
+  (forall a, spec_refines RPre RPost RR (kphi a) phi) ->
   spec_refines RPre RPost RR (ExistsS A >>= kphi) phi.
-Admitted.
+Proof.
+  intros.
+  apply padded_refines_exists_specl. auto.
+Qed.
 
 Lemma spec_refines_forall_r E1 E2 Γ1 Γ2 R1 R2 A `{QuantType A}
       RPre RPost RR (phi : SpecM E1 Γ1 R1) (kphi : A -> SpecM E2 Γ2 R2) :
   (forall a, spec_refines RPre RPost RR phi (kphi a)) ->
   spec_refines RPre RPost RR phi (ForallS A >>= kphi).
-Admitted.
+Proof.
+  intros. apply padded_refines_forall_specr. auto.
+Qed.
 
 Lemma spec_refines_forall_l E1 E2 Γ1 Γ2 R1 R2 A `{QuantType A}
-      RPre RPost RR (phi : SpecM E2 Γ2 R2) (kphi : A -> SpecM E1 Γ1 R1) :
-  (forall a, spec_refines RPre RPost RR (kphi a) phi) ->
+      RPre RPost RR (phi : SpecM E2 Γ2 R2) (kphi : A -> SpecM E1 Γ1 R1) a :
+  spec_refines RPre RPost RR (kphi a) phi ->
   spec_refines RPre RPost RR (ForallS A >>= kphi) phi.
-Admitted.
+Proof.
+  intros. apply padded_refines_forall_specl. eexists. eauto.
+Qed.
 
 (* FIXME: need rules to add binds to all the unary combinators *)
 

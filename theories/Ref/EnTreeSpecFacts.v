@@ -30,7 +30,7 @@ Ltac inj_existT := repeat match goal with
 #[global] Hint Resolve monotone_refines_ : paco.
 
 #[global] Hint Constructors refinesF : entree_spec.
-Print Hint entree_spec.
+
 Section quant_elim1.
 Context (E1 E2 : Type) `{EncodingType E1} `{EncodingType E2}. 
 Context (RPre : Rel E1 E2) (RPost : PostRel E1 E2).
@@ -850,40 +850,19 @@ Theorem padded_refines_trans (E1 E2 E3 : Type) `{EncodingType E1} `{EncodingType
   padded_refines RPre1 RPost1 RR1 t1 t2 ->
   padded_refines RPre2 RPost2 RR2 t2 t3 ->
   padded_refines (rcompose RPre1 RPre2) (RComposePostRel RPre1 RPre2 RPost1 RPost2) (rcompose RR1 RR2) t1 t3.
-Admitted.
+Proof.
+  unfold padded_refines. intros. eapply refinesTrans; eauto; apply pad_is_padded.
+Qed.
 
 
-Theorem padded_refines_bind (E1 E2 : Type) `{EncodingType E1} `{EncodingType E2} (R1 R2 S1 S2: Type)
-        (RPre : Rel E1 E2) (RPost : PostRel E1 E2) (RR : Rel R1 R2) (RS : Rel S1 S2) 
-        (t1 : entree_spec E1 R1) (t2 : entree_spec E2 R2)
-        (k1 : R1 -> entree_spec E1 S1) (k2 : R2 -> entree_spec E2 S2) :
-  padded_refines RPre RPost RR t1 t2 ->
-  (forall r1 r2, RR r1 r2 -> padded_refines RPre RPost RS (k1 r1) (k2 r2)) ->
-  padded_refines RPre RPost RS (EnTree.bind t1 k1) (EnTree.bind t2 k2).
-Admitted.
+Global Instance padded_refines_proper_eutt {E1 E2 R1 R2} `{EncodingType E1} `{EncodingType E2} RPre RPost RR : Proper (eutt eq ==> eutt eq ==> flip impl)  (@padded_refines E1 E2 _ _ R1 R2 RPre RPost RR).
+Proof.
+  intros t1 t2 Ht12 t3 t4 Ht34 Href. red. red in Href.
+  eapply refines_eutt_padded_r; try apply pad_is_padded.
+  setoid_rewrite pad_eutt in Ht34.
+  symmetry. eauto.
+  eapply refines_eutt_padded_l; try apply pad_is_padded.
+  setoid_rewrite pad_eutt in Ht12.
+  symmetry. eauto. auto.
+Qed.
 
-
-Theorem padded_refines_iter (E1 E2 : Type) `{EncodingType E1} `{EncodingType E2} (R1 R2 S1 S2: Type)
-        (RPre : Rel E1 E2) (RPost : PostRel E1 E2) (RR : Rel R1 R2) (RS : Rel S1 S2) 
-        (body1 : R1 -> entree_spec E1 (R1 + S1)) (body2 : R2 -> entree_spec E2 (R2 + S2)) r1 r2:
-  (forall r1 r2, RR r1 r2 -> padded_refines RPre RPost (sum_rel RR RS) (body1 r1) (body2 r2) ) ->
-  RR r1 r2 ->
-  padded_refines RPre RPost RS (EnTree.iter body1 r1) (EnTree.iter body2 r2).
-Admitted.
-
-Section padded_refines_mrec.
-Context (D1 D2 E1 E2 : Type) `{EncodingType D1} `{EncodingType D2} `{EncodingType E1} `{EncodingType E2}.
-Context (bodies1 : forall (d1 : D1), entree_spec (D1 + E1) (encodes d1) ).
-Context (bodies2 : forall (d2 : D2), entree_spec (D2 + E2) (encodes d2) ).
-Context (RPreInv : Rel D1 D2) (RPre : Rel E1 E2) (RPostInv : PostRel D1 D2) (RPost : PostRel E1 E2).
-
-Context (Hbodies : forall d1 d2, RPreInv d1 d2 -> 
-        padded_refines (sum_rel RPreInv RPre) (SumPostRel RPostInv RPost) (RPostInv d1 d2) 
-          (bodies1 d1) (bodies2 d2) ).
-
-Theorem padded_refines_mrec d1 d2 : RPreInv d1 d2 ->
-                                    padded_refines RPre RPost (RPostInv d1 d2) 
-                                                   (mrec_spec bodies1 d1) (mrec_spec bodies2 d2).
-Admitted.
-
-End padded_refines_mrec.        
