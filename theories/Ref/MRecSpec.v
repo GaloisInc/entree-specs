@@ -17,35 +17,13 @@ From EnTree Require Import
      Eq.Eqit
      Ref.Padded
      Ref.EnTreeSpecDefinition
+     SubEvent
 .
-
+Print Instances ReSum. Locate trigger.
+Locate ReSum.
 From Paco Require Import paco.
 
 Local Open Scope entree_scope.
-
-Section mrec_spec.
-Context {D E} `{EncodingType D} `{EncodingType E}.
-Context (bodies : forall (d : D), entree_spec (D + E) (encodes d) ).
-CoFixpoint interp_mrec_spec' {R} (ot : entree_spec' (D + E) R) : entree_spec E R :=
-  match ot with
-  | RetF r => Ret r
-  | TauF t => Tau (interp_mrec_spec' (observe t) )
-  | VisF (Spec_vis (inl d)) k => Tau (interp_mrec_spec' (observe (EnTree.bind (bodies d) k )) )
-  | VisF (Spec_vis (inr e)) k => Vis (Spec_vis e) (fun x => interp_mrec_spec' (observe (k x))) 
-  | VisF (Spec_forall _) k => Vis (@Spec_forall E _) (fun x => interp_mrec_spec' (observe (k x)))
-  | VisF (Spec_exists _) k => Vis (@Spec_exists E _) (fun x => interp_mrec_spec' (observe (k x)))
-end.
-Definition interp_mrec_spec {R} (t : entree_spec (D + E) R) : entree_spec E R :=
-  interp_mrec_spec' (observe t).
-Definition mrec_spec (d : D) := interp_mrec_spec (bodies d).
-
-End mrec_spec.
-
-Variant callE (A B : Type@{entree_u}) : Type@{entree_u} := Call (a : A).
-#[global] Instance callE_encodes {A B} : EncodingType (callE A B) :=
-  fun _ => B.
-
-Section spec_fix.
 
 
 End spec_fix.

@@ -17,6 +17,7 @@ From EnTree Require Import
      Ref.EnTreeSpecCombinatorFacts
      Ref.SpecM
      Eq.Eqit
+     Ref.MRecSpec
 .
 
 Import EnTreeNotations.
@@ -375,7 +376,21 @@ Lemma spec_refines_call_bind (E1 E2 : EvType) Γ1 Γ2 frame1 frame2 R1 R2
       RPost (inl call1) (inl call2) r1 r2 ->
       spec_refines RPre RPost RR (k1 (resum_ret call1 r1)) (k2 (resum_ret call2 r2))) ->
   spec_refines RPre RPost RR (CallS _ _ _ call1 >>= k1) (CallS _ _ _ call2 >>= k2).
-Admitted.
+Proof.
+  intros. eapply padded_refines_bind.
+  - unfold CallS. unfold trigger. apply padded_refines_vis.
+    auto. cbn.
+    eauto. intros a b Hab. apply padded_refines_ret.
+    Unshelve. 
+    2 : {
+      intros c1 c2. 
+      exact (exists a, exists b, c1 = resum_ret call1 a /\ c2 = resum_ret call2 b /\ RPost _ _ a b).
+      }
+      cbn. exists a. exists b. auto.
+  - intros r1 r2 Hr12. cbn in Hr12. decompose record Hr12.
+    subst. apply H0. auto.
+Qed.
+
 
 (* Add a precondition relation for a new frame on the FunStack *)
 Definition pushPreRel {E1 E2 : EvType} {Γ1 Γ2 frame1 frame2}
@@ -427,7 +442,24 @@ Lemma spec_refines_multifix_bind (E1 E2 : EvType) Γ1 Γ2 frame1 frame2 R1 R2
   spec_refines RPre RPost RR
                (MultiFixS E1 Γ1 frame1 bodies1 call1 >>= k1)
                (MultiFixS E2 Γ2 frame2 bodies2 call2 >>= k2).
-Admitted.
+Proof.
+  intros Hcalls Hbody Hk.
+  eapply padded_refines_bind with (RR := postcond call1 call2).
+  - unfold MultiFixS. 
+    eapply padded_refines_interp_mrec_spec with (RPreInv := precond) (RPostInv := postcond).
+    + intros. apply Hbody in H. eapply padded_refines_monot; try apply H; auto; clear - E1.
+      * intros call1 call2 Hcall. 
+        destruct call1; destruct call2; cbn in *; try contradiction;
+          constructor; auto.
+      * intros call1 call2 r1 r2 H. destruct H; auto.
+    + apply Hbody in Hcalls.
+      eapply padded_refines_monot; try apply Hcalls; auto; clear - E1.
+      * intros call1 call2 Hcall. 
+        destruct call1; destruct call2; cbn in *; try contradiction;
+          constructor; auto.
+      * intros call1 call2 r1 r2 H. destruct H; auto.
+  - auto.
+Qed.
 
 (* Build a RecFrame with a single, unary function *)
 Definition unary1Frame (A B : Type) : RecFrame :=
@@ -502,6 +534,8 @@ Lemma spec_refines_total_spec (E1 E2 : EvType) Γ1 Γ2 frame1
   spec_refines RPre RPost RR
                (MultiFixS E1 Γ1 frame1 bodies1 call1)
                (total_spec pre post a2).
+Proof.
+  intros Hwf Ha2 Hca HPost.
 Admitted.
 
 

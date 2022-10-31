@@ -834,15 +834,39 @@ Proof.
   - constructor. intros. eapply H3; eauto with solve_padded.
 Qed.
 
- 
- 
-
-
-
 Definition padded_refines {E1 E2} `{EncodingType E1} `{EncodingType E2}
            {R1 R2 : Type} (RPre : Rel E1 E2) (RPost : PostRel E1 E2) (RR : Rel R1 R2)
            (t1 : entree_spec E1 R1) (t2 : entree_spec E2 R2) :=
   refines RPre RPost RR (pad t1) (pad t2).
+
+Section refines_monot.
+Context (E1 E2 R1 R2: Type) `{EncodingType E1} `{EncodingType E2}.
+Context (RPre1 RPre2 : Rel E1 E2) (RPost1 RPost2 : PostRel E1 E2) (RR1 RR2 : Rel R1 R2).
+
+Lemma refines_monot : (RPre1 <2= RPre2) -> (forall e1 e2, RPost2 e1 e2 <2= RPost1 e1 e2) ->
+                      RR1 <2= RR2 ->
+                      forall phi1 phi2,
+                        refines RPre1 RPost1 RR1 phi1 phi2 ->
+                        refines RPre2 RPost2 RR2 phi1 phi2.
+Proof.
+  intros HPre HPost HRR. pcofix CIH.
+  intros phi1 phi2 Hphi12. punfold Hphi12. red in Hphi12.
+  pstep. red.
+  hinduction Hphi12 before r; intros; pclearbot; eauto with entree_spec.
+  constructor; auto. intros. right. apply HPost in H3.
+  apply H2 in H3. pclearbot. eauto.
+Qed.
+
+Lemma padded_refines_monot : (RPre1 <2= RPre2) -> (forall e1 e2, RPost2 e1 e2 <2= RPost1 e1 e2) ->
+                      RR1 <2= RR2 ->
+                      forall phi1 phi2,
+                        padded_refines RPre1 RPost1 RR1 phi1 phi2 ->
+                        padded_refines RPre2 RPost2 RR2 phi1 phi2.
+Proof.
+  intros. apply refines_monot; auto.
+Qed.
+
+End refines_monot.
 
 Theorem padded_refines_trans (E1 E2 E3 : Type) `{EncodingType E1} `{EncodingType E2} `{EncodingType E3}
         (R1 R2 R3 : Type) (RPre1 : Rel E1 E2) (RPre2 : Rel E2 E3) (RPost1 : PostRel E1 E2)

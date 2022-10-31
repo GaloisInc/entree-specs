@@ -14,7 +14,6 @@ From EnTree Require Import
      Ref.EnTreeSpecDefinition
      Ref.MRecSpec
 .
-
 From Coq Require Import
      Lists.List
      Strings.String
