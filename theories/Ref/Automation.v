@@ -51,8 +51,9 @@ Definition spec_refines {E1 E2 : EvType} {Γ1 Γ2}
 Instance Proper_spec_refines E1 E2 Γ1 Γ2 RPre RPost R1 R2 RR :
   Proper (eutt eq ==> eutt eq ==> Basics.flip Basics.impl)
          (@spec_refines E1 E2 Γ1 Γ2 RPre RPost R1 R2 RR).
-Admitted.
-
+Proof.
+  repeat intro. eapply padded_refines_proper_eutt; eauto.
+Qed.
 
 (** Ret and bind laws for spec_refines **)
 
@@ -467,6 +468,7 @@ Qed.
 Definition unary1Frame (A B : Type) : RecFrame :=
   cons (LRT_Fun A (fun _ => LRT_Ret B)) nil.
 
+
 (* The total correctness specification *)
 Definition total_spec {E Γ A B} `{QuantType B}
            (pre : A -> Prop) (post : A -> B -> Prop) (a : A) : SpecM E Γ B :=
@@ -474,6 +476,17 @@ Definition total_spec {E Γ A B} `{QuantType B}
   b <- ExistsS B;;
   AssertS (post a b);;
   Ret b.
+
+Definition uncall_unary1Frame {A B} (c : FrameCall (unary1Frame A B)) : A.
+destruct c. cbn in args. destruct n.
+- destruct args as [a ?]. exact a.
+- destruct args as [[] []].
+Defined.
+
+Definition call_unary1Frame {A B} (c : FrameCall (unary1Frame A B)) (b : B) : encodes c.
+destruct c. destruct n. destruct args. cbn. exact b.
+cbn in args. destruct args as [ [] _].
+Defined.
 
 (* The one-step unfolding of total_spec with recursive calls *)
 Definition total_spec_fix_body {E Γ A B} `{QuantType A} `{QuantType B}
@@ -487,6 +500,19 @@ Definition total_spec_fix_body {E Γ A B} `{QuantType A} `{QuantType B}
   b <- exists_spec B;;
   AssertS (post a b);;
   Ret b.
+
+(* total_spec defined with recursive calls, primarily written as part of a proof*)
+Definition total_spec_fix {E Γ A B} `{QuantType A} `{QuantType B}
+           (pre : A -> Prop) (post : A -> B -> Prop) (rdec : A -> A -> Prop)
+           (a : A) : SpecM E Γ B.
+  eapply @interp_mrec_spec with (D := (FrameCall (unary1Frame A B)));
+    try  (apply (total_spec_fix_body pre post rdec a)).
+  clear a.
+  intros call. specialize (uncall_unary1Frame call) as a. cbn. 
+  eapply EnTree.bind.
+  exact (total_spec_fix_body pre post rdec (uncall_unary1Frame call)).
+  intros b. exact (Ret (call_unary1Frame call b)).
+Defined.
 
 (* Add a precondition relation for proving total_spec refinement *)
 Definition pushTSPreRel {E1 E2 : EvType} {Γ1 Γ2 frame1 A2 B2}
@@ -513,6 +539,84 @@ Definition pushTSPostRel {E1 E2 : EvType} {Γ1 Γ2 frame1 A2 B2}
                | _, _ => fun _ _ => False
                end.
 
+Lemma total_spec_fix_refines_total_spec {E Γ A B} `{QuantType A} `{QuantType B}
+           (pre : A -> Prop) (post : A -> B -> Prop) (rdec : A -> A -> Prop)
+           (a : A) : 
+  well_founded rdec ->
+  strict_refines (total_spec_fix pre post rdec a) (@total_spec E Γ A B _ pre post a).
+Proof.
+  intros Hwf. revert a. apply well_founded_ind with (R := rdec). auto.
+  intros x Hind. unfold total_spec_fix. unfold total_spec_fix_body. cbn.
+Admitted.
+
+Definition lift_preEq
+  {frame1 : RecFrame} {A2 B2 : Type} pre preEq : Rel (FrameCall frame1) (FrameCall (unary1Frame A2 B2)) :=
+  fun c1 c2 => exists a : A2, FrameCallOfArgs (unary1Frame A2 B2) 0 (existT _ a tt) = c2 /\ preEq c1 a /\ pre a.
+
+Definition lift_postEq:
+  forall {frame1 : RecFrame} {A2 B2 : Type} (post : Rel A2 B2),
+    (forall call1' : FrameCall frame1, A2 -> Rel (FrameCallRet frame1 call1') B2) ->
+    PostRel (FrameCall frame1) (FrameCall (unary1Frame A2 B2)).
+  intros frame1 A2 B2 post postEq.
+  intros c1 c2 a b.
+  specialize (postEq c1 (uncall_unary1Frame c2)).
+  destruct c2. cbn in b. destruct n.
+  cbn in b. destruct args. apply (post x b /\ postEq a b).
+  destruct args. destruct x.
+Defined.
+(*with some strategic lemmas this should be doable *)
+
+Lemma spec_refines_total_spec_monot_aux1:
+  forall (E1 E2 : EvType) (Γ1 Γ2 : FunStack) (frame1 : RecFrame) (A2 B2 : Type) (RPre : SpecPreRel E1 E2 Γ1 Γ2)
+    (preEq : Rel (FrameCall frame1) A2) (pre : A2 -> Prop)
+    (x0 : FrameCall frame1 +
+            (fix FunStackE (E : Type) (Γ : FunStack) {struct Γ} : Type :=
+               match Γ with
+               | nil => (ErrorE + E)%type
+               | frame :: Γ' => (FrameCall frame + FunStackE E Γ')%type
+               end) E1 Γ1) (x1 : FrameCall (unary1Frame A2 B2) + FunStackE E2 Γ2),
+    pushTSPreRel pre preEq RPre x0 x1 -> HeterogeneousRelations.sum_rel (lift_preEq pre preEq) RPre x0 x1.
+Proof.
+  intros E1 E2 Γ1 Γ2 frame1 A2 B2 RPre preEq pre.
+  intros x c PR. destruct x.
+  - cbn in PR. destruct c.
+    + destruct f0. destruct n. destruct args. 2 :destruct PR. 
+      cbn. constructor. exists x. destruct l. destruct PR. auto.
+    + destruct PR.
+  - destruct c; try (destruct PR; fail). red in PR. constructor. auto.
+Qed.
+
+Lemma spec_refines_total_spec_monot_aux2:
+  forall (E1 E2 : EvType) (Γ1 Γ2 : FunStack) (frame1 : RecFrame) (A2 B2 : Type) (RPost : SpecPostRel E1 E2 Γ1 Γ2)
+    (postEq : forall call1' : FrameCall frame1, A2 -> Rel (FrameCallRet frame1 call1') B2) (post : Rel A2 B2)
+    (e1 : FrameCall frame1 +
+            (fix FunStackE (E : Type) (Γ : FunStack) {struct Γ} : Type :=
+               match Γ with
+               | nil => (ErrorE + E)%type
+               | frame :: Γ' => (FrameCall frame + FunStackE E Γ')%type
+               end) E1 Γ1) (e2 : FrameCall (unary1Frame A2 B2) + FunStackE E2 Γ2) (x0 : encodes e1) (x1 : encodes e2),
+    SumPostRel (lift_postEq post postEq) RPost e1 e2 x0 x1 -> pushTSPostRel post postEq RPost e1 e2 x0 x1.
+Proof.
+  intros E1 E2 Γ1 Γ2 frame1 A2 B2 RPost postEq post.
+  intros c1 c2 a b Hab.
+  destruct c1.
+  - destruct Hab; auto.
+    destruct e2. cbn in args. destruct n. cbn in args.
+    2 : destruct args as [ [] _ ].
+    destruct args as [ a2 [] ]. auto.
+  - cbn in *.  destruct c2; auto.
+    + dependent destruction Hab.
+    + dependent destruction Hab. auto.
+Qed.
+
+(*
+Lemma spec_refines_total_spec_post_aux {E1 Γ1 E2 Γ2 A B} `{EncodingType E1} `{EncodingType E2} `{QuantType A} `{QuantType B}
+           (pre : A -> Prop) (post : A -> B -> Prop) (rdec : A -> A -> Prop) (phi1) : 
+. *)
+
+Axiom inj_FrameCallOfArgs : forall frame n x y, FrameCallOfArgs frame n x = FrameCallOfArgs frame n y ->
+                                        x = y.
+
 Lemma spec_refines_total_spec (E1 E2 : EvType) Γ1 Γ2 frame1
       A2 B2 `{QuantType A2} `{QuantType B2}
       (RPre : SpecPreRel E1 E2 Γ1 Γ2) (RPost : SpecPostRel E1 E2 Γ1 Γ2)
@@ -526,6 +630,8 @@ Lemma spec_refines_total_spec (E1 E2 : EvType) Γ1 Γ2 frame1
   well_founded rdec ->
   pre a2 -> preEq call1 a2 ->
   (forall r1 r2, postEq call1 a2 r1 r2 -> RR r1 r2) ->
+  (* this condition should be signed off on by Eddy *)
+  (forall c a x y, postEq c a x y -> post a y) ->
   (forall call1' a2',
       pre a2' -> preEq call1' a2' ->
       spec_refines (pushTSPreRel pre preEq RPre)
@@ -537,8 +643,32 @@ Lemma spec_refines_total_spec (E1 E2 : EvType) Γ1 Γ2 frame1
                (MultiFixS E1 Γ1 frame1 bodies1 call1)
                (total_spec pre post a2).
 Proof.
-  intros Hwf Ha2 Hca HPost.
-Admitted.
+  intros Hwf Ha2 Hca HPost HPost'. intros.
+  eapply total_spec_fix_refines_total_spec in Hwf as Hstrict. Unshelve. all : auto.
+  eapply padded_refines_weaken_l; eauto.
+  eapply padded_refines_interp_mrec_spec with (RPreInv := lift_preEq pre preEq) (RPostInv := lift_postEq post postEq).
+  - clear Hca Ha2 Hstrict . rename a2 into a0. intros c1 c2 Hpre. destruct c2. destruct n.
+    2 : { destruct args as [ [] _]. }
+    cbn in args. destruct args as [a2 [] ]. simpl. setoid_rewrite bind_ret_r.
+    specialize (H1 c1 a2).
+    assert (pre a2 /\ preEq c1 a2).
+    {
+      clear - Hpre. (* might be premature *)
+      red in Hpre. decompose record Hpre. clear Hpre.
+      cbv in H0. apply inj_FrameCallOfArgs in H0.
+      dependent destruction H0. auto.
+    }
+    destruct H2. specialize (H1 H2 H3).
+    (* should be able to *)
+    eapply padded_refines_monot; try apply H1.
+    + apply spec_refines_total_spec_monot_aux1.
+    + apply spec_refines_total_spec_monot_aux2.
+    + cbn. intros a b Hab. split; eauto.
+  - specialize (H1 call1 a2 Ha2 Hca). eapply padded_refines_monot; try apply H1.
+    + apply spec_refines_total_spec_monot_aux1.
+    + apply spec_refines_total_spec_monot_aux2.
+    + auto.
+Qed.
 
 
 (***

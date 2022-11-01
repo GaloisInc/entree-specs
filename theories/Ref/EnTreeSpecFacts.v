@@ -890,3 +890,44 @@ Proof.
   symmetry. eauto. auto.
 Qed.
 
+Variant PostRelEq {E} `{EncodingType E} : PostRel E E :=
+  | PostRelEq_intro e a : PostRelEq e e a a.
+
+Definition strict_refines {E R} `{EncodingType E} : entree_spec E R -> entree_spec E R -> Prop :=
+  padded_refines eq PostRelEq eq.
+
+
+#[global] Instance strict_refines_proper {E1 E2 R1 R2} `{EncodingType E1} `{EncodingType E2}
+       (RPre : Rel E1 E2) (RPost : PostRel E1 E2) (RR : Rel R1 R2) :
+  Proper (strict_refines ==> flip strict_refines ==> Basics.flip Basics.impl) (padded_refines RPre RPost RR).
+Proof.
+  repeat intro. red in H2. eapply padded_refines_monot with (RPre1 := rcompose eq (rcompose RPre eq)).
+  4 : { eapply padded_refines_trans; eauto. 
+        eapply padded_refines_trans. eauto.
+        eapply H2. }
+  - intros. destruct PR. destruct H4. destruct H5. destruct H5.
+    subst. auto.
+  - intros. econstructor. intros. subst. destruct H5.
+    destruct H4. subst. exists x1. split; [constructor | idtac].
+    constructor. intros. subst. exists x2. split; auto.
+    constructor.
+  - intros. destruct PR. destruct H4. destruct H5. destruct H5.
+    subst. auto.
+Qed.
+
+#[global] Instance strict_refines_refl {E R} `{EncodingType E} : Reflexive (@strict_refines E R _ ).
+Admitted.
+
+#[global] Instance strict_refines_trans  {E R} `{EncodingType E} : Transitive (@strict_refines E R _ ).
+Proof.
+  repeat intro. eapply strict_refines_proper; eauto. reflexivity.
+Qed.
+
+Lemma padded_refines_weaken_l {E1 E2 R1 R2} `{EncodingType E1} `{EncodingType E2}
+       (RPre : Rel E1 E2) (RPost : PostRel E1 E2) (RR : Rel R1 R2) phi1 phi2 phi3 :
+  strict_refines phi2 phi3 ->
+  padded_refines RPre RPost RR phi1 phi2 ->
+  padded_refines RPre RPost RR phi1 phi3.
+Proof.
+  intros. eapply strict_refines_proper; eauto. reflexivity.
+Qed.
