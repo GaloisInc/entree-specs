@@ -915,8 +915,38 @@ Proof.
     subst. auto.
 Qed.
 
+Lemma refines_refl {E R} `{EncodingType E} (RPre : Rel E E) (RPost : PostRel E E) 
+      (RR : Rel R R) :
+  Reflexive RPre -> ReflexivePostRel RPost -> Reflexive RR -> 
+  forall t, padded t ->
+  refines RPre RPost RR t t.
+Proof.
+  intros HRPre HRPost HRR.  pcofix CIH. intros t Ht. pstep. red.
+  punfold Ht. red in Ht. inversion Ht.
+  - constructor. auto.
+  - constructor. right. pclearbot. eauto.
+  - destruct e.
+    + constructor. auto. intros. apply HRPost in H2. subst. pclearbot.
+      left. pstep. constructor. right. eapply CIH; eauto. apply H1.
+    + constructor. intros. eapply refinesF_forallL. constructor.
+      right. pclearbot. eapply CIH; eauto. apply H1.
+    + constructor. intros. eapply refinesF_existsR. constructor.
+      right. pclearbot. eapply CIH; eauto. apply H1.
+Qed.
+
+Lemma padded_refines_refl {E R} `{EncodingType E} (RPre : Rel E E) (RPost : PostRel E E) 
+      (RR : Rel R R) :
+  Reflexive RPre -> ReflexivePostRel RPost -> Reflexive RR -> 
+  Reflexive (padded_refines RPre RPost RR).
+Proof.
+  repeat intro. apply refines_refl; auto. apply pad_is_padded.
+Qed.
+
 #[global] Instance strict_refines_refl {E R} `{EncodingType E} : Reflexive (@strict_refines E R _ ).
-Admitted.
+Proof.
+  apply padded_refines_refl; auto. red. intros. dependent destruction H0. 
+  auto.
+Qed.
 
 #[global] Instance strict_refines_trans  {E R} `{EncodingType E} : Transitive (@strict_refines E R _ ).
 Proof.
@@ -931,3 +961,13 @@ Lemma padded_refines_weaken_l {E1 E2 R1 R2} `{EncodingType E1} `{EncodingType E2
 Proof.
   intros. eapply strict_refines_proper; eauto. reflexivity.
 Qed.
+
+Lemma padded_refines_weaken_r {E1 E2 R1 R2} `{EncodingType E1} `{EncodingType E2}
+       (RPre : Rel E1 E2) (RPost : PostRel E1 E2) (RR : Rel R1 R2) phi1 phi2 phi3 :
+  strict_refines phi1 phi2 ->
+  padded_refines RPre RPost RR phi2 phi3 ->
+  padded_refines RPre RPost RR phi1 phi3.
+Proof.
+  intros. eapply strict_refines_proper; eauto. reflexivity.
+Qed.
+

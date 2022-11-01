@@ -11,4 +11,5 @@ theories/Ref/MRecSpec.v
 theories/Ref/EnTreeSpecFacts.v
 theories/Ref/EnTreeSpecCombinatorFacts.v
 theories/Ref/SpecM.v
+theories/Ref/SpecMFacts.v
 theories/Ref/Automation.v

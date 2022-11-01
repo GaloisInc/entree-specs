@@ -422,3 +422,103 @@ Qed.
 
 
 End padded_refines_mrec.        
+
+Section interp_mrec_spec_ev.
+Context (D E : Type) `{EncodingType D} `{EncodingType E}.
+Context (body : forall d : D, entree_spec (D + E) (encodes d)).
+
+Lemma interp_mrec_spec_forall R (t : QuantEnc) (k : encodes t -> entree_spec (D + E) R)  :
+  interp_mrec_spec body (Vis (Spec_forall t) k) ≅
+                   Vis (Spec_forall t) (fun x => interp_mrec_spec body (k x)).
+Proof.
+  pstep. red. cbn. constructor. left. apply Reflexive_eqit. auto.
+Qed.
+
+Lemma interp_mrec_spec_exists R (t : QuantEnc) (k : encodes t -> entree_spec (D + E) R)  :
+  interp_mrec_spec body (Vis (Spec_exists t) k) ≅
+                   Vis (Spec_exists t) (fun x => interp_mrec_spec body (k x)).
+Proof.
+  pstep. red. cbn. constructor. left. apply Reflexive_eqit. auto.
+Qed.
+
+Lemma interp_mrec_spec_inr R e (k : encodes e -> entree_spec (D + E) R) : 
+  interp_mrec_spec body (Vis (Spec_vis (inr e)) k) ≅
+                   Vis (Spec_vis e) (fun x => interp_mrec_spec body (k x)).
+Proof.
+  pstep. red. cbn. constructor. left. apply Reflexive_eqit. auto.
+Qed.
+
+Lemma interp_mrec_spec_inl R (d : D) (k : encodes d -> entree_spec (D + E) R) : 
+  interp_mrec_spec body (Vis (Spec_vis (inl d)) k) ≅
+                   Tau (interp_mrec_spec body (EnTree.bind (body d) k)).
+Proof.
+  pstep. red. cbn. constructor. left. apply Reflexive_eqit. auto.
+Qed.
+
+Lemma interp_mrec_spec_ret R (r : R) :
+  interp_mrec_spec body (Ret r) ≅ Ret r.
+Proof.
+  pstep. constructor. auto.
+Qed.
+
+Lemma interp_mrec_spec_proper1 R : Proper (eq_itree eq ==> @eq_itree _ _ R R eq) (interp_mrec_spec body).
+Proof.
+  ginit. gcofix CIH. intros. unfold interp_mrec_spec. pinversion H2; try inv CHECK.
+  - gstep. constructor. auto.
+  - gstep. red. cbn. constructor. gfinal. eauto.
+  - destruct e; try destruct e.
+    + setoid_rewrite interp_mrec_spec_inl. gstep. constructor.
+      gfinal. left. eapply CIH. eapply eqit_bind. reflexivity.
+      intros. subst. apply REL.
+    + gstep. red. cbn. constructor. gfinal. intros. left.
+      eapply CIH. apply REL.
+    + gstep. red. cbn. constructor. gfinal. intros. left.
+      eapply CIH. apply REL.
+    + gstep. red. cbn. constructor. gfinal. intros. left.
+      eapply CIH. apply REL.
+Qed.
+End interp_mrec_spec_ev.
+
+#[global] Instance interp_mrec_spec_proper1_inst (D E R : Type) `{EncodingType D} `{EncodingType E}
+ (body : forall d : D, entree_spec (D + E) (encodes d)) :
+  Proper (eq_itree eq ==> @eq_itree _ _ R R eq) (interp_mrec_spec body).
+Proof.
+  apply interp_mrec_spec_proper1.
+Qed.
+
+Section interp_mrec_spec_bind.
+Context (D E : Type) `{EncodingType D} `{EncodingType E}.
+Context (body : forall d : D, entree_spec (D + E) (encodes d)).
+
+Lemma interp_mrec_spec_bind R S : forall (t : entree_spec (D + E) R ) (k : R -> entree_spec (D + E) S),
+    interp_mrec_spec body (EnTree.bind t k) ≅
+                     EnTree.bind (interp_mrec_spec body t) (fun r => interp_mrec_spec body (k r)).
+Proof.
+  ginit. gcofix CIH. intros. destruct (observe t) eqn : Ht; use_simpobs.
+  - symmetry in Ht. apply simpobs in Ht. rewrite <- Ht.
+    rewrite interp_mrec_spec_ret. repeat rewrite bind_ret_l.
+    apply Reflexive_eqit_gen. auto.
+  - symmetry in Ht. apply simpobs in Ht. 
+    rewrite <- Ht. rewrite interp_mrec_spec_tau. repeat rewrite bind_tau.
+    rewrite interp_mrec_spec_tau. gstep. constructor. gfinal. eauto.
+  - symmetry in Ht. apply simpobs in Ht. 
+    rewrite <- Ht. destruct e; try destruct e.
+    + rewrite bind_vis. repeat rewrite interp_mrec_spec_inl. rewrite bind_tau.
+      cbn.
+      gstep. constructor.
+      assert (EnTree.bind (body d) (fun x => EnTree.bind (k0 x) k) ≅ 
+              EnTree.bind (EnTree.bind (body d) (fun x => (k0 x))) k).
+      rewrite bind_bind. reflexivity.
+      rewrite H1.
+      gfinal. eauto. 
+    + rewrite bind_vis. repeat rewrite interp_mrec_spec_inr. rewrite bind_vis.
+      gstep. constructor. gfinal. eauto.
+    + rewrite bind_vis. repeat rewrite interp_mrec_spec_forall. rewrite bind_vis.
+      gstep. constructor. gfinal. eauto.
+    + rewrite bind_vis. repeat rewrite interp_mrec_spec_exists. rewrite bind_vis.
+      gstep. constructor. gfinal. eauto.
+Qed.
+
+ 
+
+End interp_mrec_spec_bind.

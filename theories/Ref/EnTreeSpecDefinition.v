@@ -96,15 +96,16 @@ Definition refines := paco2 refines_ bot2.
 
 End refines.
 
-Definition assume_spec {E} `{EncodingType E} (P : Prop) : entree_spec E unit :=
-  Vis (Spec_forall (QEnc_prop P)) (fun _ => Ret tt).
-Definition assert_spec {E} `{EncodingType E} (P : Prop) : entree_spec E unit :=
-  Vis (Spec_exists (QEnc_prop P)) (fun _ => Ret tt).
 Definition forall_spec {E} `{EncodingType E} (A : Type) `{QuantType A} : entree_spec E A :=
   Vis (Spec_forall (quantEnc (A:=A))) (fun a => Ret (quantEnum a)).
 Definition exists_spec {E} `{EncodingType E} (A : Type) `{QuantType A} : entree_spec E A :=
   Vis (Spec_exists (quantEnc (A:=A))) (fun a => Ret (quantEnum a)).
 
+Definition assume_spec {E} `{EncodingType E} (P : Prop) : entree_spec E unit :=
+  EnTree.bind (forall_spec P) (fun _ => Ret tt).
+
+Definition assert_spec {E} `{EncodingType E} (P : Prop) : entree_spec E unit :=
+  EnTree.bind (exists_spec P) (fun _ => Ret tt).
 
 Lemma forall_spec_correctr {E1 E2} `{EncodingType E1} `{EncodingType E2} 
       (A : Type) `{QuantType A} R1 R2  RPre RPost RR

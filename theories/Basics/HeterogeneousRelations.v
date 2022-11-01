@@ -32,3 +32,6 @@ Variant RComposePostRel {E1 E2 E3} `{EncodingType E1} `{EncodingType E2} `{Encod
   | RComposePostRel_intro (e1 : E1) (e3 : E3) a c : 
     (forall e2, RPre1 e1 e2 -> RPre2 e2 e3 -> exists b, RPost1 e1 e2 a b /\ RPost2 e2 e3 b c) ->
     RComposePostRel RPre1 RPre2 RPost1 RPost2 e1 e3 a c.
+
+Class ReflexivePostRel {E} `{EncodingType E} (PR : PostRel E E) : Prop :=
+  refl_postrel : forall (e : E) a b, PR e e a b -> a = b.

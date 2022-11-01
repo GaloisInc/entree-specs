@@ -18,6 +18,7 @@ From EnTree Require Import
      Ref.SpecM
      Eq.Eqit
      Ref.MRecSpec
+     Ref.SpecMFacts
 .
 
 Import SpecMNotations.
@@ -78,6 +79,40 @@ Lemma spec_refines_ret_bind_l E1 E2 Γ1 Γ2 R1 R2 A
   spec_refines RPre RPost RR (Ret r >>= k1) t2.
 Proof.
   intros; setoid_rewrite bind_ret_l; assumption.
+Qed.
+
+Lemma padded_refines_ret_bind_l E1 E2 `{EncodingType E1} `{EncodingType E2} R1 R2 A 
+      RPre RPost RR r (k1 : A -> entree_spec E1 R1) (t : entree_spec E2 R2) :
+  padded_refines RPre RPost RR (k1 r) t ->
+  padded_refines RPre RPost RR (EnTree.bind (Ret r) k1) t.
+Proof.
+  intros. rewrite bind_ret_l. auto.
+Qed.
+
+Lemma padded_refines_ret_bind_r E1 E2 `{EncodingType E1} `{EncodingType E2} R1 R2 A 
+      RPre RPost RR r (k2 : A -> entree_spec E2 R2) (t : entree_spec E1 R1) :
+  padded_refines RPre RPost RR t (k2 r) ->
+  padded_refines RPre RPost RR t (EnTree.bind (Ret r) k2).
+Proof.
+  intros. rewrite bind_ret_l. auto.
+Qed.
+
+Lemma padded_refines_bind_bind_r E1 E2 `{EncodingType E1} `{EncodingType E2} R1 R2 A1 A2
+      RPre RPost RR (t1 : entree_spec E1 R1) (t2 : entree_spec E2 A1)
+      (k1 : A1 -> entree_spec E2 A2) (k2 : A2 -> entree_spec E2 R2) :
+  padded_refines RPre RPost RR t1 (EnTree.bind t2 (fun a => EnTree.bind (k1 a) k2)) ->
+  padded_refines RPre RPost RR t1 (EnTree.bind (EnTree.bind t2 k1) k2).
+Proof.
+  intros; setoid_rewrite bind_bind; assumption.
+Qed.
+
+Lemma padded_refines_bind_bind_l E1 E2 `{EncodingType E1} `{EncodingType E2} R1 R2 A1 A2
+      RPre RPost RR (t1 : entree_spec E1 R1) (t2 : entree_spec E2 A1)
+      (k1 : A1 -> entree_spec E2 A2) (k2 : A2 -> entree_spec E2 R2) :
+  padded_refines RPre RPost RR (EnTree.bind t2 (fun a => EnTree.bind (k1 a) k2)) t1 ->
+  padded_refines RPre RPost RR (EnTree.bind (EnTree.bind t2 k1) k2) t1.
+Proof.
+  intros; setoid_rewrite bind_bind; assumption.
 Qed.
 
 Lemma spec_refines_bind_bind_r E1 E2 Γ1 Γ2 R1 R2 A1 A2
@@ -539,6 +574,80 @@ Definition pushTSPostRel {E1 E2 : EvType} {Γ1 Γ2 frame1 A2 B2}
                | _, _ => fun _ _ => False
                end.
 
+Ltac quantr := apply padded_refines_assumer || apply padded_refines_assertr ||
+                     apply interp_mrec_spec_assumer || apply interp_mrec_spec_assertr || 
+                     apply padded_refines_exists_specr || 
+                     apply padded_refines_forall_specr ||
+                     apply interp_mrec_spec_forall_specr ||
+                     apply interp_mrec_spec_exists_specr
+.
+
+Ltac quantl := apply padded_refines_assumel || apply padded_refines_assertl ||
+                     apply interp_mrec_spec_assumel || apply interp_mrec_spec_assertl ||
+                     apply padded_refines_exists_specl || 
+                     apply padded_refines_forall_specl ||
+                     apply interp_mrec_spec_forall_specl ||
+                     apply interp_mrec_spec_exists_specl.
+
+Lemma total_spec_fix_refines_total_spec_aux1:
+  forall (E : EvType) (Γ : FunStack) (A B : Type) (H : QuantType A) (H0 : QuantType B)
+    (pre : A -> Prop) (post : Rel A B) (rdec : Rel A A) (a : A),
+    strict_refines
+     (interp_mrec_spec
+        (fun call : FrameCall (unary1Frame A B) =>
+           EnTree.bind
+             (EnTree.bind (AssumeS (pre (uncall_unary1Frame call)))
+                (fun _ : unit =>
+                    EnTree.bind (ExistsS nat) (fun n : nat =>
+                       EnTree.bind
+                         (trepeat n
+                           (EnTree.bind (ExistsS A)
+                                        (fun a' : A =>
+                                           EnTree.bind (AssertS (pre a' /\ rdec a' (uncall_unary1Frame call)))
+                                                       (fun _ : unit =>
+                                                          CallS E Γ (unary1Frame A B)
+                                                                (FrameCallOfArgs (unary1Frame A B) 0
+                                                                                 (existT (fun _ : A => unit) a' tt))))))
+                         (fun _ : unit =>
+                            EnTree.bind (exists_spec B)
+                                        (fun b : B =>
+                                           EnTree.bind (AssertS (post (uncall_unary1Frame call) b))
+                                                       (fun _ : unit => Ret b)))))) (fun b : B => Ret (call_unary1Frame call b)))
+        (CallS E Γ (unary1Frame A B)
+               (FrameCallOfArgs (unary1Frame A B) 0 (existT (fun _ : A => unit) a tt))))
+     (total_spec_fix pre post rdec a).
+Proof.
+  intros E Γ A B H H0 pre post rdec a. setoid_rewrite interp_mrec_spec_inl at 1.
+  rewrite tau_eutt. match goal with |- strict_refines (interp_mrec_spec ?b _) _ =>
+                                      set b as body end.
+  eapply padded_refines_interp_mrec_spec with (RPreInv := eq) (RPostInv := PostRelEq).
+  - intros. subst. destruct d2.
+    destruct n. 2 : destruct args as [ [] _].
+    destruct args as [a' []]. cbn. cbn. eapply padded_refines_bind with (RR := eq).
+    2 : { intros. apply padded_refines_ret. subst. constructor. }
+    quantr. intros. quantl. auto. quantl. intros.
+    quantr. exists a0. eapply padded_refines_bind with (RR := eq).
+    + eapply padded_refines_monot; try apply strict_refines_refl; intros; subst.
+      destruct x1; constructor; auto. destruct PR. destruct H2. constructor.
+      destruct H2. constructor. auto.
+    + intros. subst. quantl. intros. quantr. exists a1. quantl.
+      intros. quantr. auto. apply padded_refines_ret. auto.
+ - cbn. quantr. intros. (* lets get a better way to rewrite bind_bind *)
+   eapply padded_refines_monot with (RPre1 := eq) (RPost1 := PostRelEq) (RR1 := eq); eauto.
+   + intros. subst. destruct x1; constructor; auto.
+   + intros. destruct e1; dependent destruction PR. dependent destruction H6.
+     constructor. dependent destruction H6. constructor.
+   + repeat apply padded_refines_bind_bind_l. quantl. eexists. eauto.
+     apply padded_refines_ret_bind_l. apply padded_refines_bind_bind_l.
+     eapply padded_refines_bind. apply strict_refines_refl.
+     intros. subst. apply padded_refines_bind_bind_l.
+     eapply padded_refines_bind. apply strict_refines_refl.
+     intros [] [] _. apply padded_refines_bind_bind_l. 
+     quantl. intros. quantr. exists a0. apply padded_refines_bind_bind_l.
+     quantl. intros. quantr. auto. repeat apply padded_refines_ret_bind_l.
+     apply padded_refines_ret. cbv. auto.
+Qed.
+   
 Lemma total_spec_fix_refines_total_spec {E Γ A B} `{QuantType A} `{QuantType B}
            (pre : A -> Prop) (post : A -> B -> Prop) (rdec : A -> A -> Prop)
            (a : A) : 
@@ -547,7 +656,33 @@ Lemma total_spec_fix_refines_total_spec {E Γ A B} `{QuantType A} `{QuantType B}
 Proof.
   intros Hwf. revert a. apply well_founded_ind with (R := rdec). auto.
   intros x Hind. unfold total_spec_fix. unfold total_spec_fix_body. cbn.
-Admitted.
+  match goal with |- strict_refines (interp_mrec_spec ?b _) _ =>
+                    set b as body end.
+  quantr. intro. quantl. auto. quantl. intros n.
+  induction n.
+  - cbn. rewrite bind_ret_l. quantl. intros b. quantr. exists b.
+    quantl. intros. quantr. auto. rewrite interp_mrec_spec_ret.
+    apply padded_refines_ret. auto.
+  - cbn. repeat rewrite bind_bind.
+    quantl. intros a. rewrite bind_bind. quantl.
+    intros [Hpre Hdec]. rewrite interp_mrec_spec_bind.
+    specialize (Hind a Hdec). 
+    match goal with |- padded_refines eq PostRelEq eq (EnTree.bind ?tf _ ) _ =>
+                      assert (strict_refines tf (total_spec_fix pre post rdec a)) end.
+    apply total_spec_fix_refines_total_spec_aux1.
+    eapply padded_refines_weaken_r
+           with (phi2 := EnTree.bind (total_spec pre post a)  (fun _  =>
+              EnTree.bind (exists_spec B)
+                (fun b : B => EnTree.bind (AssertS (post x b)) (fun _ : unit => Ret b))) )
+    .
+    { eapply padded_refines_bind; eauto. eapply padded_refines_weaken_l; eauto. } 
+    clear - Hwf Hpre Hdec. cbn.
+    apply padded_refines_bind_bind_l. quantl. auto.
+    apply padded_refines_bind_bind_l. quantl. intros b. apply padded_refines_bind_bind_l.
+    quantl. intros. rewrite bind_ret_l. quantl. intros bf.
+    quantl. intros Hbf. quantr. exists bf. quantr. auto. apply padded_refines_ret.
+    auto.
+Qed.
 
 Definition lift_preEq
   {frame1 : RecFrame} {A2 B2 : Type} pre preEq : Rel (FrameCall frame1) (FrameCall (unary1Frame A2 B2)) :=
