@@ -173,6 +173,9 @@ Proof.
     rewrite H2, H3. auto.
 Qed.
 
+
+(** Refinement rules for Quantifiers **)
+
 Lemma spec_refines_exists_r E1 E2 Γ1 Γ2 R1 R2 A `{QuantType A}
       RPre RPost RR (phi : SpecM E1 Γ1 R1) (kphi : A -> SpecM E2 Γ2 R2) a :
   spec_refines RPre RPost RR phi (kphi a) ->
@@ -206,6 +209,33 @@ Lemma spec_refines_forall_l E1 E2 Γ1 Γ2 R1 R2 A `{QuantType A}
 Proof.
   intros. apply padded_refines_forall_specl. eexists. eauto.
 Qed.
+
+
+(** Refinement rules for Assert and Assume **)
+
+Lemma spec_refines_assert_r E1 E2 Γ1 Γ2 R1 R2 (P:Prop)
+      RPre RPost RR (phi : SpecM E1 Γ1 R1) (kphi : unit -> SpecM E2 Γ2 R2) :
+  P -> spec_refines RPre RPost RR phi (kphi tt) ->
+  spec_refines RPre RPost RR phi (AssertS P >>= kphi).
+Admitted.
+
+Lemma spec_refines_assert_l E1 E2 Γ1 Γ2 R1 R2 (P:Prop)
+      RPre RPost RR (phi : SpecM E2 Γ2 R2) (kphi : unit -> SpecM E1 Γ1 R1) :
+  (P -> spec_refines RPre RPost RR (kphi tt) phi) ->
+  spec_refines RPre RPost RR (AssertS P >>= kphi) phi.
+Admitted.
+
+Lemma spec_refines_assume_r E1 E2 Γ1 Γ2 R1 R2 (P:Prop)
+      RPre RPost RR (phi : SpecM E1 Γ1 R1) (kphi : unit -> SpecM E2 Γ2 R2) :
+  (P -> spec_refines RPre RPost RR phi (kphi tt)) ->
+  spec_refines RPre RPost RR phi (AssumeS P >>= kphi).
+Admitted.
+
+Lemma spec_refines_assume_l E1 E2 Γ1 Γ2 R1 R2 (P:Prop)
+      RPre RPost RR (phi : SpecM E2 Γ2 R2) (kphi : unit -> SpecM E1 Γ1 R1) :
+  P -> spec_refines RPre RPost RR (kphi tt) phi ->
+  spec_refines RPre RPost RR (AssumeS P >>= kphi) phi.
+Admitted.
 
 (* FIXME: need rules to add binds to all the unary combinators *)
 
@@ -914,6 +944,8 @@ Hint Extern 102 (spec_refines _ _ _ (TriggerS _ >>= _) (TriggerS _ >>= _)) =>
   apply spec_refines_trigger_bind_IntroArg : refines.
 
 
+(* Rules for quantifiers *)
+
 Definition spec_refines_exists_l_IntroArg E1 E2 Γ1 Γ2 R1 R2 A `{QuantType A}
       RPre RPost RR (phi : SpecM E2 Γ2 R2) (kphi : A -> SpecM E1 Γ1 R1) :
   (IntroArg Exists A (fun a =>spec_refines RPre RPost RR (kphi a) phi)) ->
@@ -936,6 +968,33 @@ Definition spec_refines_forall_r_IntroArg E1 E2 Γ1 Γ2 R1 R2 A `{QuantType A}
 #[global] Hint Extern 102 (spec_refines _ _ _ (ForallS _ >>= _) _) =>
   unshelve (simple eapply spec_refines_forall_l); [shelve|] : refines.
 
+
+(* Rules for assume and assert *)
+
+Definition spec_refines_assert_l_IntroArg E1 E2 Γ1 Γ2 R1 R2 (P:Prop)
+      RPre RPost RR (phi : SpecM E2 Γ2 R2) (kphi : unit -> SpecM E1 Γ1 R1) :
+  (IntroArg Hyp P (fun _ => spec_refines RPre RPost RR (kphi tt) phi)) ->
+  spec_refines RPre RPost RR (AssertS P >>= kphi) phi :=
+  spec_refines_assert_l E1 E2 Γ1 Γ2 R1 R2 P RPre RPost RR phi kphi.
+
+Definition spec_refines_assume_r_IntroArg E1 E2 Γ1 Γ2 R1 R2 (P:Prop)
+      RPre RPost RR (phi : SpecM E1 Γ1 R1) (kphi : unit -> SpecM E2 Γ2 R2) :
+  (IntroArg Hyp P (fun _ => spec_refines RPre RPost RR phi (kphi tt))) ->
+  spec_refines RPre RPost RR phi (AssumeS P >>= kphi) :=
+  spec_refines_assume_r E1 E2 Γ1 Γ2 R1 R2 P RPre RPost RR phi kphi.
+
+#[global] Hint Extern 101 (spec_refines _ _ _ _ (AssumeS _ >>= _)) =>
+  simple apply spec_refines_assume_r_IntroArg : refines.
+#[global] Hint Extern 101 (spec_refines _ _ _ (AssertS _ >>= _) _) =>
+  simple apply spec_refines_assert_l_IntroArg : refines.
+
+#[global] Hint Extern 102 (spec_refines _ _ _ _ (AssertS _ >>= _)) =>
+  unshelve (simple eapply spec_refines_assert_r) : refines.
+#[global] Hint Extern 102 (spec_refines _ _ _ (AssumeS _ >>= _) _) =>
+  unshelve (simple eapply spec_refines_assume_l) : refines.
+
+
+(* Rules for if-then-else *)
 
 Definition spec_refines_if_r_IntroArg E1 E2 Γ1 Γ2 R1 R2
            RPre RPost RR (t1 : SpecM E1 Γ1 R1) (t2 t3 : SpecM E2 Γ2 R2) b :
@@ -961,6 +1020,8 @@ Definition spec_refines_if_l_IntroArg E1 E2 Γ1 Γ2 R1 R2
 #[global] Hint Extern 101 (spec_refines _ _ _ ((if _ then _ else _) >>= _) _) =>
   apply spec_refines_if_bind_l : refines.
 
+
+(* Rules for pattern-matching on lists *)
 
 Definition spec_refines_match_list_r_IntroArg E1 E2 Γ1 Γ2 RPre RPost R1 R2 RR A
            (t1 : SpecM E1 Γ1 R1) (t2 : A -> list A -> SpecM E2 Γ2 R2)
@@ -1000,6 +1061,8 @@ Hint Extern 101 (spec_refines _ _ _ _ ((match _ with | _ :: _ => _ | nil => _ en
 Hint Extern 101 (spec_refines _ _ _ ((match _ with | _ :: _ => _ | nil => _ end) >>= _) _) =>
   apply spec_refines_match_list_bind_l : refines.
 
+
+(* Rules for pattern-matching on pairs *)
 
 Definition spec_refines_match_pair_r_IntroArg E1 E2 Γ1 Γ2 RPre RPost R1 R2 RR A B
            (t1 : SpecM E1 Γ1 R1) (t2 : A -> B -> SpecM E2 Γ2 R2) pr :
