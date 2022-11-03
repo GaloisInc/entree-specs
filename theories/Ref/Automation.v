@@ -1,4 +1,5 @@
 From Coq Require Export
+     Datatypes
      Morphisms
      Setoid
      Program.Equality
@@ -891,6 +892,9 @@ Polymorphic Lemma IntroArg_and n P Q (goal : P /\ Q -> Prop)
     IntroArg n _ goal.
 Proof. intros H [ p q ]; apply H. Qed.
 
+Polymorphic Lemma IntroArg_false n (goal : False -> Prop) : IntroArg n _ goal.
+Proof. intros []. Qed.
+
 Polymorphic Lemma IntroArg_eqPostRel n E Γ e a1 a2 (goal : _ -> Prop) :
   IntroArg n (a1 = a2) (fun pf => goal (eq_dep1_intro _ _ _ _ _ _ (eq_refl e) pf)) ->
   IntroArg n (@eqPostRel E Γ e e a1 a2) goal.
@@ -934,7 +938,6 @@ Polymorphic Lemma IntroArg_pushPostRel_inr n E1 E2 Γ1 Γ2 frame1 frame2
                            postcond RPost (inr e1) (inr e2) r1 r2) goal.
 Proof. intro H. apply H. Qed.
 
-
 Polymorphic Lemma IntroArg_pushTSPreRel_inl n E1 E2 Γ1 Γ2 frame1 A2 B2
             (pre : A2 -> Prop) (preEq : Rel (FrameCall frame1) A2)
             (RPre : SpecPreRel E1 E2 Γ1 Γ2)
@@ -975,6 +978,23 @@ Polymorphic Lemma IntroArg_pushTSPostRel_inr n E1 E2 Γ1 Γ2 frame1 A2 B2
                              post postEq RPost (inr e1) (inr e2) r1 r2) goal.
 Proof. intro H. apply H. Qed.
 
+Polymorphic Definition IntroArg_FrameCall n frame goal :
+  forRange (length frame)
+           (fun i goal' => IntroArg Any (LRTInput (nthLRT frame i))
+                                    (fun args => goal (lrtApply _ _ (mkFrameCall frame i) args))
+                             -> goal')
+           (IntroArg n (FrameCall frame) goal) :=
+  @recFrameCall frame goal.
+
+Polymorphic Definition IntroArg_LRTInput_Ret {n R goal} :
+  goal tt -> IntroArg n (LRTInput (LRT_Ret R)) goal :=
+  fun H 'tt => H.
+
+Polymorphic Definition IntroArg_LRTInput_Fun {n A lrt goal} :
+  IntroArg n A (fun a => IntroArg n (LRTInput (lrt a)) (fun args => goal (existT _ a args))) ->
+  IntroArg n (LRTInput (LRT_Fun A lrt)) goal :=
+  fun H '(existT _ x l) => H x l.
+
 Ltac IntroArg_intro_dependent_destruction n :=
   let e := argName n in
     IntroArg_intro e; dependent destruction e.
@@ -983,6 +1003,7 @@ Ltac IntroArg_base_tac n A g :=
   lazymatch A with
   | (fun _ => _) _ => simple apply IntroArg_beta
   | _ /\ _ => simple apply IntroArg_and
+  | False => simple apply IntroArg_false
   | @pushPreRel _ _ _ _ _ _ _ _ (inl _) (inl _) =>
     simple apply IntroArg_pushPreRel_inl
   | @pushPreRel _ _ _ _ _ _ _ _ (inr _) (inr _) =>
@@ -1009,6 +1030,12 @@ Ltac IntroArg_base_tac n A g :=
 #[global] Hint Extern 101 (IntroArg ?n ?A ?g) =>
   IntroArg_base_tac n A g : refines prepostcond.
 
+#[global] Hint Extern 101 (IntroArg ?n (FrameCall ?frame) _) =>
+  apply (@IntroArg_FrameCall n frame) : refines.
+#[global] Hint Extern 101 (IntroArg ?n (LRTInput _) _) =>
+  apply IntroArg_LRTInput_Fun || apply IntroArg_LRTInput_Ret;
+  simpl lrtApply; simpl applyFrameTuple : refines.
+  
 #[global] Hint Extern 102 (IntroArg ?n (@eq bool _ _) _) =>
   let e := argName n in IntroArg_intro e; rewrite e in * : refines prepostcond.
 
@@ -1365,43 +1392,44 @@ Hint Extern 101 (spec_refines _ _ _ ((match _ with | (_,_) => _ end) >>= _) _) =
 
 (** * Refinement Hints About Recursion *)
 
-Definition Precondition {frame1 frame2} (call1 : FrameCall frame1) (call2 : FrameCall frame2) := Prop.
-Definition Postcondition {frame1 frame2} (call1 : FrameCall frame1) (call2 : FrameCall frame2)
-                                         (r1 : FrameCallRet _ call1) (r2 : FrameCallRet _ call2) := Prop.
+Definition Precondition frame1 frame2 := Rel (FrameCall frame1) (FrameCall frame2).
+Definition Postcondition frame1 frame2 := PostRel (FrameCall frame1) (FrameCall frame2).
 
 Inductive ContinueType := Continue_multifix_bind | Continue_multifix.
-Definition Continue {ct : ContinueType} :
+Polymorphic Definition ContinueArg ct : Type :=
   match ct with
-  | Continue_multifix_bind => Prop -> Type -> Type -> Type
-  | Continue_multifix => Prop -> Type -> Type
-  end :=
-  match ct with
-  | Continue_multifix_bind => fun precond goal1 goal2 => (precond * goal1 * goal2)%type
-  | Continue_multifix => fun precond goal => (precond * goal)%type
+  | Continue_multifix_bind => (Prop * Type * Type)%type
+  | Continue_multifix => (Prop * Type)%type
   end.
+Polymorphic Definition Continue {ct : ContinueType} : ContinueArg ct -> Type :=
+  match ct with
+  | Continue_multifix_bind => fun '(precond, goal1, goal2) => (precond * goal1 * goal2)%type
+  | Continue_multifix => fun '(precond, goal) => (precond * goal)%type
+  end.
+Arguments Continue {ct carg}.
 
 Lemma Continue_multifix_bind_unfold precond goal1 goal2 :
   RelGoal precond -> goal1 -> goal2 ->
-  @Continue Continue_multifix_bind precond goal1 goal2.
-Proof. split; eauto. Qed.
+  @Continue Continue_multifix_bind (precond, goal1, goal2).
+  Proof. split; eauto. Qed.
 Lemma Continue_multifix_unfold precond goal :
   RelGoal precond -> goal ->
-  @Continue Continue_multifix precond goal.
+  @Continue Continue_multifix (precond, goal).
 Proof. split; eauto. Qed.
 
 Ltac Continue_unfold :=
   match goal with
-  | |- @Continue Continue_multifix_bind _ _ _ => simple apply Continue_multifix_bind_unfold
-  | |- @Continue Continue_multifix _ _ => simple apply Continue_multifix_unfold
+  | |- @Continue Continue_multifix_bind _ => simple apply Continue_multifix_bind_unfold
+  | |- @Continue Continue_multifix _ => simple apply Continue_multifix_unfold
   end.
 
 #[global] Hint Opaque Precondition : refines prepostcond.
 #[global] Hint Opaque Postcondition : refines prepostcond.
 #[global] Hint Opaque Continue : refines prepostcond.
 
-#[global] Hint Extern 999 (Precondition _ _) => shelve : prepostcond.
-#[global] Hint Extern 999 (Postcondition _ _ _ _) => shelve : prepostcond.
-#[global] Hint Extern 999 (Continue _ _) => shelve : refines.
+#[global] Hint Extern 999 (Precondition) => shelve : prepostcond.
+#[global] Hint Extern 999 (Postcondition) => shelve : prepostcond.
+#[global] Hint Extern 999 (Continue) => shelve : refines.
 
 Lemma spec_refines_multifix_bind_IntroArg (E1 E2 : EvType) Γ1 Γ2 frame1 frame2 R1 R2
       (RPre : SpecPreRel E1 E2 Γ1 Γ2) (RPost : SpecPostRel E1 E2 Γ1 Γ2) RR
@@ -1410,22 +1438,17 @@ Lemma spec_refines_multifix_bind_IntroArg (E1 E2 : EvType) Γ1 Γ2 frame1 frame2
       (call1 : FrameCall frame1) (call2 : FrameCall frame2)
       (k1 : FrameCallRet frame1 call1 -> SpecM E1 Γ1 R1)
       (k2 : FrameCallRet frame2 call2 -> SpecM E2 Γ2 R2)
-      (precond : IntroArg Call (FrameCall frame1) (fun call1' =>
-                 IntroArg Call (FrameCall frame2) (fun call2' =>
-                 Precondition call1' call2')))
-      (postcond : IntroArg Call (FrameCall frame1) (fun call1' =>
-                  IntroArg Call (FrameCall frame2) (fun call2' =>
-                  IntroArg RetAny _ (fun r1 => IntroArg RetAny _ (fun r2 =>
-                  Postcondition call1' call2' r1 r2))))) :
+      (precond : Precondition frame1 frame2)
+      (postcond : Postcondition frame1 frame2) :
   @Continue Continue_multifix_bind
-            (precond call1 call2)
-            (IntroArg Call _ (fun call1' => IntroArg Call _ (fun call2' =>
+            (precond call1 call2,
+             IntroArg Call _ (fun call1' => IntroArg Call _ (fun call2' =>
              IntroArg Hyp (precond call1' call2') (fun _ =>
              spec_refines (pushPreRel precond RPre) (pushPostRel postcond RPost)
                           (postcond call1' call2')
                           (applyFrameTuple _ _ _ bodies1 call1')
-                          (applyFrameTuple _ _ _ bodies2 call2')))))
-            (IntroArg RetAny _ (fun r1 => IntroArg RetAny _ (fun r2 =>
+                          (applyFrameTuple _ _ _ bodies2 call2')))),
+             IntroArg RetAny _ (fun r1 => IntroArg RetAny _ (fun r2 =>
              IntroArg Hyp (postcond call1 call2 r1 r2) (fun _ =>
              spec_refines RPre RPost RR (k1 r1) (k2 r2))))) ->
   spec_refines RPre RPost RR
@@ -1441,16 +1464,11 @@ Lemma spec_refines_multifix_IntroArg (E1 E2 : EvType) Γ1 Γ2 frame1 frame2
       (bodies2 : FrameTuple E2 (frame2 :: Γ2) frame2)
       (call1 : FrameCall frame1) (call2 : FrameCall frame2)
       (RR : Rel (FrameCallRet frame1 call1) (FrameCallRet frame2 call2))
-      (precond : IntroArg Call (FrameCall frame1) (fun call1' =>
-                 IntroArg Call (FrameCall frame2) (fun call2' =>
-                 Precondition call1' call2')))
-      (postcond : IntroArg Call (FrameCall frame1) (fun call1' =>
-                  IntroArg Call (FrameCall frame2) (fun call2' =>
-                  IntroArg RetAny _ (fun r1 => IntroArg RetAny _ (fun r2 =>
-                  Postcondition call1' call2' r1 r2))))) :
+      (precond : Precondition frame1 frame2)
+      (postcond : Postcondition frame1 frame2) :
   @Continue Continue_multifix
-            (precond call1 call2)
-            (IntroArg Call _ (fun call1' => IntroArg Call _ (fun call2' =>
+            (precond call1 call2,
+             IntroArg Call _ (fun call1' => IntroArg Call _ (fun call2' =>
              IntroArg Hyp (precond call1' call2') (fun _ =>
              spec_refines (pushPreRel precond RPre) (pushPostRel postcond RPost)
                           (postcond call1' call2')
@@ -1462,8 +1480,11 @@ Lemma spec_refines_multifix_IntroArg (E1 E2 : EvType) Γ1 Γ2 frame1 frame2
 Admitted.
 
 #[global]
-Hint Extern 101 (spec_refines _ _ _ (MultiFixS _ _ _ _ _ >>= _) (MultiFixS _ _ _ _ _ >>= _)) =>
-  eapply spec_refines_multifix_bind_IntroArg : refines.
+Hint Extern 101 (spec_refines ?RPre ?RPost ?RR
+                              (MultiFixS ?E1 ?Γ1 ?frame1 ?bodies1 ?call1 >>= ?k1)
+                              (MultiFixS ?E2 ?Γ2 ?frame2 ?bodies2 ?call2 >>= ?k2)) =>
+  eapply (spec_refines_multifix_bind_IntroArg E1 E2 Γ1 Γ2 frame1 frame2 _ _
+                 RPre RPost RR bodies1 bodies2 call1 call2 k1 k2) : refines.
 #[global]
 Hint Extern 101 (spec_refines ?RPre ?RPost ?RR
                               (MultiFixS ?E1 ?Γ1 ?frame1 ?bodies1 ?call1)
@@ -1471,8 +1492,62 @@ Hint Extern 101 (spec_refines ?RPre ?RPost ?RR
   eapply (spec_refines_multifix_IntroArg E1 E2 Γ1 Γ2 frame1 frame2
                  RPre RPost bodies1 bodies2 call1 call2 RR) : refines.
 
+Lemma spec_refines_call_bind_IntroArg (E1 E2 : EvType) Γ1 Γ2 frame1 frame2 R1 R2
+      (RPre : SpecPreRel E1 E2 (frame1 :: Γ1) (frame2 :: Γ2))
+      (RPost : SpecPostRel E1 E2 (frame1 :: Γ1) (frame2 :: Γ2))
+      RR (call1 : FrameCall frame1) (call2 : FrameCall frame2)
+      (k1 : FrameCallRet frame1 call1 -> SpecM E1 (frame1 :: Γ1) R1)
+      (k2 : FrameCallRet frame2 call2 -> SpecM E2 (frame2 :: Γ2) R2) :
+  RelGoal (RPre (inl call1) (inl call2)) ->
+  (IntroArg RetAny _ (fun r1 => IntroArg RetAny _ (fun r2 =>
+   IntroArg Hyp (RPost (inl call1) (inl call2) r1 r2) (fun _ =>
+   spec_refines RPre RPost RR (k1 (resum_ret call1 r1)) (k2 (resum_ret call2 r2)))))) ->
+  spec_refines RPre RPost RR (CallS _ _ _ call1 >>= k1) (CallS _ _ _ call2 >>= k2).
+Proof. apply spec_refines_call_bind. Qed.
 
-(** * Tactics *)
+Lemma spec_refines_call_IntroArg (E1 E2 : EvType) Γ1 Γ2 frame1 frame2
+      (RPre : SpecPreRel E1 E2 (frame1 :: Γ1) (frame2 :: Γ2))
+      (RPost : SpecPostRel E1 E2 (frame1 :: Γ1) (frame2 :: Γ2))
+      (call1 : FrameCall frame1) (call2 : FrameCall frame2)
+      (RR : Rel (FrameCallRet frame1 call1) (FrameCallRet frame2 call2)) :
+  RelGoal (RPre (inl call1) (inl call2)) ->
+  spec_refines RPre RPost RR (CallS _ _ _ call1) (CallS _ _ _ call2).
+Admitted.
+
+#[global]
+Hint Extern 101 (spec_refines _ _ _ (CallS _ _ _ _ >>= _) (CallS _ _ _ _ >>= _)) =>
+  apply spec_refines_call_bind_IntroArg : refines.
+#[global]
+Hint Extern 101 (spec_refines _ _ _ (CallS _ _ _ _) (CallS _ _ _ _)) =>
+  apply spec_refines_call_IntroArg : refines.
+
+
+(** * Tactics for building pre/post-conditions *)
+
+Definition precond_include_exclude_case {frame1 frame2} i j (P : Prop)
+  (Q : Precondition frame1 frame2) : Precondition frame1 frame2 :=
+  fun call1 call2 => if andb (Nat.eqb (FrameCallIndex call1) i) (Nat.eqb (FrameCallIndex call2) j)
+                     then P else Q call1 call2.
+Definition postcond_include_exclude_case {frame1 frame2} i j (P : Prop)
+  (Q : Postcondition frame1 frame2) : Postcondition frame1 frame2 :=
+  fun call1 call2 r1 r2 => if andb (Nat.eqb (FrameCallIndex call1) i) (Nat.eqb (FrameCallIndex call2) j)
+                           then P else Q call1 call2 r1 r2.
+
+#[global] Hint Extern 101 (IntroArg ?n (precond_include_exclude_case _ _ _ _ _ _) _) =>
+  let e := argName n in IntroArg_intro e; cbv in e; apply (IntroArg_fold n _ _ e) : refines.
+
+Ltac precond_include_case  i j := apply (precond_include_exclude_case  i j True).
+Ltac precond_exclude_case  i j := apply (precond_include_exclude_case  i j False).
+Ltac postcond_include_case i j := apply (postcond_include_exclude_case i j True).
+Ltac postcond_exclude_case i j := apply (postcond_include_exclude_case i j False).
+
+Ltac precond_include_remaining  := exact (fun _ _ => True).
+Ltac precond_exclude_remaining  := exact (fun _ _ => False).
+Ltac postcond_include_remaining := exact (fun _ _ _ _ => True).
+Ltac postcond_exclude_remaining := exact (fun _ _ _ _ => False).
+
+
+(** * Tactics for proving refinement *)
 
 Ltac prove_refinement_eauto :=
   unshelve (typeclasses eauto with refines).
@@ -1510,12 +1585,31 @@ Lemma test_spins E (x : Z) :
                     (mkFrameCall (unary1Frame Z Z) 0 x)).
 Proof.
   prove_refinement.
-  - exact True.
-  - exact True.
+  - precond_include_remaining.
+  - postcond_include_remaining.
   - prove_refinement_continue.
-    admit. (* add call rules *)
-Admitted.
+Qed.
 
+Definition testFrame1 : RecFrame :=
+  LRT_Fun Z (fun _ => LRT_Ret Z) :: LRT_Fun Z (fun _ => LRT_Ret Z) :: nil.
 
+Eval cbn in (fun E => FrameTuple E (testFrame1 :: nil) testFrame1).
 
-
+Lemma test_spins_rets E (x : Z) :
+  @spec_refines E E nil nil eqPreRel eqPostRel Z Z eq
+                  (MultiFixS E nil testFrame1
+                    ((fun a => CallS _ _ _ (mkFrameCall testFrame1 0 a)),
+                     ((fun a => RetS 0), tt))
+                    (mkFrameCall testFrame1 1 x))
+                  (MultiFixS E nil testFrame1
+                    ((fun a => RetS 0),
+                     ((fun a => CallS _ _ _ (mkFrameCall testFrame1 1 a)), tt))
+                    (mkFrameCall testFrame1 0 x)).
+Proof.
+  prove_refinement.
+  - precond_include_case 0%nat 1%nat.
+    precond_include_case 1%nat 0%nat.
+    precond_exclude_remaining.
+  - postcond_include_remaining.
+  - prove_refinement_continue.
+Qed.

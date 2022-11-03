@@ -15,8 +15,8 @@ From EnTree Require Import
      Ref.MRecSpec
 .
 From Coq Require Import
-     Lists.List
      Strings.String
+     Lists.List
 .
 
 From Paco Require Import paco.
@@ -115,6 +115,11 @@ Definition nthLRT (frame : RecFrame) n : LetRecType :=
 Inductive FrameCall frame : Type@{entree_u} :=
 | FrameCallOfArgs n (args : LRTInput (nthLRT frame n)).
 
+Definition FrameCallIndex {frame} (call : FrameCall frame) : nat :=
+  match call with
+  | FrameCallOfArgs _ n _ => n
+  end.
+
 (* The return type for calling a recursive function in a RecFrame *)
 Definition FrameCallRet frame (args: FrameCall frame) : Type@{entree_u} :=
   match args with
@@ -135,6 +140,34 @@ Definition mkFrameCall (frame : RecFrame) n
 #[global] Instance FrameCall_ReSumRet frame n :
   ReSumRet (LRTInput (nthLRT frame n)) (FrameCall frame) :=
   fun _ r => r.
+
+Fixpoint forRange {A} (n : nat) (f : nat -> A -> A) (a0 : A) : A :=
+  match n with
+  | O   => a0
+  | S m => f 0 (forRange m (fun i a => f (S i) a) a0)
+  end.
+
+(* Destruct a frame call *)
+Polymorphic Definition recFrameCall {frame P} :
+  forRange (length frame)
+           (fun i Q => (forall (args : LRTInput (nthLRT frame i)), 
+                        P (lrtApply _ _ (mkFrameCall frame i) args)) -> Q)
+           (forall (call : FrameCall frame), P call).
+Admitted.
+
+(* Hmm, I couldn't immediately figure out a way to state the general case... *)
+Polymorphic Lemma recFrameCall_1_0_eq lrt0 P c0 args :
+  @recFrameCall (lrt0 :: nil) P c0
+                (lrtApply _ _ (mkFrameCall _ 0) args) = c0 args.
+Admitted.
+Polymorphic Lemma recFrameCall_2_0_eq lrt0 lrt1 P c0 c1 args :
+  @recFrameCall (lrt0 :: lrt1 :: nil) P c0 c1
+                (lrtApply _ _ (mkFrameCall _ 0) args) = c0 args.
+Admitted.
+Polymorphic Lemma recFrameCall_2_1_eq lrt0 lrt1 P c0 c1 args :
+  @recFrameCall (lrt0 :: lrt1 :: nil) P c0 c1
+                (lrtApply _ _ (mkFrameCall _ 1) args) = c1 args.
+Admitted.
 
 (* A FunStack is a list of RecFrame representing all of the functions bound
     by multiFixS that are currently in scope *)
