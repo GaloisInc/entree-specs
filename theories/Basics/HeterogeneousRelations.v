@@ -22,17 +22,6 @@ Notation PostRel E1 E2 := (forall (e1 : E1) (e2 : E2), encodes e1 -> encodes e2 
 
 Notation rcompose RR1 RR2 := (rel_compose RR2 RR1).
 
-Definition TruePreRel  {A B} : Rel A B := fun _ _ => True.
-Definition FalsePreRel {A B} : Rel A B := fun _ _ => False.
-Definition eqPreRel {A} : Rel A A := eq.
-
-Definition TruePostRel  {E1 E2} `{EncodingType E1} `{EncodingType E2} :
-  PostRel E1 E2 := fun _ _ _ _ => True.
-Definition FalsePostRel {E1 E2} `{EncodingType E1} `{EncodingType E2} :
-  PostRel E1 E2 := fun _ _ _ _ => False.
-Definition eqPostRel {E} `{EncodingType E} : PostRel E E :=
-  fun e1 e2 a1 a2 => eq_dep1 _ _ e1 a1 e2 a2.
-
 Variant SumPostRel {E1 E2 D1 D2} `{EncodingType E1} `{EncodingType E2} `{EncodingType D1} `{EncodingType D2}
         (RPost1 : PostRel E1 E2) (RPost2 : PostRel D1 D2) : PostRel (E1 + D1) (E2 + D2) :=
   | SumPostRel_inl (e1 : E1) (e2 : E2) a b : RPost1 e1 e2 a b -> SumPostRel RPost1 RPost2 (inl e1) (inl e2) a b
