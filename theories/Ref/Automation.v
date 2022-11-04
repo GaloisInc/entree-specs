@@ -569,6 +569,8 @@ Qed.
 Definition unary1Frame (A B : Type) : RecFrame :=
   cons (LRT_Fun A (fun _ => LRT_Ret B)) nil.
 
+Notation unary1Call x := (mkFrameCall (unary1Frame _ _) 0 x).
+
 
 (* The total correctness specification *)
 Definition total_spec {E Γ A B} `{QuantType B}
@@ -598,7 +600,7 @@ Definition total_spec_fix_body {E Γ A B} `{QuantType A} `{QuantType B}
   trepeat n (a' <- ExistsS A;;
              AssertS (pre a' /\ rdec a' a);;
              CallS E Γ _ (mkFrameCall (unary1Frame A B) 0 a'));;
-  b <- exists_spec B;;
+  b <- ExistsS B;;
   AssertS (post a b);;
   Ret b.
 
@@ -617,28 +619,38 @@ Defined.
 
 (* Add a precondition relation for proving total_spec refinement *)
 Definition pushTSPreRel {E1 E2 : EvType} {Γ1 Γ2 frame1 A2 B2}
-           (pre : A2 -> Prop) (preEq : Rel (FrameCall frame1) A2)
+           (tsPre : A2 -> Prop)
+           (precond : Rel (FrameCall frame1) (FrameCall (unary1Frame A2 B2)))
            (RPre : SpecPreRel E1 E2 Γ1 Γ2) :
   SpecPreRel E1 E2 (frame1 :: Γ1) (unary1Frame A2 B2 :: Γ2) :=
   fun a1 a2 => match a1,a2 with
                | inl args1, inl (FrameCallOfArgs _ 0 (existT _ a2 _)) =>
-                 pre a2 /\ preEq args1 a2
+                 tsPre a2 /\ precond args1 (unary1Call a2)
                | inr ev1, inr ev2 => RPre ev1 ev2
                | _, _ => False
                end.
 
 (* Add a postcondition relation for proving total_spec refinement *)
 Definition pushTSPostRel {E1 E2 : EvType} {Γ1 Γ2 frame1 A2 B2}
-           (post : A2 -> B2 -> Prop)
-           (postEq : forall call1', A2 -> FrameCallRet frame1 call1' -> B2 -> Prop)
+           (tsPost : A2 -> B2 -> Prop)
+           (postcond : PostRel (FrameCall frame1) (FrameCall (unary1Frame A2 B2)))
            (RPost : SpecPostRel E1 E2 Γ1 Γ2) :
   SpecPostRel E1 E2 (frame1 :: Γ1) (unary1Frame A2 B2 :: Γ2) :=
   fun a1 a2 => match a1,a2 return encodes a1 -> encodes a2 -> Prop with
                | inl args1, inl (FrameCallOfArgs _ 0 (existT _ a2 _)) =>
-                 fun r1 b2 => post a2 b2 /\ postEq args1 a2 r1 b2
+                 fun r1 b2 => tsPost a2 b2 /\ postcond args1 (unary1Call a2) r1 b2
                | inr a1', inr a2' => RPost a1' a2'
                | _, _ => fun _ _ => False
                end.
+
+(* Add a postcondition to the return relation for proving total_spec refinement *)
+Definition pushTSRR {E1 E2 : EvType} {frame1 A2 B2}
+           (tsPost : A2 -> B2 -> Prop)
+           (postcond : PostRel (FrameCall frame1) (FrameCall (unary1Frame A2 B2)))
+           (call1 : FrameCall frame1) (a2 : A2)
+           (RR : Rel (FrameCallRet frame1 call1) B2) :
+  Rel (FrameCallRet frame1 call1) B2 :=
+  fun r1 r2 => tsPost a2 r2 /\ postcond call1 (unary1Call a2) r1 r2 /\ RR r1 r2.
 
 Ltac quantr := apply padded_refines_assumer || apply padded_refines_assertr ||
                      apply interp_mrec_spec_assumer || apply interp_mrec_spec_assertr || 
@@ -750,33 +762,35 @@ Proof.
     auto.
 Qed.
 
-Definition lift_preEq
-  {frame1 : RecFrame} {A2 B2 : Type} pre preEq : Rel (FrameCall frame1) (FrameCall (unary1Frame A2 B2)) :=
-  fun c1 c2 => exists a : A2, FrameCallOfArgs (unary1Frame A2 B2) 0 (existT _ a tt) = c2 /\ preEq c1 a /\ pre a.
+Definition lift_ts_pre
+  {frame1 : RecFrame} {A2 B2 : Type} (tsPre : A2 -> Prop)
+  (precond : Rel (FrameCall frame1) (FrameCall (unary1Frame A2 B2))) :
+  Rel (FrameCall frame1) (FrameCall (unary1Frame A2 B2)) :=
+  fun c1 c2 => exists a : A2, FrameCallOfArgs (unary1Frame A2 B2) 0 (existT _ a tt) = c2 /\ precond c1 (unary1Call a) /\ tsPre a.
 
-Definition lift_postEq:
-  forall {frame1 : RecFrame} {A2 B2 : Type} (post : Rel A2 B2),
-    (forall call1' : FrameCall frame1, A2 -> Rel (FrameCallRet frame1 call1') B2) ->
+Definition lift_ts_post:
+  forall {frame1 : RecFrame} {A2 B2 : Type} (tsPost : A2 -> B2 -> Prop)
+    (postcond : PostRel (FrameCall frame1) (FrameCall (unary1Frame A2 B2))),
     PostRel (FrameCall frame1) (FrameCall (unary1Frame A2 B2)).
-  intros frame1 A2 B2 post postEq.
+  intros frame1 A2 B2 tsPost postcond.
   intros c1 c2 a b.
-  specialize (postEq c1 (uncall_unary1Frame c2)).
+  specialize (postcond c1 c2).
   destruct c2. cbn in b. destruct n.
-  cbn in b. destruct args. apply (post x b /\ postEq a b).
+  cbn in b. destruct args. apply (tsPost x b /\ postcond a b).
   destruct args. destruct x.
 Defined.
 (*with some strategic lemmas this should be doable *)
 
 Lemma spec_refines_total_spec_monot_aux1:
   forall (E1 E2 : EvType) (Γ1 Γ2 : FunStack) (frame1 : RecFrame) (A2 B2 : Type) (RPre : SpecPreRel E1 E2 Γ1 Γ2)
-    (preEq : Rel (FrameCall frame1) A2) (pre : A2 -> Prop)
+    (precond : Rel (FrameCall frame1) (FrameCall (unary1Frame A2 B2))) (tsPre : A2 -> Prop)
     (x0 : FrameCall frame1 +
             (fix FunStackE (E : Type) (Γ : FunStack) {struct Γ} : Type :=
                match Γ with
                | nil => (ErrorE + E)%type
                | frame :: Γ' => (FrameCall frame + FunStackE E Γ')%type
                end) E1 Γ1) (x1 : FrameCall (unary1Frame A2 B2) + FunStackE E2 Γ2),
-    pushTSPreRel pre preEq RPre x0 x1 -> HeterogeneousRelations.sum_rel (lift_preEq pre preEq) RPre x0 x1.
+    pushTSPreRel tsPre precond RPre x0 x1 -> HeterogeneousRelations.sum_rel (lift_ts_pre tsPre precond) RPre x0 x1.
 Proof.
   intros E1 E2 Γ1 Γ2 frame1 A2 B2 RPre preEq pre.
   intros x c PR. destruct x.
@@ -789,16 +803,16 @@ Qed.
 
 Lemma spec_refines_total_spec_monot_aux2:
   forall (E1 E2 : EvType) (Γ1 Γ2 : FunStack) (frame1 : RecFrame) (A2 B2 : Type) (RPost : SpecPostRel E1 E2 Γ1 Γ2)
-    (postEq : forall call1' : FrameCall frame1, A2 -> Rel (FrameCallRet frame1 call1') B2) (post : Rel A2 B2)
+    (postcond : PostRel (FrameCall frame1) (FrameCall (unary1Frame A2 B2))) (tsPost : A2 -> B2 -> Prop)
     (e1 : FrameCall frame1 +
             (fix FunStackE (E : Type) (Γ : FunStack) {struct Γ} : Type :=
                match Γ with
                | nil => (ErrorE + E)%type
                | frame :: Γ' => (FrameCall frame + FunStackE E Γ')%type
                end) E1 Γ1) (e2 : FrameCall (unary1Frame A2 B2) + FunStackE E2 Γ2) (x0 : encodes e1) (x1 : encodes e2),
-    SumPostRel (lift_postEq post postEq) RPost e1 e2 x0 x1 -> pushTSPostRel post postEq RPost e1 e2 x0 x1.
+    SumPostRel (lift_ts_post tsPost postcond) RPost e1 e2 x0 x1 -> pushTSPostRel tsPost postcond RPost e1 e2 x0 x1.
 Proof.
-  intros E1 E2 Γ1 Γ2 frame1 A2 B2 RPost postEq post.
+  intros E1 E2 Γ1 Γ2 frame1 A2 B2 RPost postcond tsPost.
   intros c1 c2 a b Hab.
   destruct c1.
   - destruct Hab; auto.
@@ -824,26 +838,26 @@ Lemma spec_refines_total_spec (E1 E2 : EvType) Γ1 Γ2 frame1
       (bodies1 : FrameTuple E1 (frame1 :: Γ1) frame1)
       (call1 : FrameCall frame1) (a2 : A2)
       (RR : Rel (FrameCallRet frame1 call1) B2)
-      (preEq : Rel (FrameCall frame1) A2)
-      (postEq : forall call1' a2', FrameCallRet frame1 call1' -> B2 -> Prop)
-      (pre : A2 -> Prop) (post : A2 -> B2 -> Prop)
+      (precond : Rel (FrameCall frame1) (FrameCall (unary1Frame A2 B2)))
+      (postcond : PostRel (FrameCall frame1) (FrameCall (unary1Frame A2 B2)))
+      (tsPre : A2 -> Prop) (tsPost : A2 -> B2 -> Prop)
       (rdec : A2 -> A2 -> Prop) :
   well_founded rdec ->
-  pre a2 -> preEq call1 a2 ->
-  (forall r1 r2, postEq call1 a2 r1 r2 -> RR r1 r2) ->
-  (* this condition should be signed off on by Eddy *)
-  (forall c a x y, postEq c a x y -> post a y) ->
+  tsPre a2 -> precond call1 (unary1Call a2) ->
+  (forall r1 r2, tsPost a2 r2 -> postcond call1 (unary1Call a2) r1 r2 -> RR r1 r2) ->
   (forall call1' a2',
-      pre a2' -> preEq call1' a2' ->
-      spec_refines (pushTSPreRel pre preEq RPre)
-                   (pushTSPostRel post postEq RPost)
-                   (postEq call1' a2')
+      tsPre a2' -> precond call1' (unary1Call a2') ->
+      spec_refines (pushTSPreRel tsPre precond RPre)
+                   (pushTSPostRel tsPost postcond RPost)
+                   (fun r1 r2 => tsPost a2' r2 /\
+                                 postcond call1' (unary1Call a2') r1 r2)
                    (applyFrameTuple _ _ _ bodies1 call1')
-                   (total_spec_fix_body pre post rdec a2')) ->
+                   (total_spec_fix_body tsPre tsPost rdec a2')) ->
   spec_refines RPre RPost RR
                (MultiFixS E1 Γ1 frame1 bodies1 call1)
-               (total_spec pre post a2).
-Proof.
+               (total_spec tsPre tsPost a2).
+Admitted. (* LUCAS FIXME *)
+(* Proof.
   intros Hwf Ha2 Hca HPost HPost'. intros.
   eapply total_spec_fix_refines_total_spec in Hwf as Hstrict. Unshelve. all : auto.
   eapply padded_refines_weaken_l; eauto.
@@ -869,7 +883,7 @@ Proof.
     + apply spec_refines_total_spec_monot_aux1.
     + apply spec_refines_total_spec_monot_aux2.
     + auto.
-Qed.
+Qed. *)
 
 
 (***
@@ -933,10 +947,15 @@ Proof. intros H []; eauto. Qed.
 Polymorphic Lemma IntroArg_false n (goal : False -> Prop) : IntroArg n _ goal.
 Proof. intros []. Qed.
 
-Lemma IntroArg_eq_sigT_const n A B (a a' : A) (b b' : B) (goal : Prop)
+Polymorphic Lemma IntroArg_eq_sigT_const n A B (a a' : A) (b b' : B) (goal : Prop)
   : IntroArg n (a = a') (fun _ => IntroArg n (b = b') (fun _ => goal)) ->
     IntroArg n (existT _ a b = existT _ a' b') (fun _ => goal).
 Proof. intros H eq; apply H; injection eq; eauto. Qed.
+
+Polymorphic Lemma IntroArg_eq_dep1_const n A B (a : A) (b b' : B a) (goal : Prop)
+  : IntroArg n (b = b') (fun _ => goal) ->
+    IntroArg n (eq_dep1 A B a b a b') (fun _ => goal).
+Admitted.
 
 Polymorphic Lemma IntroArg_eqPostRel n E Γ e a1 a2 (goal : _ -> Prop) :
   IntroArg n (a1 = a2) (fun pf => goal (eq_dep1_intro _ _ _ _ _ _ (eq_refl e) pf)) ->
@@ -982,43 +1001,45 @@ Polymorphic Lemma IntroArg_pushPostRel_inr n E1 E2 Γ1 Γ2 frame1 frame2
 Proof. intro H. apply H. Qed.
 
 Polymorphic Lemma IntroArg_pushTSPreRel_inl n E1 E2 Γ1 Γ2 frame1 A2 B2
-            (pre : A2 -> Prop) (preEq : Rel (FrameCall frame1) A2)
+            (tsPre : A2 -> Prop)
+            (precond : Rel (FrameCall frame1) (FrameCall (unary1Frame A2 B2)))
             (RPre : SpecPreRel E1 E2 Γ1 Γ2)
             args1 a2 (goal : _ -> Prop) :
-  IntroArg n (pre a2 /\ preEq args1 a2) goal ->
+  IntroArg n (tsPre a2 /\ precond args1 (unary1Call a2)) goal ->
   IntroArg n (@pushTSPreRel E1 E2 Γ1 Γ2 frame1 A2 B2
-                            pre preEq RPre (inl args1)
+                            tsPre precond RPre (inl args1)
                             (inl (mkFrameCall (unary1Frame A2 B2) 0 a2))) goal.
 Proof. intro H. apply H. Qed.
 
 Polymorphic Lemma IntroArg_pushTSPreRel_inr n E1 E2 Γ1 Γ2 frame1 A2 B2
-            (pre : A2 -> Prop) (preEq : Rel (FrameCall frame1) A2)
+            (tsPre : A2 -> Prop)
+            (precond : Rel (FrameCall frame1) (FrameCall (unary1Frame A2 B2)))
             (RPre : SpecPreRel E1 E2 Γ1 Γ2)
             e1 e2 (goal : _ -> Prop) :
   IntroArg n (RPre e1 e2) goal ->
   IntroArg n (@pushTSPreRel E1 E2 Γ1 Γ2 frame1 A2 B2
-                            pre preEq RPre (inr e1) (inr e2)) goal.
+                            tsPre precond RPre (inr e1) (inr e2)) goal.
 Proof. intro H. apply H. Qed.
 
 Polymorphic Lemma IntroArg_pushTSPostRel_inl n E1 E2 Γ1 Γ2 frame1 A2 B2
-            (post : A2 -> B2 -> Prop)
-            (postEq : forall call1', A2 -> FrameCallRet frame1 call1' -> B2 -> Prop)
+            (tsPost : A2 -> B2 -> Prop)
+            (postcond : PostRel (FrameCall frame1) (FrameCall (unary1Frame A2 B2)))
             (RPost : SpecPostRel E1 E2 Γ1 Γ2)
             args1 a2 r1 b2 (goal : _ -> Prop) :
-  IntroArg n (post a2 b2 /\ postEq args1 a2 r1 b2) goal ->
+  IntroArg n (tsPost a2 b2 /\ postcond args1 (unary1Call a2) r1 b2) goal ->
   IntroArg n (@pushTSPostRel E1 E2 Γ1 Γ2 frame1 A2 B2
-                             post postEq RPost (inl args1)
+                             tsPost postcond RPost (inl args1)
                              (inl (mkFrameCall (unary1Frame A2 B2) 0 a2)) r1 b2) goal.
 Proof. intro H. apply H. Qed.
 
 Polymorphic Lemma IntroArg_pushTSPostRel_inr n E1 E2 Γ1 Γ2 frame1 A2 B2
-            (post : A2 -> B2 -> Prop)
-            (postEq : forall call1', A2 -> FrameCallRet frame1 call1' -> B2 -> Prop)
+            (tsPost : A2 -> B2 -> Prop)
+            (postcond : PostRel (FrameCall frame1) (FrameCall (unary1Frame A2 B2)))
             (RPost : SpecPostRel E1 E2 Γ1 Γ2)
             e1 e2 r1 r2 (goal : _ -> Prop) :
   IntroArg n (RPost e1 e2 r1 r2) goal ->
   IntroArg n (@pushTSPostRel E1 E2 Γ1 Γ2 frame1 A2 B2
-                             post postEq RPost (inr e1) (inr e2) r1 r2) goal.
+                             tsPost postcond RPost (inr e1) (inr e2) r1 r2) goal.
 Proof. intro H. apply H. Qed.
 
 Polymorphic Definition IntroArg_FrameCall n frame goal :
@@ -1050,6 +1071,7 @@ Ltac IntroArg_base_tac n A g :=
   | False => simple apply IntroArg_false
   | existT _ _ _ = existT _ _ _ => simple apply IntroArg_eq_sigT_const
   | eqPreRel (existT _ _ _) (existT _ _ _) => simple apply IntroArg_eq_sigT_const
+  | eq_dep1 _ _ _ _ _ _ => simple apply IntroArg_eq_dep1_const
   | @pushPreRel _ _ _ _ _ _ _ _ (inl _) (inl _) =>
     simple apply IntroArg_pushPreRel_inl
   | @pushPreRel _ _ _ _ _ _ _ _ (inr _) (inr _) =>
@@ -1107,6 +1129,12 @@ Proof. eauto. Qed.
 #[global] Hint Extern 999 (RelGoal _) =>
   unfold RelGoal; (reflexivity || shelve) : refines.
 
+#[global] Lemma RelGoal_and P Q :
+  RelGoal P -> RelGoal Q -> RelGoal (P /\ Q).
+Proof. split; eauto. Qed.
+
+#[global] Hint Extern 101 (RelGoal (_ /\ _)) =>
+  simple apply RelGoal_and : refines.
 
 #[global] Lemma RelGoal_beta A (f : A -> Prop) x :
   RelGoal (f x) -> RelGoal ((fun x' => f x') x).
@@ -1183,12 +1211,13 @@ Proof. intro H. apply H. Qed.
 
 
 Polymorphic Lemma RelGoal_pushTSPreRel_inl E1 E2 Γ1 Γ2 frame1 A2 B2
-            (pre : A2 -> Prop) (preEq : Rel (FrameCall frame1) A2)
+            (tsPre : A2 -> Prop)
+            (precond : Rel (FrameCall frame1) (FrameCall (unary1Frame A2 B2)))
             (RPre : SpecPreRel E1 E2 Γ1 Γ2)
             args1 a2 :
-  RelGoal (pre a2 /\ preEq args1 a2) ->
+  RelGoal (tsPre a2 /\ precond args1 (unary1Call a2)) ->
   RelGoal (@pushTSPreRel E1 E2 Γ1 Γ2 frame1 A2 B2
-                            pre preEq RPre (inl args1)
+                            tsPre precond RPre (inl args1)
                             (inl (mkFrameCall (unary1Frame A2 B2) 0 a2))).
 Proof. intro H. apply H. Qed.
 
@@ -1196,14 +1225,14 @@ Proof. intro H. apply H. Qed.
                              (@pushTSPreRel _ _ _ _ _ _ _ _ _ _ (inl _) (inl _))) =>
   apply RelGoal_pushTSPreRel_inl : refines.
 
-
 Polymorphic Lemma RelGoal_pushTSPreRel_inr E1 E2 Γ1 Γ2 frame1 A2 B2
-            (pre : A2 -> Prop) (preEq : Rel (FrameCall frame1) A2)
+            (tsPre : A2 -> Prop)
+            (precond : Rel (FrameCall frame1) (FrameCall (unary1Frame A2 B2)))
             (RPre : SpecPreRel E1 E2 Γ1 Γ2)
             e1 e2 :
   RelGoal (RPre e1 e2) ->
   RelGoal (@pushTSPreRel E1 E2 Γ1 Γ2 frame1 A2 B2
-                            pre preEq RPre (inr e1) (inr e2)).
+                            tsPre precond RPre (inr e1) (inr e2)).
 Proof. intro H. apply H. Qed.
 
 #[global] Hint Extern 101 (RelGoal
@@ -1212,13 +1241,13 @@ Proof. intro H. apply H. Qed.
 
 
 Polymorphic Lemma RelGoal_pushTSPostRel_inl E1 E2 Γ1 Γ2 frame1 A2 B2
-            (post : A2 -> B2 -> Prop)
-            (postEq : forall call1', A2 -> FrameCallRet frame1 call1' -> B2 -> Prop)
+            (tsPost : A2 -> B2 -> Prop)
+            (postcond : PostRel (FrameCall frame1) (FrameCall (unary1Frame A2 B2)))
             (RPost : SpecPostRel E1 E2 Γ1 Γ2)
             args1 a2 r1 b2 :
-  RelGoal (post a2 b2 /\ postEq args1 a2 r1 b2) ->
+  RelGoal (tsPost a2 b2 /\ postcond args1 (unary1Call a2) r1 b2) ->
   RelGoal (@pushTSPostRel E1 E2 Γ1 Γ2 frame1 A2 B2
-                             post postEq RPost (inl args1)
+                             tsPost postcond RPost (inl args1)
                              (inl (mkFrameCall (unary1Frame A2 B2) 0 a2)) r1 b2).
 Proof. intro H. apply H. Qed.
 
@@ -1228,13 +1257,13 @@ Proof. intro H. apply H. Qed.
 
 
 Polymorphic Lemma RelGoal_pushTSPostRel_inr E1 E2 Γ1 Γ2 frame1 A2 B2
-            (post : A2 -> B2 -> Prop)
-            (postEq : forall call1', A2 -> FrameCallRet frame1 call1' -> B2 -> Prop)
+            (tsPost : A2 -> B2 -> Prop)
+            (postcond : PostRel (FrameCall frame1) (FrameCall (unary1Frame A2 B2)))
             (RPost : SpecPostRel E1 E2 Γ1 Γ2)
             e1 e2 r1 r2 :
   RelGoal (RPost e1 e2 r1 r2) ->
   RelGoal (@pushTSPostRel E1 E2 Γ1 Γ2 frame1 A2 B2
-                             post postEq RPost (inr e1) (inr e2) r1 r2).
+                             tsPost postcond RPost (inr e1) (inr e2) r1 r2).
 Proof. intro H. apply H. Qed.
 
 #[global] Hint Extern 101 (RelGoal
@@ -1310,10 +1339,10 @@ Definition spec_refines_forall_r_IntroArg E1 E2 Γ1 Γ2 R1 R2 A `{QuantType A}
 #[global] Hint Extern 101 (spec_refines _ _ _ (ExistsS _ >>= _) _) =>
   simple apply spec_refines_exists_l_IntroArg : refines.
 
-#[global] Hint Extern 102 (spec_refines _ _ _ _ (ExistsS _ >>= _)) =>
+(* #[global] Hint Extern 102 (spec_refines _ _ _ _ (ExistsS _ >>= _)) =>
   unshelve (simple eapply spec_refines_exists_r); [shelve|] : refines.
 #[global] Hint Extern 102 (spec_refines _ _ _ (ForallS _ >>= _) _) =>
-  unshelve (simple eapply spec_refines_forall_l); [shelve|] : refines.
+  unshelve (simple eapply spec_refines_forall_l); [shelve|] : refines. *)
 
 
 (* Rules for assume and assert *)
@@ -1449,17 +1478,20 @@ Hint Extern 101 (spec_refines _ _ _ ((match _ with | (_,_) => _ end) >>= _) _) =
 Definition PreAndPostConditions frame1 frame2 : Type :=
   Rel (FrameCall frame1) (FrameCall frame2) *
   PostRel (FrameCall frame1) (FrameCall frame2).
+Definition WellFoundedRelationOn {A} (_ _ : A) := Prop.
 
-Inductive ContinueType := Continue_multifix_bind | Continue_multifix.
+Inductive ContinueType := Continue_multifix_bind | Continue_multifix | Continue_total_spec.
 Polymorphic Definition ContinueArg ct : Type :=
   match ct with
   | Continue_multifix_bind => (Prop * Type * Type)%type
   | Continue_multifix => (Prop * Type)%type
+  | Continue_total_spec => (Prop * Prop * Type * Type)%type
   end.
 Polymorphic Definition Continue {ct : ContinueType} : ContinueArg ct -> Type :=
   match ct with
   | Continue_multifix_bind => fun '(precond, goal1, goal2) => (precond * goal1 * goal2)%type
   | Continue_multifix => fun '(precond, goal) => (precond * goal)%type
+  | Continue_total_spec => fun '(tsPre, precond, H, goal) => (tsPre * precond * H * goal)%type
   end.
 Arguments Continue {ct carg}.
 
@@ -1471,17 +1503,26 @@ Lemma Continue_multifix_unfold precond goal :
   RelGoal precond -> goal ->
   @Continue Continue_multifix (precond, goal).
 Proof. split; eauto. Qed.
+Lemma Continue_total_spec_unfold tsPre precond H goal :
+  RelGoal tsPre -> RelGoal precond -> H -> goal ->
+  @Continue Continue_total_spec (tsPre, precond, H, goal).
+Proof. split; eauto. Qed.
 
 Ltac Continue_unfold :=
   match goal with
   | |- @Continue Continue_multifix_bind _ => simple apply Continue_multifix_bind_unfold
   | |- @Continue Continue_multifix _ => simple apply Continue_multifix_unfold
+  | |- @Continue Continue_total_spec _ => simple apply Continue_total_spec_unfold
   end.
 
 #[global] Hint Opaque PreAndPostConditions : refines prepostcond.
+#[global] Hint Opaque WellFoundedRelationOn : refines prepostcond.
+#[global] Hint Opaque well_founded : refines prepostcond.
 #[global] Hint Opaque Continue : refines prepostcond.
 
 #[global] Hint Extern 999 (PreAndPostConditions _ _) => shelve : prepostcond.
+#[global] Hint Extern 999 (WellFoundedRelationOn _ _) => shelve : prepostcond.
+#[global] Hint Extern 999 (well_founded _) => shelve : refines.
 #[global] Hint Extern 999 (Continue) => shelve : refines.
 
 Lemma spec_refines_multifix_bind_IntroArg (E1 E2 : EvType) Γ1 Γ2 frame1 frame2 R1 R2
@@ -1490,8 +1531,8 @@ Lemma spec_refines_multifix_bind_IntroArg (E1 E2 : EvType) Γ1 Γ2 frame1 frame2
       (bodies2 : FrameTuple E2 (frame2 :: Γ2) frame2)
       (call1 : FrameCall frame1) (call2 : FrameCall frame2)
       (k1 : FrameCallRet frame1 call1 -> SpecM E1 Γ1 R1)
-      (k2 : FrameCallRet frame2 call2 -> SpecM E2 Γ2 R2) :
-  forall (prepostconds : PreAndPostConditions frame1 frame2),
+      (k2 : FrameCallRet frame2 call2 -> SpecM E2 Γ2 R2)
+      (prepostconds : PreAndPostConditions frame1 frame2) :
   @Continue Continue_multifix_bind
             (fst prepostconds call1 call2,
              IntroArg Call _ (fun call1' => IntroArg Call _ (fun call2' =>
@@ -1508,7 +1549,8 @@ Lemma spec_refines_multifix_bind_IntroArg (E1 E2 : EvType) Γ1 Γ2 frame1 frame2
                (MultiFixS E1 Γ1 frame1 bodies1 call1 >>= k1)
                (MultiFixS E2 Γ2 frame2 bodies2 call2 >>= k2).
 Proof.
-  intros [] [[]]; unfold IntroArg in *; eapply spec_refines_multifix_bind; eauto.
+  destruct prepostconds; intros [[]].
+  unfold IntroArg in *; eapply spec_refines_multifix_bind; eauto.
 Qed.
 
 Lemma spec_refines_multifix_IntroArg (E1 E2 : EvType) Γ1 Γ2 frame1 frame2
@@ -1516,8 +1558,8 @@ Lemma spec_refines_multifix_IntroArg (E1 E2 : EvType) Γ1 Γ2 frame1 frame2
       (bodies1 : FrameTuple E1 (frame1 :: Γ1) frame1)
       (bodies2 : FrameTuple E2 (frame2 :: Γ2) frame2)
       (call1 : FrameCall frame1) (call2 : FrameCall frame2)
-      (RR : Rel (FrameCallRet frame1 call1) (FrameCallRet frame2 call2)) :
-  forall (prepostconds : PreAndPostConditions frame1 frame2),
+      (RR : Rel (FrameCallRet frame1 call1) (FrameCallRet frame2 call2))
+      (prepostconds : PreAndPostConditions frame1 frame2) :
   @Continue Continue_multifix
             (fst prepostconds call1 call2,
              IntroArg Call _ (fun call1' => IntroArg Call _ (fun call2' =>
@@ -1532,6 +1574,40 @@ Lemma spec_refines_multifix_IntroArg (E1 E2 : EvType) Γ1 Γ2 frame1 frame2
                (MultiFixS E2 Γ2 frame2 bodies2 call2).
 Admitted.
 
+Lemma spec_refines_total_spec_IntroArg (E1 E2 : EvType) Γ1 Γ2 frame1
+      A2 B2 `{QuantType A2} `{QuantType B2}
+      (RPre : SpecPreRel E1 E2 Γ1 Γ2) (RPost : SpecPostRel E1 E2 Γ1 Γ2)
+      (bodies1 : FrameTuple E1 (frame1 :: Γ1) frame1)
+      (call1 : FrameCall frame1) (a2 : A2)
+      (RR : Rel (FrameCallRet frame1 call1) B2)
+      (tsPre : A2 -> Prop) (tsPost : A2 -> B2 -> Prop)
+      (rdec : IntroArg Any A2 (fun a1 => IntroArg Any A2 (fun a1 =>
+              WellFoundedRelationOn a1 a2)))
+      (prepostconds : PreAndPostConditions frame1 (unary1Frame A2 B2)) :
+  well_founded rdec ->
+  @Continue Continue_total_spec
+            (tsPre a2, fst prepostconds call1 (unary1Call a2),
+             IntroArg RetAny _ (fun r1 => IntroArg RetAny _ (fun r2 =>
+              IntroArg Hyp (snd prepostconds call1 (unary1Call a2) r1 r2) (fun _ =>
+              RelGoal (RR r1 r2)))),
+             IntroArg Call _ (fun call1' => IntroArg Any _ (fun a2' =>
+              IntroArg Hyp (tsPre a2') (fun _ =>
+              IntroArg Hyp (fst prepostconds call1' (unary1Call a2')) (fun _ =>
+              spec_refines (pushTSPreRel tsPre (fst prepostconds) RPre)
+                           (pushTSPostRel tsPost (snd prepostconds) RPost)
+                           (fun r1 r2 => tsPost a2' r2 /\
+                                         snd prepostconds call1' (unary1Call a2') r1 r2)
+                           (applyFrameTuple _ _ _ bodies1 call1')
+                           (total_spec_fix_body tsPre tsPost rdec a2')))))) ->
+  spec_refines RPre RPost RR
+               (MultiFixS E1 Γ1 frame1 bodies1 call1)
+               (total_spec tsPre tsPost a2).
+Proof.
+  destruct prepostconds; intros ? [[[]]].
+  unfold IntroArg, RelGoal in *; simpl in *.
+  unshelve eapply spec_refines_total_spec; eauto.
+Qed.
+
 #[global]
 Hint Extern 101 (spec_refines ?RPre ?RPost ?RR
                               (MultiFixS ?E1 ?Γ1 ?frame1 ?bodies1 ?call1 >>= ?k1)
@@ -1544,6 +1620,13 @@ Hint Extern 101 (spec_refines ?RPre ?RPost ?RR
                               (MultiFixS ?E2 ?Γ2 ?frame2 ?bodies2 ?call2)) =>
   eapply (spec_refines_multifix_IntroArg E1 E2 Γ1 Γ2 frame1 frame2
                  RPre RPost bodies1 bodies2 call1 call2 RR) : refines.
+#[global]
+Hint Extern 101 (spec_refines ?RPre ?RPost ?RR
+                              (MultiFixS ?E1 ?Γ1 ?frame1 ?bodies1 ?call1)
+                              (@total_spec ?E2 ?Γ2 ?A2 ?B2 _ ?pre ?post ?a2)) =>
+  eapply (spec_refines_total_spec_IntroArg E1 E2 Γ1 Γ2 frame1 A2 B2
+                 RPre RPost bodies1 call1 a2 RR pre post);
+  unfold total_spec_fix_body : refines.
 
 
 
@@ -1576,6 +1659,20 @@ Hint Extern 101 (spec_refines _ _ _ (CallS _ _ _ _ >>= _) (CallS _ _ _ _ >>= _))
 #[global]
 Hint Extern 101 (spec_refines _ _ _ (CallS _ _ _ _) (CallS _ _ _ _)) =>
   apply spec_refines_call_IntroArg : refines.
+
+#[global]
+Hint Extern 991 (spec_refines _ _ _ (CallS _ _ _ _) (trepeat _ _)) =>
+  simple apply spec_refines_trepeat_zero_r : refines.
+#[global]
+Hint Extern 991 (spec_refines _ _ _ (CallS _ _ _ _) (trepeat _ _ >>= _)) =>
+  simple apply spec_refines_trepeat_bind_suc_r : refines.
+
+#[global]
+Hint Extern 992 (spec_refines _ _ _ _ (trepeat _ _)) =>
+  simple apply spec_refines_trepeat_zero_r : refines.
+#[global]
+Hint Extern 992 (spec_refines _ _ _ _ (trepeat _ _ >>= _)) =>
+  simple apply spec_refines_trepeat_bind_zero_r : refines.
 
 
 (** * Tactics for building pre/post-conditions *)
@@ -1623,9 +1720,16 @@ Tactic Notation "prepost_exclude_remaining" :=
   exact (fun _ _ => False, fun _ _ _ _ => False).
 
 #[global] Hint Extern 101 (IntroArg ?n (fst (prepost_case _ _ _ _ _) _ _) _) =>
-  let e := argName n in IntroArg_intro e; simpl in e; apply (IntroArg_fold n _ _ e) : refines.
+  let e := argName n in IntroArg_intro e;
+  simpl in e; apply (IntroArg_fold n _ _ e) : refines.
+#[global] Hint Extern 101 (IntroArg ?n (snd (prepost_case _ _ _ _ _) _ _ _ _) _) =>
+  let e := argName n in IntroArg_intro e;
+  simpl in e; apply (IntroArg_fold n _ _ e) : refines.
+#[global] Hint Extern 101 (RelGoal (fst (prepost_case _ _ _ _ _) _ _)) =>
+  unfold RelGoal; simpl; apply RelGoal_fold : refines.
 #[global] Hint Extern 101 (RelGoal (snd (prepost_case _ _ _ _ _) _ _ _ _)) =>
   unfold RelGoal; simpl; apply RelGoal_fold : refines.
+
 
 (** * Tactics for proving refinement *)
 
@@ -1689,3 +1793,43 @@ Proof.
     prepost_exclude_remaining.
   - prove_refinement_continue.
 Qed.
+
+Lemma test_total_spec_easy E (x : nat) :
+  @spec_refines E E nil nil eqPreRel eqPostRel nat nat eq
+                  (MultiFixS E nil (unary1Frame nat nat)
+                    ((fun a => RetS (a + 1)), tt)
+                    (mkFrameCall (unary1Frame nat nat) 0 x))
+                  (total_spec (fun _ => True)
+                              (fun a b => b = (a + 1)) x).
+Proof.
+  prove_refinement.
+  - exact False.
+  - prepost_case 0 0 withPre eqPreCase.
+    { simpl. intros [] [] r1 r2. exact (r1 = r2). }
+    prepost_exclude_remaining.
+  - constructor; contradiction.
+  - prove_refinement_continue.
+    (* If the spec_refines_exists_r rule wasn't broken,
+       this is what prove_refinement would do: *)
+    simple eapply spec_refines_exists_r;
+    apply spec_refines_trepeat_bind_zero_r;
+    simple eapply spec_refines_exists_r;
+    simple eapply spec_refines_assert_r;
+    [| apply spec_refines_ret_IntroArg; prove_refinement ].
+    + reflexivity.
+Qed.
+
+(* 
+Lemma test_total_spec_less_easy E (x : nat) :
+  @spec_refines E E nil nil eqPreRel eqPostRel nat nat eq
+                  (MultiFixS E nil testFrame1
+                    ((fun a => CallS _ _ _ (mkFrameCall testFrame1 1 (a + 1))),
+                     ((fun a => RetS (a + 1)), tt))
+                    (mkFrameCall testFrame1 1 x))
+                  (total_spec (fun _ => True)
+                              (fun a b => a = (b + 2)) x).
+Proof.
+  prove_refinement.
+  - exact True.
+  - prepost_case 0 0 withPre eqPreCase.
+    { simpl; intros. exact () } *)
