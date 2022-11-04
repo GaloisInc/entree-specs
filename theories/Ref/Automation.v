@@ -255,25 +255,34 @@ Lemma spec_refines_assert_r E1 E2 Γ1 Γ2 R1 R2 (P:Prop)
       RPre RPost RR (phi : SpecM E1 Γ1 R1) (kphi : unit -> SpecM E2 Γ2 R2) :
   P -> spec_refines RPre RPost RR phi (kphi tt) ->
   spec_refines RPre RPost RR phi (AssertS P >>= kphi).
-Admitted.
+Proof.
+  intros. apply padded_refines_assertr; auto.
+Qed.
+
 
 Lemma spec_refines_assert_l E1 E2 Γ1 Γ2 R1 R2 (P:Prop)
       RPre RPost RR (phi : SpecM E2 Γ2 R2) (kphi : unit -> SpecM E1 Γ1 R1) :
   (P -> spec_refines RPre RPost RR (kphi tt) phi) ->
   spec_refines RPre RPost RR (AssertS P >>= kphi) phi.
-Admitted.
+Proof.
+  intros. apply padded_refines_assertl; auto.
+Qed.
 
 Lemma spec_refines_assume_r E1 E2 Γ1 Γ2 R1 R2 (P:Prop)
       RPre RPost RR (phi : SpecM E1 Γ1 R1) (kphi : unit -> SpecM E2 Γ2 R2) :
   (P -> spec_refines RPre RPost RR phi (kphi tt)) ->
   spec_refines RPre RPost RR phi (AssumeS P >>= kphi).
-Admitted.
+Proof.
+  intros. apply padded_refines_assumer; auto.
+Qed.
 
 Lemma spec_refines_assume_l E1 E2 Γ1 Γ2 R1 R2 (P:Prop)
       RPre RPost RR (phi : SpecM E2 Γ2 R2) (kphi : unit -> SpecM E1 Γ1 R1) :
   P -> spec_refines RPre RPost RR (kphi tt) phi ->
   spec_refines RPre RPost RR (AssumeS P >>= kphi) phi.
-Admitted.
+Proof.
+  intros. apply padded_refines_assumel; auto.
+Qed.
 
 (* FIXME: need rules to add binds to all the unary combinators *)
 
@@ -432,6 +441,22 @@ Qed.
 
 (** Refinement rules for recursion **)
 
+Lemma spec_refines_call (E1 E2 : EvType) Γ1 Γ2 frame1 frame2
+      (RPre : SpecPreRel E1 E2 (frame1 :: Γ1) (frame2 :: Γ2))
+      (RPost : SpecPostRel E1 E2 (frame1 :: Γ1) (frame2 :: Γ2))
+      (call1 : FrameCall frame1) (call2 : FrameCall frame2) :
+  RPre (inl call1) (inl call2) ->
+  spec_refines RPre RPost (RPost (inl call1) (inl call2)) (CallS _ _ _ call1) (CallS _ _ _ call2).
+Proof.
+  intros.
+  unfold CallS. unfold trigger. apply padded_refines_vis.
+  auto. cbn.
+  eauto. intros a b Hab. apply padded_refines_ret.
+  auto.
+Qed.
+
+
+
 (* The bind of one recursive call refines the bind of another if the recursive
    calls are in the current RPre and, for all return values for them in RPost,
    the bind continuations refine each other *)
@@ -447,18 +472,7 @@ Lemma spec_refines_call_bind (E1 E2 : EvType) Γ1 Γ2 frame1 frame2 R1 R2
       spec_refines RPre RPost RR (k1 (resum_ret call1 r1)) (k2 (resum_ret call2 r2))) ->
   spec_refines RPre RPost RR (CallS _ _ _ call1 >>= k1) (CallS _ _ _ call2 >>= k2).
 Proof.
-  intros. eapply padded_refines_bind.
-  - unfold CallS. unfold trigger. apply padded_refines_vis.
-    auto. cbn.
-    eauto. intros a b Hab. apply padded_refines_ret.
-    Unshelve. 
-    2 : {
-      intros c1 c2. 
-      exact (exists a, exists b, c1 = resum_ret call1 a /\ c2 = resum_ret call2 b /\ RPost _ _ a b).
-      }
-      cbn. exists a. exists b. auto.
-  - intros r1 r2 Hr12. cbn in Hr12. decompose record Hr12.
-    subst. apply H0. auto.
+  intros. eapply padded_refines_bind; try eapply spec_refines_call; eauto.
 Qed.
 
 
@@ -483,6 +497,40 @@ Definition pushPostRel {E1 E2 : EvType} {Γ1 Γ2 frame1 frame2}
                | inr ev1, inr ev2 => RPost ev1 ev2
                | _, _ => fun _ _ => False
                end.
+
+Lemma spec_refines_multifix (E1 E2 : EvType) Γ1 Γ2 frame1 frame2 
+      (RPre : SpecPreRel E1 E2 Γ1 Γ2) (RPost : SpecPostRel E1 E2 Γ1 Γ2)
+      (bodies1 : FrameTuple E1 (frame1 :: Γ1) frame1)
+      (bodies2 : FrameTuple E2 (frame2 :: Γ2) frame2)
+      (call1 : FrameCall frame1) (call2 : FrameCall frame2)
+      (precond : Rel (FrameCall frame1) (FrameCall frame2))
+      (postcond : PostRel (FrameCall frame1) (FrameCall frame2)) :
+  precond call1 call2 ->
+  (forall call1' call2',
+      precond call1' call2' ->
+      spec_refines (pushPreRel precond RPre) (pushPostRel postcond RPost)
+                   (postcond call1' call2')
+                   (applyFrameTuple _ _ _ bodies1 call1')
+                   (applyFrameTuple _ _ _ bodies2 call2')) ->
+  spec_refines RPre RPost (postcond call1 call2)
+               (MultiFixS E1 Γ1 frame1 bodies1 call1)
+               (MultiFixS E2 Γ2 frame2 bodies2 call2).
+Proof.
+  intros Hcalls Hbody.
+  unfold MultiFixS. 
+  eapply padded_refines_interp_mrec_spec with (RPreInv := precond) (RPostInv := postcond).
+  - intros. apply Hbody in H. eapply padded_refines_monot; try apply H; auto; clear - E1.
+    + intros call1 call2 Hcall. 
+      destruct call1; destruct call2; cbn in *; try contradiction;
+        constructor; auto.
+    + intros call1 call2 r1 r2 H. destruct H; auto.
+  - apply Hbody in Hcalls.
+    eapply padded_refines_monot; try apply Hcalls; auto; clear - E1.
+    + intros call1 call2 Hcall. 
+      destruct call1; destruct call2; cbn in *; try contradiction;
+        constructor; auto.
+    + intros call1 call2 r1 r2 H. destruct H; auto.
+Qed.
 
 (* The bind of one multifix refines the bind of another if: the recursive calls
    which start the multifixes are related to each other by the supplied
@@ -513,22 +561,8 @@ Lemma spec_refines_multifix_bind (E1 E2 : EvType) Γ1 Γ2 frame1 frame2 R1 R2
                (MultiFixS E1 Γ1 frame1 bodies1 call1 >>= k1)
                (MultiFixS E2 Γ2 frame2 bodies2 call2 >>= k2).
 Proof.
-  intros Hcalls Hbody Hk.
-  eapply padded_refines_bind with (RR := postcond call1 call2).
-  - unfold MultiFixS. 
-    eapply padded_refines_interp_mrec_spec with (RPreInv := precond) (RPostInv := postcond).
-    + intros. apply Hbody in H. eapply padded_refines_monot; try apply H; auto; clear - E1.
-      * intros call1 call2 Hcall. 
-        destruct call1; destruct call2; cbn in *; try contradiction;
-          constructor; auto.
-      * intros call1 call2 r1 r2 H. destruct H; auto.
-    + apply Hbody in Hcalls.
-      eapply padded_refines_monot; try apply Hcalls; auto; clear - E1.
-      * intros call1 call2 Hcall. 
-        destruct call1; destruct call2; cbn in *; try contradiction;
-          constructor; auto.
-      * intros call1 call2 r1 r2 H. destruct H; auto.
-  - auto.
+  intros.
+  eapply padded_refines_bind; try eapply spec_refines_multifix; eauto.
 Qed.
 
 (* Build a RecFrame with a single, unary function *)
@@ -1510,6 +1544,9 @@ Hint Extern 101 (spec_refines ?RPre ?RPost ?RR
                               (MultiFixS ?E2 ?Γ2 ?frame2 ?bodies2 ?call2)) =>
   eapply (spec_refines_multifix_IntroArg E1 E2 Γ1 Γ2 frame1 frame2
                  RPre RPost bodies1 bodies2 call1 call2 RR) : refines.
+
+
+
 
 Lemma spec_refines_call_bind_IntroArg (E1 E2 : EvType) Γ1 Γ2 frame1 frame2 R1 R2
       (RPre : SpecPreRel E1 E2 (frame1 :: Γ1) (frame2 :: Γ2))
