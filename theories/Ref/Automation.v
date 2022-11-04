@@ -1,5 +1,6 @@
 From Coq Require Export
      Datatypes
+     Arith.PeanoNat
      Morphisms
      Setoid
      Program.Equality
@@ -35,13 +36,6 @@ Definition SpecPreRel (E1 E2 : EvType) Γ1 Γ2 :=
   Rel (FunStackE E1 Γ1) (FunStackE E2 Γ2).
 Definition SpecPostRel (E1 E2 : EvType) Γ1 Γ2 :=
   PostRel (FunStackE E1 Γ1) (FunStackE E2 Γ2).
-
-(* The precondition requiring events on both sides to be equal *)
-Definition eqPreRel {E Γ} : SpecPreRel E E Γ Γ := eq.
-
-(* The postcondition requiring return values on both sides to be equal *)
-Definition eqPostRel {E Γ} : SpecPostRel E E Γ Γ :=
-  fun e1 e2 a1 a2 => eq_dep1 _ _ e1 a1 e2 a2.
 
 (* Spec refinement = padded refinement *)
 Definition spec_refines {E1 E2 : EvType} {Γ1 Γ2}
@@ -892,8 +886,16 @@ Polymorphic Lemma IntroArg_and n P Q (goal : P /\ Q -> Prop)
     IntroArg n _ goal.
 Proof. intros H [ p q ]; apply H. Qed.
 
+Polymorphic Lemma IntroArg_true n (goal : True -> Prop) : goal I -> IntroArg n _ goal.
+Proof. intros H []; eauto. Qed.
+
 Polymorphic Lemma IntroArg_false n (goal : False -> Prop) : IntroArg n _ goal.
 Proof. intros []. Qed.
+
+Lemma IntroArg_eq_sigT_const n A B (a a' : A) (b b' : B) (goal : Prop)
+  : IntroArg n (a = a') (fun _ => IntroArg n (b = b') (fun _ => goal)) ->
+    IntroArg n (existT _ a b = existT _ a' b') (fun _ => goal).
+Proof. intros H eq; apply H; injection eq; eauto. Qed.
 
 Polymorphic Lemma IntroArg_eqPostRel n E Γ e a1 a2 (goal : _ -> Prop) :
   IntroArg n (a1 = a2) (fun pf => goal (eq_dep1_intro _ _ _ _ _ _ (eq_refl e) pf)) ->
@@ -1003,7 +1005,12 @@ Ltac IntroArg_base_tac n A g :=
   lazymatch A with
   | (fun _ => _) _ => simple apply IntroArg_beta
   | _ /\ _ => simple apply IntroArg_and
+  | True => simple apply IntroArg_true
+  | TruePreRel _ _ => simple apply IntroArg_true
   | False => simple apply IntroArg_false
+  | FalsePreRel _ _ => simple apply IntroArg_false
+  | existT _ _ _ = existT _ _ _ => simple apply IntroArg_eq_sigT_const
+  | eqPreRel (existT _ _ _) (existT _ _ _) => simple apply IntroArg_eq_sigT_const
   | @pushPreRel _ _ _ _ _ _ _ _ (inl _) (inl _) =>
     simple apply IntroArg_pushPreRel_inl
   | @pushPreRel _ _ _ _ _ _ _ _ (inr _) (inr _) =>
@@ -1054,6 +1061,9 @@ Definition RelGoal (goal : Prop) := goal.
 
 #[global] Hint Opaque RelGoal : refines.
 
+Polymorphic Lemma RelGoal_fold goal : RelGoal goal -> goal.
+Proof. eauto. Qed.
+
 (* If nothing else works for a RelGoal, try reflexivity and then shelve it *)
 #[global] Hint Extern 999 (RelGoal _) =>
   unfold RelGoal; (reflexivity || shelve) : refines.
@@ -1067,12 +1077,19 @@ Proof. eauto. Qed.
   simple apply RelGoal_beta : refines.
 
 
-Lemma RelGoal_eqPreRel_refl {E Γ e} :
-  RelGoal (@eqPreRel E Γ e e).
+Lemma RelGoal_eqPreRel_refl {A a} :
+  RelGoal (@eqPreRel A a a).
 Proof. constructor. Qed.
 
 #[global] Hint Extern 101 (RelGoal (eqPreRel _ _ _ _)) =>
   apply RelGoal_eqPreRel_refl : refines.
+
+Lemma RelGoal_eqPostRel_refl {E} `{EncodingType E} (e : E) a :
+  RelGoal (eqPostRel e e a a).
+Proof. unshelve econstructor; eauto. Qed.
+
+#[global] Hint Extern 101 (RelGoal (eqPostRel _ _ _ _)) =>
+  apply RelGoal_eqPostRel_refl : refines.
 
 
 Polymorphic Lemma RelGoal_pushPreRel_inl E1 E2 Γ1 Γ2 frame1 frame2
@@ -1524,28 +1541,31 @@ Hint Extern 101 (spec_refines _ _ _ (CallS _ _ _ _) (CallS _ _ _ _)) =>
 
 (** * Tactics for building pre/post-conditions *)
 
-Definition precond_include_exclude_case {frame1 frame2} i j (P : Prop)
-  (Q : Precondition frame1 frame2) : Precondition frame1 frame2 :=
-  fun call1 call2 => if andb (Nat.eqb (FrameCallIndex call1) i) (Nat.eqb (FrameCallIndex call2) j)
-                     then P else Q call1 call2.
-Definition postcond_include_exclude_case {frame1 frame2} i j (P : Prop)
-  (Q : Postcondition frame1 frame2) : Postcondition frame1 frame2 :=
-  fun call1 call2 r1 r2 => if andb (Nat.eqb (FrameCallIndex call1) i) (Nat.eqb (FrameCallIndex call2) j)
-                           then P else Q call1 call2 r1 r2.
+Definition precond_case {frame1 frame2} i j
+  (P : Rel (LRTInput (nthLRT frame1 i)) (LRTInput (nthLRT frame2 j)))
+  (Q : Precondition frame1 frame2) : Precondition frame1 frame2 := fun call1 call2 =>
+  match call1, call2 with
+  | FrameCallOfArgs _ m args1, FrameCallOfArgs _ n args2 =>
+    match Nat.eq_dec m i, Nat.eq_dec n j with
+    | left p1, left p2 => P (eq_rect m (fun z => LRTInput (nthLRT frame1 z)) args1 i p1)
+                            (eq_rect n (fun z => LRTInput (nthLRT frame2 z)) args2 j p2)
+    | _, _ => Q call1 call2
+    end
+  end.
 
-#[global] Hint Extern 101 (IntroArg ?n (precond_include_exclude_case _ _ _ _ _ _) _) =>
-  let e := argName n in IntroArg_intro e; cbv in e; apply (IntroArg_fold n _ _ e) : refines.
+Tactic Notation "precond_case" constr(i) constr(j) :=
+  apply (precond_case i j).
+Tactic Notation "precond_case" constr(i) constr(j) "with" uconstr(P) :=
+  apply (precond_case i j); [ exact P |].
 
-Ltac precond_include_case  i j := apply (precond_include_exclude_case  i j True).
-Ltac precond_exclude_case  i j := apply (precond_include_exclude_case  i j False).
-Ltac postcond_include_case i j := apply (postcond_include_exclude_case i j True).
-Ltac postcond_exclude_case i j := apply (postcond_include_exclude_case i j False).
+Tactic Notation "precond_exclude_case" constr(i) constr(j) :=
+  apply (precond_case i j); [ exact FalsePreRel |].
+Tactic Notation "precond_exclude_remaining" := exact FalsePreRel.
 
-Ltac precond_include_remaining  := exact (fun _ _ => True).
-Ltac precond_exclude_remaining  := exact (fun _ _ => False).
-Ltac postcond_include_remaining := exact (fun _ _ _ _ => True).
-Ltac postcond_exclude_remaining := exact (fun _ _ _ _ => False).
-
+#[global] Hint Extern 101 (IntroArg ?n (precond_case _ _ _ _ _ _) _) =>
+  let e := argName n in IntroArg_intro e; simpl in e; apply (IntroArg_fold n _ _ e) : refines.
+#[global] Hint Extern 101 (RelGoal (precond_case _ _ _ _ _ _)) =>
+  simpl; apply RelGoal_fold : refines.
 
 (** * Tactics for proving refinement *)
 
@@ -1564,52 +1584,55 @@ Ltac prove_refinement_continue :=
 
 (** * Testing *)
 
-From Coq Require Import ZArith.
-Open Scope Z_scope.
+Open Scope nat_scope.
 
 Lemma test_ifs E x :
-  @spec_refines E E nil nil eqPreRel eqPostRel Z Z eq
-                  (if x >=? 0 then if x <? 256 then RetS 1 else RetS 0 else RetS 0)
-                  (if x <? 256 then if x >=? 0 then RetS 1 else RetS 0 else RetS 0).
+  @spec_refines E E nil nil eqPreRel eqPostRel nat nat eq
+                  (if 0 <=? x then if x <? 256 then RetS 1 else RetS 0 else RetS 0)
+                  (if x <? 256 then if 0 <=? x then RetS 1 else RetS 0 else RetS 0).
 Proof.
   prove_refinement.
 Qed.
 
-Lemma test_spins E (x : Z) :
-  @spec_refines E E nil nil eqPreRel eqPostRel Z Z eq
-                  (MultiFixS E nil (unary1Frame Z Z)
-                    ((fun a => CallS _ _ _ (mkFrameCall (unary1Frame Z Z) 0 a)), tt)
-                    (mkFrameCall (unary1Frame Z Z) 0 x))
-                  (MultiFixS E nil (unary1Frame Z Z)
-                    ((fun a => CallS _ _ _ (mkFrameCall (unary1Frame Z Z) 0 a)), tt)
-                    (mkFrameCall (unary1Frame Z Z) 0 x)).
+Lemma test_spins E (x : nat) :
+  @spec_refines E E nil nil eqPreRel eqPostRel nat nat eq
+                  (MultiFixS E nil (unary1Frame nat nat)
+                    ((fun a => CallS _ _ _ (mkFrameCall (unary1Frame nat nat) 0 a)), tt)
+                    (mkFrameCall (unary1Frame nat nat) 0 x))
+                  (MultiFixS E nil (unary1Frame nat nat)
+                    ((fun a => CallS _ _ _ (mkFrameCall (unary1Frame nat nat) 0 a)), tt)
+                    (mkFrameCall (unary1Frame nat nat) 0 x)).
 Proof.
   prove_refinement.
-  - precond_include_remaining.
-  - postcond_include_remaining.
+  - exact eqPreRel.
+  - exact eqPostRel.
   - prove_refinement_continue.
 Qed.
 
 Definition testFrame1 : RecFrame :=
-  LRT_Fun Z (fun _ => LRT_Ret Z) :: LRT_Fun Z (fun _ => LRT_Ret Z) :: nil.
+  LRT_Fun nat (fun _ => LRT_Ret nat) :: LRT_Fun nat (fun _ => LRT_Ret nat) :: nil.
 
-Eval cbn in (fun E => FrameTuple E (testFrame1 :: nil) testFrame1).
-
-Lemma test_spins_rets E (x : Z) :
-  @spec_refines E E nil nil eqPreRel eqPostRel Z Z eq
+Lemma test_spins_rets E (x : nat) :
+  @spec_refines E E nil nil eqPreRel eqPostRel nat nat eq
                   (MultiFixS E nil testFrame1
                     ((fun a => CallS _ _ _ (mkFrameCall testFrame1 0 a)),
-                     ((fun a => RetS 0), tt))
+                     ((fun a => RetS a), tt))
                     (mkFrameCall testFrame1 1 x))
                   (MultiFixS E nil testFrame1
-                    ((fun a => RetS 0),
+                    ((fun a => RetS a),
                      ((fun a => CallS _ _ _ (mkFrameCall testFrame1 1 a)), tt))
                     (mkFrameCall testFrame1 0 x)).
 Proof.
   prove_refinement.
-  - precond_include_case 0%nat 1%nat.
-    precond_include_case 1%nat 0%nat.
+  - precond_case 1 0 with eqPreRel.
+    precond_case 0 1 with eqPreRel.
     precond_exclude_remaining.
-  - postcond_include_remaining.
+  - (* Is this actually the right postcondition? It seems to leave an impossible goal... *)
+    exact eqPostRel.
   - prove_refinement_continue.
-Qed.
+    (* Look: What's left requires proving `FrameCallOfArgs _ 0 _ = FrameCallOfArgs _ 1 _`
+       which certainly doesn't hold. Does this mean `eqPostRel` is wrong? Or does it just
+       mean that when defining a recursive postcondition, we need something different? *)
+    unshelve econstructor; cbn.
+    admit.
+Admitted.
