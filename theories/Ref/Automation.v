@@ -856,34 +856,27 @@ Lemma spec_refines_total_spec (E1 E2 : EvType) Γ1 Γ2 frame1
   spec_refines RPre RPost RR
                (MultiFixS E1 Γ1 frame1 bodies1 call1)
                (total_spec tsPre tsPost a2).
-Admitted. (* LUCAS FIXME *)
-(* Proof.
+Proof.
   intros Hwf Ha2 Hca HPost HPost'. intros.
   eapply total_spec_fix_refines_total_spec in Hwf as Hstrict. Unshelve. all : auto.
   eapply padded_refines_weaken_l; eauto.
-  eapply padded_refines_interp_mrec_spec with (RPreInv := lift_preEq pre preEq) (RPostInv := lift_postEq post postEq).
+  eapply padded_refines_interp_mrec_spec with (RPreInv := lift_ts_pre tsPre precond)
+                                              (RPostInv := lift_ts_post tsPost postcond). Unshelve.
   - clear Hca Ha2 Hstrict . rename a2 into a0. intros c1 c2 Hpre. destruct c2. destruct n.
     2 : { destruct args as [ [] _]. }
     cbn in args. destruct args as [a2 [] ]. simpl. setoid_rewrite bind_ret_r.
-    specialize (H1 c1 a2).
-    assert (pre a2 /\ preEq c1 a2).
-    {
-      clear - Hpre. (* might be premature *)
-      red in Hpre. decompose record Hpre. clear Hpre.
-      cbv in H0. apply inj_FrameCallOfArgs in H0.
-      dependent destruction H0. auto.
-    }
-    destruct H2. specialize (H1 H2 H3).
-    (* should be able to *)
-    eapply padded_refines_monot; try apply H1.
+    idtac. red in Hpre. destruct Hpre as [a2' [Heq [H1 H2] ]].
+    assert (a2 = a2'). apply inj_FrameCallOfArgs in Heq. dependent destruction Heq.
+    auto.
+    subst.
+    eapply padded_refines_monot; try apply HPost'; eauto.
     + apply spec_refines_total_spec_monot_aux1.
     + apply spec_refines_total_spec_monot_aux2.
-    + cbn. intros a b Hab. split; eauto.
-  - specialize (H1 call1 a2 Ha2 Hca). eapply padded_refines_monot; try apply H1.
+  - eapply padded_refines_monot; try eapply HPost'; eauto.
     + apply spec_refines_total_spec_monot_aux1.
     + apply spec_refines_total_spec_monot_aux2.
-    + auto.
-Qed. *)
+    + intros. destruct PR. auto.
+Qed.
 
 
 (***
@@ -955,7 +948,10 @@ Proof. intros H eq; apply H; injection eq; eauto. Qed.
 Polymorphic Lemma IntroArg_eq_dep1_const n A B (a : A) (b b' : B a) (goal : Prop)
   : IntroArg n (b = b') (fun _ => goal) ->
     IntroArg n (eq_dep1 A B a b a b') (fun _ => goal).
-Admitted.
+Proof.
+  intro H. unfold IntroArg in *. intro Heqdep. apply H.
+  apply eq_dep1_dep in Heqdep. apply eq_dep_eq. auto.
+Qed.
 
 Polymorphic Lemma IntroArg_eqPostRel n E Γ e a1 a2 (goal : _ -> Prop) :
   IntroArg n (a1 = a2) (fun pf => goal (eq_dep1_intro _ _ _ _ _ _ (eq_refl e) pf)) ->
