@@ -449,15 +449,10 @@ Lemma spec_refines_call (E1 E2 : EvType) Γ1 Γ2 frame1 frame2
   RPre (inl call1) (inl call2) ->
   (forall r1 r2, RPost (inl call1) (inl call2) r1 r2 -> RR r1 r2) ->
   spec_refines RPre RPost RR (CallS _ _ _ call1) (CallS _ _ _ call2).
-Admitted. (* LUCAS FIXME *)
-(* Proof.
-  intros.
-  unfold CallS. unfold trigger. apply padded_refines_vis.
-  auto. cbn.
-  eauto. intros a b Hab. apply padded_refines_ret.
-  auto.
-Qed. *)
-
+Proof.
+  intros. apply padded_refines_vis. auto. intros.
+  apply padded_refines_ret. auto.
+Qed.
 
 (* The bind of one recursive call refines the bind of another if the recursive
    calls are in the current RPre and, for all return values for them in RPost,
@@ -519,9 +514,9 @@ Lemma spec_refines_multifix (E1 E2 : EvType) Γ1 Γ2 frame1 frame2
   spec_refines RPre RPost RR
                (MultiFixS E1 Γ1 frame1 bodies1 call1)
                (MultiFixS E2 Γ2 frame2 bodies2 call2).
-Admitted. (* LUCAS FIXME *)
-(* Proof.
-  intros Hcalls Hbody.
+
+Proof.
+  intros Hcalls HRR Hbody.
   unfold MultiFixS. 
   eapply padded_refines_interp_mrec_spec with (RPreInv := precond) (RPostInv := postcond).
   - intros. apply Hbody in H. eapply padded_refines_monot; try apply H; auto; clear - E1.
@@ -535,7 +530,7 @@ Admitted. (* LUCAS FIXME *)
       destruct call1; destruct call2; cbn in *; try contradiction;
         constructor; auto.
     + intros call1 call2 r1 r2 H. destruct H; auto.
-Qed. *)
+Qed.
 
 (* The bind of one multifix refines the bind of another if: the recursive calls
    which start the multifixes are related to each other by the supplied
