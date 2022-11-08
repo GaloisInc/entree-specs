@@ -890,6 +890,12 @@ Proof.
   symmetry. eauto. auto.
 Qed.
 
+Global Instance padded_refines_proper_eq_itree {E1 E2 R1 R2} `{EncodingType E1} `{EncodingType E2} RPre RPost RR : Proper (eq_itree eq ==> eq_itree eq ==> flip impl)  (@padded_refines E1 E2 _ _ R1 R2 RPre RPost RR).
+Proof.
+  repeat intro. eapply padded_refines_proper_eutt; eauto.
+  rewrite H1. reflexivity. rewrite H2. reflexivity.
+Qed.
+
 Variant PostRelEq {E} `{EncodingType E} : PostRel E E :=
   | PostRelEq_intro e a : PostRelEq e e a a.
 
@@ -970,4 +976,5 @@ Lemma padded_refines_weaken_r {E1 E2 R1 R2} `{EncodingType E1} `{EncodingType E2
 Proof.
   intros. eapply strict_refines_proper; eauto. reflexivity.
 Qed.
+
 

@@ -119,6 +119,13 @@ Proof.
   eapply refines_bind; eauto.
 Qed.
 
+#[global] Instance padded_refines_bind_proper {E S R} `{EncodingType E}: Proper (strict_refines ==> pointwise_relation S strict_refines ==>
+                                @strict_refines E R _) EnTree.bind.
+Proof.
+  repeat intro. eapply padded_refines_bind; intros; subst; eauto. subst. apply H1.
+Qed.
+
+
 Lemma padded_refines_forall_specr {E1 E2} `{EncodingType E1} `{EncodingType E2} 
       (A : Type) `{QuantType A} R1 R2  RPre RPost RR
       (k : A -> entree_spec E2 R1) (t : entree_spec E1 R2) :
@@ -420,6 +427,13 @@ Proof.
   intros. apply padded_refines_interp_mrec_spec. auto.
 Qed.
 
+Theorem padded_refines_mrec_spec d1 d2 RR : 
+  (forall x y, RPostInv d1 d2 x y -> (RR x y : Prop)) ->
+  RPreInv d1 d2 -> 
+  padded_refines RPre RPost RR (mrec_spec bodies1 d1) (mrec_spec bodies2 d2).
+Proof.
+  intros. eapply padded_refines_monot; try eapply padded_refines_mrec; eauto.
+Qed.
 
 End padded_refines_mrec.        
 
