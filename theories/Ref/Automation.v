@@ -24,6 +24,11 @@ From EnTree Require Import
      Ref.SpecMFacts
 .
 
+(* From Coq 8.15 *)
+Notation "( x ; y )" := (existT _ x y) (at level 0, format "( x ;  '/  ' y )").
+Notation "x .1" := (projT1 x) (at level 1, left associativity, format "x .1").
+Notation "x .2" := (projT2 x) (at level 1, left associativity, format "x .2").
+
 Import SpecMNotations.
 Local Open Scope entree_scope.
 
@@ -925,19 +930,20 @@ Ltac IntroArg_intro e := intro e.
 
 Ltac IntroArg_forget := let e := fresh in intro e; clear e.
 
-Polymorphic Lemma IntroArg_beta n A (f : A -> Type) x goal :
+Polymorphic Definition IntroArg_beta n A (f : A -> Type) x goal :
   IntroArg n (f x) goal ->
-  IntroArg n ((fun x' => f x') x) goal.
-Proof. eauto. Defined.
+  IntroArg n ((fun x' => f x') x) goal := fun f x => f x.
 
-Polymorphic Lemma IntroArg_sigT n A P (goal : sigT P -> Type)
-  : IntroArg n A (fun a => IntroArg n (P a) (fun p => goal (existT _ a p))) ->
-    IntroArg n _ goal.
-Proof. intros H []; apply H. Defined.
+Polymorphic Definition IntroArg_prod n A B (goal : A * B -> Type) :
+  IntroArg n A (fun a => IntroArg n B (fun b => goal (a , b))) ->
+  IntroArg n _ goal := fun H '(a, b) => H a b.
 
-Polymorphic Lemma IntroArg_unit n (goal : unit -> Type)
-  : goal tt -> IntroArg n _ goal.
-Proof. intros H []; apply H. Defined.
+Polymorphic Definition IntroArg_sigT n A P (goal : sigT P -> Type) :
+  IntroArg n A (fun a => IntroArg n (P a) (fun p => goal (existT _ a p))) ->
+  IntroArg n _ goal := fun H '(a ; p) => H a p.
+
+Polymorphic Definition IntroArg_unit n (goal : unit -> Type) :
+  goal tt -> IntroArg n _ goal := fun H 'tt => H.
 
 Polymorphic Lemma IntroArg_and n P Q (goal : P /\ Q -> Prop)
   : IntroArg n P (fun p => IntroArg n Q (fun q => goal (conj p q))) ->
@@ -1072,6 +1078,7 @@ Ltac IntroArg_intro_dependent_destruction n :=
 Ltac IntroArg_base_tac n A g :=
   lazymatch A with
   | (fun _ => _) _ => simple apply IntroArg_beta
+  | prod _ _ => simple apply IntroArg_prod
   | sigT _ => simple apply IntroArg_sigT
   | unit => simple apply IntroArg_unit
   | _ /\ _ => simple apply IntroArg_and
@@ -1483,35 +1490,21 @@ Hint Extern 101 (spec_refines _ _ _ ((match _ with | (_,_) => _ end) >>= _) _) =
 
 (** * Refinement Hints About Recursion *)
 
+Definition WellFoundedRelation A := sig (@well_founded A).
 Definition PreAndPostConditions frame1 frame2 : Type :=
   Rel (FrameCall frame1) (FrameCall frame2) *
   PostRel (FrameCall frame1) (FrameCall frame2).
-
-Definition WellFoundedRelationOn {A} (_ _ : A) := Prop.
-Definition WellFoundedRelation A :=
-  IntroArg Any A (fun a1 => IntroArg Any A (fun a2 =>
-    WellFoundedRelationOn a1 a2)).
-
-#[global] Hint Extern 101 (WellFoundedRelation _) =>
-  unfold WellFoundedRelation : prepostcond.
-
-#[global] Hint Extern 101 (well_founded (fun _ _ => False)) =>
-  constructor; contradiction : refines prepostcond.
-#[global] Hint Extern 101 (well_founded (fun _ _ => _ < _)) =>
-  apply well_founded_ltof : refines prepostcond.
-#[global] Hint Extern 101 (well_founded (fun _ _ => _ > _)) =>
-  apply well_founded_gtof : refines prepostcond.
 
 Inductive ContinueType := Continue_multifix | Continue_total_spec.
 Polymorphic Definition ContinueArg ct : Type :=
   match ct with
   | Continue_multifix => (Prop * Type * Type)%type
-  | Continue_total_spec => (Prop * Prop * Prop * Type * Type)%type
+  | Continue_total_spec => (Prop * Prop * Type * Type)%type
   end.
 Polymorphic Definition Continue {ct : ContinueType} : ContinueArg ct -> Type :=
   match ct return ContinueArg ct -> Type with
   | Continue_multifix => fun '(precond, goal1, goal2) => (precond * goal1 * goal2)%type
-  | Continue_total_spec => fun '(wf, tsPre, precond, H, goal) => (wf * tsPre * precond * H * goal)%type
+  | Continue_total_spec => fun '(tsPre, precond, H, goal) => (tsPre * precond * H * goal)%type
   end.
 Arguments Continue {ct carg}.
 
@@ -1519,9 +1512,9 @@ Lemma Continue_multifix_unfold precond goal1 goal2 :
   RelGoal precond -> goal1 -> goal2 ->
   @Continue Continue_multifix (precond, goal1, goal2).
   Proof. split; eauto. Qed.
-Lemma Continue_total_spec_unfold wf tsPre precond H goal :
-  RelGoal wf -> RelGoal tsPre -> RelGoal precond -> H -> goal ->
-  @Continue Continue_total_spec (wf, tsPre, precond, H, goal).
+Lemma Continue_total_spec_unfold tsPre precond H goal :
+  RelGoal tsPre -> RelGoal precond -> H -> goal ->
+  @Continue Continue_total_spec (tsPre, precond, H, goal).
 Proof. split; eauto. Qed.
 
 Ltac Continue_unfold :=
@@ -1530,17 +1523,13 @@ Ltac Continue_unfold :=
   | |- @Continue Continue_total_spec _ => simple apply Continue_total_spec_unfold
   end.
 
-#[global] Hint Opaque PreAndPostConditions : refines prepostcond.
 #[global] Hint Opaque WellFoundedRelation : refines prepostcond.
-#[global] Hint Opaque WellFoundedRelationOn : refines prepostcond.
-#[global] Hint Opaque well_founded : refines prepostcond.
+#[global] Hint Opaque PreAndPostConditions : refines prepostcond.
 #[global] Hint Opaque Continue : refines prepostcond.
 
+#[global] Hint Extern 999 (WellFoundedRelation _) => shelve : refines prepostcond.
 #[global] Hint Extern 999 (PreAndPostConditions _ _) => shelve : refines prepostcond.
-#[global] Hint Extern 999 (WellFoundedRelation _) => shelve : refines.
-#[global] Hint Extern 999 (WellFoundedRelationOn _ _) => shelve : prepostcond.
-#[global] Hint Extern 999 (well_founded _) => shelve : refines.
-#[global] Hint Extern 999 (Continue) => shelve : refines.
+#[global] Hint Extern 999 (Continue) => shelve : refines prepostcond.
 
 Lemma spec_refines_multifix_bind_IntroArg (E1 E2 : EvType) Γ1 Γ2 frame1 frame2 R1 R2
       (RPre : SpecPreRel E1 E2 Γ1 Γ2) (RPost : SpecPostRel E1 E2 Γ1 Γ2) RR
@@ -1607,8 +1596,7 @@ Lemma spec_refines_total_spec_IntroArg (E1 E2 : EvType) Γ1 Γ2 frame1
       (rdec : WellFoundedRelation A2)
       (prepostconds : PreAndPostConditions frame1 (unary1Frame A2 B2)) :
   @Continue Continue_total_spec
-            (well_founded rdec,
-             tsPre a2, fst prepostconds call1 (unary1Call a2),
+            (tsPre a2, fst prepostconds call1 (unary1Call a2),
              IntroArg RetAny _ (fun r1 => IntroArg RetAny _ (fun r2 =>
               IntroArg Hyp (tsPost a2 r2) (fun _ =>
               IntroArg Hyp (snd prepostconds call1 (unary1Call a2) r1 r2) (fun _ =>
@@ -1621,12 +1609,12 @@ Lemma spec_refines_total_spec_IntroArg (E1 E2 : EvType) Γ1 Γ2 frame1
                            (fun r1 r2 => tsPost a2' r2 /\
                                          snd prepostconds call1' (unary1Call a2') r1 r2)
                            (applyFrameTuple _ _ _ bodies1 call1')
-                           (total_spec_fix_body tsPre tsPost rdec a2')))))) ->
+                           (total_spec_fix_body tsPre tsPost (proj1_sig rdec) a2')))))) ->
   spec_refines RPre RPost RR
                (MultiFixS E1 Γ1 frame1 bodies1 call1)
                (total_spec tsPre tsPost a2).
 Proof.
-  destruct prepostconds; intros [[[[]]]].
+  destruct rdec, prepostconds; intros [[[]]].
   unfold IntroArg, RelGoal in *; simpl in *.
   unshelve eapply spec_refines_total_spec; eauto.
 Qed.
@@ -1714,7 +1702,26 @@ Ltac prove_refinement_continue :=
   Continue_unfold; prove_refinement.
 
 
-(** * Tactics for building pre/post-conditions *)
+(** * Tactics for pre/post-conditions and well-founded relations *)
+
+Definition DecreasingNat {A} (_ : A) := nat.
+#[global] Hint Opaque DecreasingNat : prepostcond.
+#[global] Hint Extern 999 (DecreasingNat _) => shelve : prepostcond.
+
+Tactic Notation "wellfounded_decreasing_nat" :=
+  let f := fresh "f" in
+  enough (IntroArg Any _ DecreasingNat) as f
+    by (exact (exist _ (ltof _ f) (well_founded_ltof _ f)));
+  prove_refinement_prepostcond.
+Tactic Notation "wellfounded_decreasing_nat" uconstr(f) :=
+  exact (exist _ (ltof _ f) (well_founded_ltof _ f)).
+
+Definition well_founded_False {A} :
+  @well_founded A (fun _ _ => False).
+Proof. constructor; contradiction. Defined.
+
+Ltac wellfounded_none :=
+  exact (exist _ (fun _ _ => False) well_founded_False).
 
 Definition PreCase {frame1 frame2} i j
   (a1 : LRTInput (nthLRT frame1 i))
@@ -1853,7 +1860,7 @@ Lemma test_total_spec_easy E (x : nat) :
                               (fun a b => b = (a + 1)) x).
 Proof.
   prove_refinement.
-  - exact False.
+  - wellfounded_none.
   - prepost_case 0 0 withPre eqPreCase; [ exact (r = r0) |].
     prepost_exclude_remaining.
   - prove_refinement_continue.
@@ -1870,6 +1877,6 @@ Lemma test_total_spec_less_easy E (x : nat) :
                               (fun a b => a = (b + 2)) x).
 Proof.
   prove_refinement.
-  - exact True.
+  - wellfounded_none.
   - prepost_case 0 0 withPre eqPreCase.
     { simpl; intros. exact () } *)
