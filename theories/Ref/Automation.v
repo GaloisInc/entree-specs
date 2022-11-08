@@ -1,6 +1,7 @@
 From Coq Require Export
      Datatypes
      Arith.PeanoNat
+     Wf_nat
      Morphisms
      Setoid
      Program.Equality
@@ -22,6 +23,11 @@ From EnTree Require Import
      Ref.MRecSpec
      Ref.SpecMFacts
 .
+
+(* From Coq 8.15 *)
+Notation "( x ; y )" := (existT _ x y) (at level 0, format "( x ;  '/  ' y )").
+Notation "x .1" := (projT1 x) (at level 1, left associativity, format "x .1").
+Notation "x .2" := (projT2 x) (at level 1, left associativity, format "x .2").
 
 Import SpecMNotations.
 Local Open Scope entree_scope.
@@ -924,10 +930,20 @@ Ltac IntroArg_intro e := intro e.
 
 Ltac IntroArg_forget := let e := fresh in intro e; clear e.
 
-Polymorphic Lemma IntroArg_beta n A (f : A -> Type) x goal :
+Polymorphic Definition IntroArg_beta n A (f : A -> Type) x goal :
   IntroArg n (f x) goal ->
-  IntroArg n ((fun x' => f x') x) goal.
-Proof. eauto. Qed.
+  IntroArg n ((fun x' => f x') x) goal := fun f x => f x.
+
+Polymorphic Definition IntroArg_prod n A B (goal : A * B -> Type) :
+  IntroArg n A (fun a => IntroArg n B (fun b => goal (a , b))) ->
+  IntroArg n _ goal := fun H '(a, b) => H a b.
+
+Polymorphic Definition IntroArg_sigT n A P (goal : sigT P -> Type) :
+  IntroArg n A (fun a => IntroArg n (P a) (fun p => goal (existT _ a p))) ->
+  IntroArg n _ goal := fun H '(a ; p) => H a p.
+
+Polymorphic Definition IntroArg_unit n (goal : unit -> Type) :
+  goal tt -> IntroArg n _ goal := fun H 'tt => H.
 
 Polymorphic Lemma IntroArg_and n P Q (goal : P /\ Q -> Prop)
   : IntroArg n P (fun p => IntroArg n Q (fun q => goal (conj p q))) ->
@@ -1062,6 +1078,9 @@ Ltac IntroArg_intro_dependent_destruction n :=
 Ltac IntroArg_base_tac n A g :=
   lazymatch A with
   | (fun _ => _) _ => simple apply IntroArg_beta
+  | prod _ _ => simple apply IntroArg_prod
+  | sigT _ => simple apply IntroArg_sigT
+  | unit => simple apply IntroArg_unit
   | _ /\ _ => simple apply IntroArg_and
   | True => simple apply IntroArg_true
   | False => simple apply IntroArg_false
@@ -1098,7 +1117,7 @@ Ltac IntroArg_base_tac n A g :=
   apply (@IntroArg_FrameCall n frame) : refines.
 #[global] Hint Extern 101 (IntroArg ?n (LRTInput _) _) =>
   apply IntroArg_LRTInput_Fun || apply IntroArg_LRTInput_Ret;
-  simpl lrtApply; simpl applyFrameTuple : refines.
+  simpl lrtApply; simpl applyFrameTuple : refines prepostcond.
   
 #[global] Hint Extern 102 (IntroArg ?n (@eq bool _ _) _) =>
   let e := argName n in IntroArg_intro e; rewrite e in * : refines prepostcond.
@@ -1471,16 +1490,10 @@ Hint Extern 101 (spec_refines _ _ _ ((match _ with | (_,_) => _ end) >>= _) _) =
 
 (** * Refinement Hints About Recursion *)
 
+Definition WellFoundedRelation A := sig (@well_founded A).
 Definition PreAndPostConditions frame1 frame2 : Type :=
   Rel (FrameCall frame1) (FrameCall frame2) *
   PostRel (FrameCall frame1) (FrameCall frame2).
-Definition WellFoundedRelationOn {A} (_ _ : A) := Prop.
-Definition WellFoundedRelation A :=
-  IntroArg Any A (fun a1 => IntroArg Any A (fun a2 =>
-    WellFoundedRelationOn a1 a2)).  
-
-#[global] Hint Extern 101 (WellFoundedRelation _) =>
-  unfold WellFoundedRelation : prepostcond.
 
 Inductive ContinueType := Continue_multifix | Continue_total_spec.
 Polymorphic Definition ContinueArg ct : Type :=
@@ -1489,7 +1502,7 @@ Polymorphic Definition ContinueArg ct : Type :=
   | Continue_total_spec => (Prop * Prop * Type * Type)%type
   end.
 Polymorphic Definition Continue {ct : ContinueType} : ContinueArg ct -> Type :=
-  match ct with
+  match ct return ContinueArg ct -> Type with
   | Continue_multifix => fun '(precond, goal1, goal2) => (precond * goal1 * goal2)%type
   | Continue_total_spec => fun '(tsPre, precond, H, goal) => (tsPre * precond * H * goal)%type
   end.
@@ -1510,17 +1523,13 @@ Ltac Continue_unfold :=
   | |- @Continue Continue_total_spec _ => simple apply Continue_total_spec_unfold
   end.
 
-#[global] Hint Opaque PreAndPostConditions : refines prepostcond.
 #[global] Hint Opaque WellFoundedRelation : refines prepostcond.
-#[global] Hint Opaque WellFoundedRelationOn : refines prepostcond.
-#[global] Hint Opaque well_founded : refines prepostcond.
+#[global] Hint Opaque PreAndPostConditions : refines prepostcond.
 #[global] Hint Opaque Continue : refines prepostcond.
 
+#[global] Hint Extern 999 (WellFoundedRelation _) => shelve : refines prepostcond.
 #[global] Hint Extern 999 (PreAndPostConditions _ _) => shelve : refines prepostcond.
-#[global] Hint Extern 999 (WellFoundedRelation _) => shelve : refines.
-#[global] Hint Extern 999 (WellFoundedRelationOn _ _) => shelve : prepostcond.
-#[global] Hint Extern 999 (well_founded _) => shelve : refines.
-#[global] Hint Extern 999 (Continue) => shelve : refines.
+#[global] Hint Extern 999 (Continue) => shelve : refines prepostcond.
 
 Lemma spec_refines_multifix_bind_IntroArg (E1 E2 : EvType) Γ1 Γ2 frame1 frame2 R1 R2
       (RPre : SpecPreRel E1 E2 Γ1 Γ2) (RPost : SpecPostRel E1 E2 Γ1 Γ2) RR
@@ -1586,7 +1595,6 @@ Lemma spec_refines_total_spec_IntroArg (E1 E2 : EvType) Γ1 Γ2 frame1
       (tsPre : A2 -> Prop) (tsPost : A2 -> B2 -> Prop)
       (rdec : WellFoundedRelation A2)
       (prepostconds : PreAndPostConditions frame1 (unary1Frame A2 B2)) :
-  well_founded rdec ->
   @Continue Continue_total_spec
             (tsPre a2, fst prepostconds call1 (unary1Call a2),
              IntroArg RetAny _ (fun r1 => IntroArg RetAny _ (fun r2 =>
@@ -1601,12 +1609,12 @@ Lemma spec_refines_total_spec_IntroArg (E1 E2 : EvType) Γ1 Γ2 frame1
                            (fun r1 r2 => tsPost a2' r2 /\
                                          snd prepostconds call1' (unary1Call a2') r1 r2)
                            (applyFrameTuple _ _ _ bodies1 call1')
-                           (total_spec_fix_body tsPre tsPost rdec a2')))))) ->
+                           (total_spec_fix_body tsPre tsPost (proj1_sig rdec) a2')))))) ->
   spec_refines RPre RPost RR
                (MultiFixS E1 Γ1 frame1 bodies1 call1)
                (total_spec tsPre tsPost a2).
 Proof.
-  destruct prepostconds; intros ? [[[]]].
+  destruct rdec, prepostconds; intros [[[]]].
   unfold IntroArg, RelGoal in *; simpl in *.
   unshelve eapply spec_refines_total_spec; eauto.
 Qed.
@@ -1678,16 +1686,68 @@ Hint Extern 992 (spec_refines _ _ _ _ (trepeat _ _ >>= _)) =>
   simple apply spec_refines_trepeat_bind_zero_r : refines.
 
 
-(** * Tactics for building pre/post-conditions *)
+(** * Tactics for proving refinement *)
+
+Ltac prove_refinement_eauto :=
+  unshelve (typeclasses eauto with refines).
+
+Ltac prove_refinement_prepostcond :=
+  try (unshelve (typeclasses eauto with prepostcond)).
+
+Ltac prove_refinement :=
+  prove_refinement_eauto; prove_refinement_prepostcond;
+  try reflexivity || contradiction.
+
+Ltac prove_refinement_continue :=
+  Continue_unfold; prove_refinement.
+
+
+(** * Tactics for pre/post-conditions and well-founded relations *)
+
+Definition DecreasingNat {A} (_ : A) := nat.
+#[global] Hint Opaque DecreasingNat : prepostcond.
+#[global] Hint Extern 999 (DecreasingNat _) => shelve : prepostcond.
+
+Tactic Notation "wellfounded_decreasing_nat" :=
+  let f := fresh "f" in
+  enough (IntroArg Any _ DecreasingNat) as f
+    by (exact (exist _ (ltof _ f) (well_founded_ltof _ f)));
+  prove_refinement_prepostcond.
+Tactic Notation "wellfounded_decreasing_nat" uconstr(f) :=
+  exact (exist _ (ltof _ f) (well_founded_ltof _ f)).
+
+Definition well_founded_False {A} :
+  @well_founded A (fun _ _ => False).
+Proof. constructor; contradiction. Defined.
+
+Ltac wellfounded_none :=
+  exact (exist _ (fun _ _ => False) well_founded_False).
+
+Definition PreCase {frame1 frame2} i j
+  (a1 : LRTInput (nthLRT frame1 i))
+  (a2 : LRTInput (nthLRT frame2 j)) := Prop.
+Definition PostCase {frame1 frame2} i j args1 args2
+  (r1 : LRTOutput (nthLRT frame1 i) args1)
+  (r2 : LRTOutput (nthLRT frame2 j) args2) := Prop.
+
+#[global] Hint Opaque PreCase : prepostcond.
+#[global] Hint Opaque PostCase : prepostcond.
+
+#[global] Hint Extern 999 (PreCase _ _ _ _) => shelve : prepostcond.
+#[global] Hint Extern 999 (PostCase _ _ _ _ _ _) => shelve : prepostcond.
 
 Definition prepost_case {frame1 frame2} i j
-  (pre : Rel (LRTInput (nthLRT frame1 i)) (LRTInput (nthLRT frame2 j)))
-  (post : forall args1 args2, Rel (LRTOutput (nthLRT frame1 i) args1)
-                                  (LRTOutput (nthLRT frame2 j) args2))
+  (pre : IntroArg Any (LRTInput (nthLRT frame1 i)) (fun a1 =>
+         IntroArg Any (LRTInput (nthLRT frame2 j)) (fun a2 =>
+         PreCase i j a1 a2)))
+  (post : IntroArg Any _ (fun args1 => IntroArg Any _ (fun args2 =>
+          IntroArg RetAny (LRTOutput (nthLRT frame1 i) args1) (fun r1 =>
+          IntroArg RetAny (LRTOutput (nthLRT frame2 j) args2) (fun r2 =>
+          PostCase i j args1 args2 r1 r2)))))
   (prepostcond : PreAndPostConditions frame1 frame2) :
   PreAndPostConditions frame1 frame2.
 Proof.
-  split.
+  unfold IntroArg, PreCase, PostCase in *; split.
   all: intros [m args1] [n args2].
   all: destruct (Nat.eq_dec m i) as [p1|]; destruct (Nat.eq_dec n j) as [p2|].
   all: try (destruct p1; destruct p2).
@@ -1709,11 +1769,11 @@ Notation eqPostCase :=
   (only parsing).
 
 Tactic Notation "prepost_case" constr(i) constr(j) :=
-  apply (prepost_case i j).
+  apply (prepost_case i j); prove_refinement_prepostcond.
 Tactic Notation "prepost_case" constr(i) constr(j) "withPre" uconstr(pre) :=
-  apply (prepost_case i j); [ exact pre | |].
+  apply (prepost_case i j); [ exact pre | prove_refinement_prepostcond |].
 Tactic Notation "prepost_case" constr(i) constr(j) "withPost" uconstr(post) :=
-  apply (prepost_case i j); [| exact post |].
+  apply (prepost_case i j); [ prove_refinement_prepostcond | exact post |].
 Tactic Notation "prepost_case" constr(i) constr(j) "with" uconstr(pre) "," uconstr(post) :=
   apply (prepost_case i j); [exact pre | exact post |].
 
@@ -1733,21 +1793,6 @@ Tactic Notation "prepost_exclude_remaining" :=
 #[global] Hint Extern 101 (RelGoal (snd (prepost_case _ _ _ _ _) _ _ _ _)) =>
   unfold RelGoal; simpl; apply RelGoal_fold : refines.
 
-
-(** * Tactics for proving refinement *)
-
-Ltac prove_refinement_eauto :=
-  unshelve (typeclasses eauto with refines).
-
-Ltac prove_refinement_prepostcond :=
-  try (unshelve (typeclasses eauto with prepostcond)).
-
-Ltac prove_refinement :=
-  prove_refinement_eauto; prove_refinement_prepostcond;
-  try reflexivity || contradiction.
-
-Ltac prove_refinement_continue :=
-  Continue_unfold; prove_refinement.
 
 
 (** * Testing *)
@@ -1815,11 +1860,9 @@ Lemma test_total_spec_easy E (x : nat) :
                               (fun a b => b = (a + 1)) x).
 Proof.
   prove_refinement.
-  - exact False.
-  - prepost_case 0 0 withPre eqPreCase.
-    { simpl. intros [] [] r1 r2. exact (r1 = r2). }
+  - wellfounded_none.
+  - prepost_case 0 0 withPre eqPreCase; [ exact (r = r0) |].
     prepost_exclude_remaining.
-  - constructor; contradiction.
   - prove_refinement_continue.
 Qed.
 
@@ -1834,6 +1877,6 @@ Lemma test_total_spec_less_easy E (x : nat) :
                               (fun a b => a = (b + 2)) x).
 Proof.
   prove_refinement.
-  - exact True.
+  - wellfounded_none.
   - prepost_case 0 0 withPre eqPreCase.
     { simpl; intros. exact () } *)
