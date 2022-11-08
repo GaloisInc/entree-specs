@@ -920,8 +920,8 @@ Polymorphic Definition IntroArg (n : ArgName) A (goal : A -> Type) :=
 
 #[global] Hint Opaque IntroArg : refines prepostcond.
 
-Polymorphic Lemma IntroArg_fold n A goal : forall a, IntroArg n A goal -> goal a.
-Proof. intros a H; exact (H a). Qed.
+Polymorphic Lemma IntroArg_fold n A goal : IntroArg n A goal -> forall a, goal a.
+Proof. intros H a; exact (H a). Qed.
 
 (* Polymorphic Lemma IntroArg_unfold n A (goal : A -> Prop) : (forall a, goal a) -> IntroArg n A goal. *)
 (* Proof. unfold IntroArg; intro H; exact H. Qed. *)
@@ -1142,7 +1142,9 @@ Proof. eauto. Qed.
 
 (* If nothing else works for a RelGoal, try reflexivity and then shelve it *)
 #[global] Hint Extern 999 (RelGoal _) =>
-  unfold RelGoal; (reflexivity || shelve) : refines.
+  unfold RelGoal; cbn;
+  unfold resum_ret, ReSumRet_FrameCall_FunStackE;
+  (reflexivity || shelve) : refines.
 
 #[global] Lemma RelGoal_and P Q :
   RelGoal P -> RelGoal Q -> RelGoal (P /\ Q).
@@ -1374,15 +1376,27 @@ Definition spec_refines_assume_r_IntroArg E1 E2 Γ1 Γ2 R1 R2 (P:Prop)
   spec_refines RPre RPost RR phi (AssumeS P >>= kphi) :=
   spec_refines_assume_r E1 E2 Γ1 Γ2 R1 R2 P RPre RPost RR phi kphi.
 
+Definition spec_refines_assert_r_IntroArg E1 E2 Γ1 Γ2 R1 R2 (P:Prop)
+      RPre RPost RR (phi : SpecM E1 Γ1 R1) (kphi : unit -> SpecM E2 Γ2 R2) :
+  RelGoal P -> spec_refines RPre RPost RR phi (kphi tt) ->
+  spec_refines RPre RPost RR phi (AssertS P >>= kphi) :=
+  spec_refines_assert_r E1 E2 Γ1 Γ2 R1 R2 P RPre RPost RR phi kphi.
+
+Definition spec_refines_assume_l_IntroArg E1 E2 Γ1 Γ2 R1 R2 (P:Prop)
+      RPre RPost RR (phi : SpecM E2 Γ2 R2) (kphi : unit -> SpecM E1 Γ1 R1) :
+      RelGoal P -> spec_refines RPre RPost RR (kphi tt) phi ->
+  spec_refines RPre RPost RR (AssumeS P >>= kphi) phi :=
+  spec_refines_assume_l E1 E2 Γ1 Γ2 R1 R2 P RPre RPost RR phi kphi.
+
 #[global] Hint Extern 101 (spec_refines _ _ _ _ (AssumeS _ >>= _)) =>
   simple apply spec_refines_assume_r_IntroArg : refines.
 #[global] Hint Extern 101 (spec_refines _ _ _ (AssertS _ >>= _) _) =>
   simple apply spec_refines_assert_l_IntroArg : refines.
 
 #[global] Hint Extern 102 (spec_refines _ _ _ _ (AssertS _ >>= _)) =>
-  simple eapply spec_refines_assert_r; [shelve|] : refines.
+  simple eapply spec_refines_assert_r_IntroArg : refines.
 #[global] Hint Extern 102 (spec_refines _ _ _ (AssumeS _ >>= _) _) =>
-  simple eapply spec_refines_assume_l; [shelve|] : refines.
+  simple eapply spec_refines_assume_l_IntroArg : refines.
 
 
 (* Rules for if-then-else *)
@@ -1664,25 +1678,23 @@ Lemma spec_refines_call_IntroArg (E1 E2 : EvType) Γ1 Γ2 frame1 frame2
   spec_refines RPre RPost RR (CallS _ _ _ call1) (CallS _ _ _ call2).
 Proof. intros; apply spec_refines_call; eauto. Qed.
 
-#[global]
-Hint Extern 101 (spec_refines _ _ _ (CallS _ _ _ _ >>= _) (CallS _ _ _ _ >>= _)) =>
+#[global] Hint Extern 101 (spec_refines _ _ _ (CallS _ _ _ _ >>= _) (CallS _ _ _ _ >>= _)) =>
   apply spec_refines_call_bind_IntroArg : refines.
-#[global]
-Hint Extern 101 (spec_refines _ _ _ (CallS _ _ _ _) (CallS _ _ _ _)) =>
+#[global] Hint Extern 101 (spec_refines _ _ _ (CallS _ _ _ _) (CallS _ _ _ _)) =>
   apply spec_refines_call_IntroArg : refines.
 
-#[global]
-Hint Extern 991 (spec_refines _ _ _ (CallS _ _ _ _) (trepeat _ _)) =>
-  simple apply spec_refines_trepeat_zero_r : refines.
-#[global]
-Hint Extern 991 (spec_refines _ _ _ (CallS _ _ _ _) (trepeat _ _ >>= _)) =>
+#[global] Hint Extern 991 (spec_refines _ _ _ (CallS _ _ _ _) (trepeat _ _)) =>
+  simple apply spec_refines_trepeat_suc_r : refines.
+#[global] Hint Extern 991 (spec_refines _ _ _ (CallS _ _ _ _ >>= _) (trepeat _ _)) =>
+  simple apply spec_refines_trepeat_suc_r : refines.
+#[global] Hint Extern 991 (spec_refines _ _ _ (CallS _ _ _ _) (trepeat _ _ >>= _)) =>
+  simple apply spec_refines_trepeat_bind_suc_r : refines.
+#[global] Hint Extern 991 (spec_refines _ _ _ (CallS _ _ _ _ >>= _) (trepeat _ _ >>= _)) =>
   simple apply spec_refines_trepeat_bind_suc_r : refines.
 
-#[global]
-Hint Extern 992 (spec_refines _ _ _ _ (trepeat _ _)) =>
+#[global] Hint Extern 992 (spec_refines _ _ _ _ (trepeat _ _)) =>
   simple apply spec_refines_trepeat_zero_r : refines.
-#[global]
-Hint Extern 992 (spec_refines _ _ _ _ (trepeat _ _ >>= _)) =>
+#[global] Hint Extern 992 (spec_refines _ _ _ _ (trepeat _ _ >>= _)) =>
   simple apply spec_refines_trepeat_bind_zero_r : refines.
 
 
@@ -1711,10 +1723,10 @@ Definition DecreasingNat {A} (_ : A) := nat.
 Tactic Notation "wellfounded_decreasing_nat" :=
   let f := fresh "f" in
   enough (IntroArg Any _ DecreasingNat) as f
-    by (exact (exist _ (ltof _ f) (well_founded_ltof _ f)));
+    by (exact (exist _ (fun a b => f a < f b) (well_founded_ltof _ f)));
   prove_refinement_prepostcond.
 Tactic Notation "wellfounded_decreasing_nat" uconstr(f) :=
-  exact (exist _ (ltof _ f) (well_founded_ltof _ f)).
+  exact (exist _ (fun a b => f a < f b) (well_founded_ltof _ f)).
 
 Definition well_founded_False {A} :
   @well_founded A (fun _ _ => False).
@@ -1784,14 +1796,14 @@ Tactic Notation "prepost_exclude_remaining" :=
 
 #[global] Hint Extern 101 (IntroArg ?n (fst (prepost_case _ _ _ _ _) _ _) _) =>
   let e := argName n in IntroArg_intro e;
-  simpl in e; apply (IntroArg_fold n _ _ e) : refines.
+  cbn in e; revert e; apply (IntroArg_fold n _ _) : refines.
 #[global] Hint Extern 101 (IntroArg ?n (snd (prepost_case _ _ _ _ _) _ _ _ _) _) =>
   let e := argName n in IntroArg_intro e;
-  simpl in e; apply (IntroArg_fold n _ _ e) : refines.
+  cbn in e; revert e; apply (IntroArg_fold n _ _) : refines.
 #[global] Hint Extern 101 (RelGoal (fst (prepost_case _ _ _ _ _) _ _)) =>
-  unfold RelGoal; simpl; apply RelGoal_fold : refines.
+  unfold RelGoal; cbn; apply RelGoal_fold : refines.
 #[global] Hint Extern 101 (RelGoal (snd (prepost_case _ _ _ _ _) _ _ _ _)) =>
-  unfold RelGoal; simpl; apply RelGoal_fold : refines.
+  unfold RelGoal; cbn; apply RelGoal_fold : refines.
 
 
 
@@ -1864,6 +1876,27 @@ Proof.
   - prepost_case 0 0 withPre eqPreCase; [ exact (r = r0) |].
     prepost_exclude_remaining.
   - prove_refinement_continue.
+Qed.
+
+Lemma test_total_spec_loop E (x : nat) :
+  @spec_refines E E nil nil eqPreRel eqPostRel nat nat eq
+                  (MultiFixS E nil (unary1Frame nat nat)
+                    ((fun a => if a =? 0 then RetS 0
+                               else a' <- CallS _ _ _ (mkFrameCall (unary1Frame nat nat)
+                                                      0 (pred a)) ;;
+                                    RetS (S a')), tt)
+                    (mkFrameCall (unary1Frame nat nat) 0 x))
+                  (total_spec (fun _ => True)
+                              (fun a b => a = b) x).
+Proof.
+  prove_refinement.
+  - wellfounded_decreasing_nat; exact a.
+  - prepost_case 0 0 withPre eqPreCase; [ exact (r = r0) |].
+    prepost_exclude_remaining.
+  - prove_refinement_continue.
+    + apply Nat.eqb_eq in e_if; eauto.
+    + destruct a0; [ discriminate e_if | eauto ].
+    + destruct a0; [ discriminate e_if | eauto ].
 Qed.
 
 (* 
