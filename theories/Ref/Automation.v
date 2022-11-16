@@ -1539,6 +1539,19 @@ Hint Extern 101 (spec_refines _ _ _ ((match _ with | (_,_) => _ end) >>= _) _) =
   apply spec_refines_match_pair_bind_l : refines.
 
 
+(** * Rules for liftStackS  *)
+
+Lemma liftStackS_ret_bind_l (E1 E2 : EvType) Γ1 Γ2 R1 R2
+  (RPre : SpecPreRel E1 E2 Γ1 Γ2) (RPost : SpecPostRel E1 E2 Γ1 Γ2)
+  (RR : Rel R1 R2) A1 a k1 t2 :
+  spec_refines RPre RPost RR (k1 a) t2 ->
+  spec_refines RPre RPost RR (liftStackS A1 (RetS a) >>= k1) t2.
+Admitted.
+
+#[global] Hint Extern 101 (spec_refines _ _ _ (liftStackS _ (RetS _) >>= _) _) =>
+  simple apply liftStackS_ret_bind_l : refines.
+
+
 (** * Refinement Hints About Recursion *)
 
 Definition WellFoundedRelation A := sig (@well_founded A).
@@ -1758,6 +1771,9 @@ Proof. intros; apply spec_refines_call; eauto. Qed.
 
 (** * Tactics for proving refinement *)
 
+Ltac prove_refinement_rewrite :=
+  try unshelve rewrite_strat (bottomup (hints refines)).
+
 Ltac split_prod_goal :=
   repeat match goal with
   | |- _ /\ _        => split
@@ -1768,8 +1784,8 @@ Ltac split_prod_goal :=
   end.
 
 Ltac prove_refinement_prepostcond :=
-  unshelve (typeclasses eauto with prepostcond);
-  split_prod_goal.
+  unshelve typeclasses eauto with prepostcond;
+  split_prod_goal; prove_refinement_rewrite.
 
 Ltac shelve_goal_if_Type :=
   match goal with
@@ -1785,11 +1801,12 @@ Ltac shelve_goal_if_Type :=
   end.
 
 Ltac prove_refinement :=
-  unshelve (typeclasses eauto with refines);
+  unshelve typeclasses eauto with refines;
   split_prod_goal; shelve_goal_if_Type;
   cbn [ IntroArg_prod IntroArg_sigT IntroArg_unit
         IntroArg_FrameCall
         IntroArg_LRTInput_Fun IntroArg_LRTInput_Ret ] in *;
+  split_prod_goal; prove_refinement_rewrite;
   try solve [ assumption | reflexivity | contradiction ].
 
 Ltac prove_refinement_continue :=
