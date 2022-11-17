@@ -1785,6 +1785,7 @@ Ltac split_prod_goal :=
 
 Ltac prove_refinement_prepostcond :=
   unshelve typeclasses eauto with prepostcond;
+  simpl LRTOutput in *; simpl FrameCallIndex;
   split_prod_goal; prove_refinement_rewrite.
 
 Ltac shelve_goal_if_Type :=
@@ -1888,10 +1889,15 @@ Tactic Notation "prepost_case" constr(i) constr(j) "withPost" uconstr(post) :=
 Tactic Notation "prepost_case" constr(i) constr(j) "with" uconstr(pre) "," uconstr(post) :=
   apply (prepost_case i j); [exact pre | exact post |].
 
+Definition PreExcludedCase (i j : nat) := False.
+Definition PostExcludedCase (i j : nat) := False.
+
 Tactic Notation "prepost_exclude_case" constr(i) constr(j) :=
-  apply (prepost_case i j); [ exact (fun _ _ => False) | exact (fun _ _ _ _ => False)].
+  apply (prepost_case i j); [ exact (fun _ _ => PreExcludedCase i j)
+                            | exact (fun _ _ _ _ => PostExcludedCase i j)].
 Tactic Notation "prepost_exclude_remaining" :=
-  exact (fun _ _ => False, fun _ _ _ _ => False).
+  exact (fun calli callj => PreExcludedCase (FrameCallIndex calli) (FrameCallIndex callj),
+         fun calli callj _ _ => PostExcludedCase (FrameCallIndex calli) (FrameCallIndex callj)).
 
 #[global] Hint Extern 101 (IntroArg ?n (wfRelOf _ _ _) _) =>
   let e := argName n in IntroArg_intro e;
