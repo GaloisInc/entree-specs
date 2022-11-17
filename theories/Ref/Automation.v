@@ -1541,15 +1541,83 @@ Hint Extern 101 (spec_refines _ _ _ ((match _ with | (_,_) => _ end) >>= _) _) =
 
 (** * Rules for liftStackS  *)
 
-Lemma liftStackS_ret_bind_l (E1 E2 : EvType) Γ1 Γ2 R1 R2
+Lemma spec_refines_liftStackS_ret_bind_l (E1 E2 : EvType) Γ1 Γ2 R1 R2
   (RPre : SpecPreRel E1 E2 Γ1 Γ2) (RPost : SpecPostRel E1 E2 Γ1 Γ2)
   (RR : Rel R1 R2) A1 a k1 t2 :
   spec_refines RPre RPost RR (k1 a) t2 ->
   spec_refines RPre RPost RR (liftStackS A1 (RetS a) >>= k1) t2.
 Admitted.
 
+Lemma spec_refines_liftStackS_bind_bind_l (E1 E2 : EvType) Γ1 Γ2 R1 R2
+  (RPre : SpecPreRel E1 E2 Γ1 Γ2) (RPost : SpecPostRel E1 E2 Γ1 Γ2)
+  (RR : Rel R1 R2) A1 B1 t1 k1 k2 t2 :
+  spec_refines RPre RPost RR (x <- liftStackS A1 t1 ;; liftStackS B1 (k1 x) >>= k2) t2 ->
+  spec_refines RPre RPost RR (liftStackS B1 (t1 >>= k1) >>= k2) t2.
+Admitted.
+
+Lemma spec_refines_liftStackS_assume_bind_l (E1 E2 : EvType) Γ1 Γ2 R1 R2
+  (RPre : SpecPreRel E1 E2 Γ1 Γ2) (RPost : SpecPostRel E1 E2 Γ1 Γ2)
+  (RR : Rel R1 R2) P k1 t2 :
+  spec_refines RPre RPost RR (AssumeS P >>= k1) t2 ->
+  spec_refines RPre RPost RR (liftStackS _ (AssumeS P) >>= k1) t2.
+Admitted.
+
+Lemma spec_refines_liftStackS_assert_bind_l (E1 E2 : EvType) Γ1 Γ2 R1 R2
+  (RPre : SpecPreRel E1 E2 Γ1 Γ2) (RPost : SpecPostRel E1 E2 Γ1 Γ2)
+  (RR : Rel R1 R2) P k1 t2 :
+  spec_refines RPre RPost RR (AssertS P >>= k1) t2 ->
+  spec_refines RPre RPost RR (liftStackS _ (AssertS P) >>= k1) t2.
+Admitted.
+
+Lemma spec_refines_liftStackS_forall_bind_l (E1 E2 : EvType) Γ1 Γ2 R1 R2
+  (RPre : SpecPreRel E1 E2 Γ1 Γ2) (RPost : SpecPostRel E1 E2 Γ1 Γ2)
+  (RR : Rel R1 R2) A1 `{QuantType A1} k1 t2 :
+  spec_refines RPre RPost RR (ForallS A1 >>= k1) t2 ->
+  spec_refines RPre RPost RR (liftStackS _ (ForallS A1) >>= k1) t2.
+Admitted.
+
+Lemma spec_refines_liftStackS_exists_bind_l (E1 E2 : EvType) Γ1 Γ2 R1 R2
+  (RPre : SpecPreRel E1 E2 Γ1 Γ2) (RPost : SpecPostRel E1 E2 Γ1 Γ2)
+  (RR : Rel R1 R2) A1 `{QuantType A1} k1 t2 :
+  spec_refines RPre RPost RR (ExistsS A1 >>= k1) t2 ->
+  spec_refines RPre RPost RR (liftStackS _ (ExistsS A1) >>= k1) t2.
+Admitted.
+
 #[global] Hint Extern 101 (spec_refines _ _ _ (liftStackS _ (RetS _) >>= _) _) =>
-  simple apply liftStackS_ret_bind_l : refines.
+  simple apply spec_refines_liftStackS_ret_bind_l : refines.
+#[global] Hint Extern 101 (spec_refines _ _ _ (liftStackS _ (_ >>= _) >>= _) _) =>
+  simple apply spec_refines_liftStackS_bind_bind_l : refines.
+#[global] Hint Extern 101 (spec_refines _ _ _ (liftStackS _ (AssumeS _) >>= _) _) =>
+  simple apply spec_refines_liftStackS_assume_bind_l : refines.
+#[global] Hint Extern 101 (spec_refines _ _ _ (liftStackS _ (AssertS _) >>= _) _) =>
+  simple apply spec_refines_liftStackS_assert_bind_l : refines.
+#[global] Hint Extern 101 (spec_refines _ _ _ (liftStackS _ (ForallS _) >>= _) _) =>
+  simple apply spec_refines_liftStackS_forall_bind_l : refines.
+#[global] Hint Extern 101 (spec_refines _ _ _ (liftStackS _ (ExistsS _) >>= _) _) =>
+  simple apply spec_refines_liftStackS_exists_bind_l : refines.
+
+#[global] Hint Extern 101 (spec_refines _ _ _ (liftStackS _ (total_spec _ _ _) >>= _) _) =>
+  apply spec_refines_liftStackS_bind_bind_l : refines.
+
+Lemma spec_refines_liftStackS_bind_ret_l (E1 E2 : EvType) Γ1 Γ2 frame1 frame2 R1 R2
+      (RPre : SpecPreRel E1 E2 (frame1 :: Γ1) (frame2 :: Γ2))
+      (RPost : SpecPostRel E1 E2 (frame1 :: Γ1) (frame2 :: Γ2))
+      t1 t2 (RR : Rel R1 R2) :
+  spec_refines RPre RPost RR (liftStackS _ t1 >>= RetS) t2 ->
+  spec_refines RPre RPost RR (liftStackS _ t1) t2.
+Proof. intro; rewrite <- (bind_ret_r (liftStackS _ _)); eauto. Qed.
+
+#[global] Hint Extern 101 (spec_refines _ _ _ (liftStackS _ ?t1) _) =>
+  simple apply (spec_refines_liftStackS_bind_ret_l _ _ _ _ _ _ _ _ _ _ t1) : refines.
+
+Lemma spec_refines_liftStackS_trans_bind_l {E1 E2 Γ1 Γ2 frame1 frame2 R1 R2}
+      {RPre : SpecPreRel E1 E2 (frame1 :: Γ1) (frame2 :: Γ2)}
+      {RPost : SpecPostRel E1 E2 (frame1 :: Γ1) (frame2 :: Γ2)}
+      {RR : Rel R1 R2} {t1 t2 k1 t3} :
+  spec_refines eqPreRel eqPostRel eq t1 t2 ->
+  spec_refines RPre RPost RR (liftStackS R1 t2 >>= k1) t3 ->
+  spec_refines RPre RPost RR (liftStackS R1 t1 >>= k1) t3.
+Admitted.
 
 
 (** * Refinement Hints About Recursion *)
