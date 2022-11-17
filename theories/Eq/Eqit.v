@@ -99,6 +99,13 @@ Proof.
   intros. pstep. constructor. auto.
 Qed.
 
+Lemma eqit_Vis {E R1 R2} `{EncodingType E} b1 b2 (RR : R1 -> R2 -> Prop) (e : E) k1 k2 :
+  (forall a, eqit RR b1 b2 (k1 a) (k2 a)) -> 
+  eqit RR b1 b2 (Vis e k1) (Vis e k2).
+Proof.
+  intros. pstep. constructor. left. apply H0.
+Qed.
+
 Lemma eqit_Vis_inv {E R1 R2} `{EncodingType E} b1 b2 (RR : R1 -> R2 -> Prop) (e : E) k1 k2 :
   eqit RR b1 b2 (Vis e k1) (Vis e k2) -> forall a, eqit RR b1 b2 (k1 a) (k2 a).
 Proof.

@@ -333,7 +333,7 @@ Definition ErrorS {E} {Γ} A (str : string) : SpecM E Γ A :=
 
 (* Lift a SpecM in the empty FunStack to an arbitrary FunStack *)
 Definition liftStackS {E} {Γ} A (t:SpecM E nil A) : SpecM E Γ A :=
-  resumEntree A t.
+  resumEntree t.
 
 (* Compute the type forall a b c ... . SpecM ... (R a b c ...) from an lrt *)
 (*

@@ -180,3 +180,63 @@ Proof.
 Qed.
 
 End interp_mrec_spec_quantr.
+
+Lemma refines_liftStackS_proper:
+  forall (E1 : EvType) (Γ1 : list RecFrame) (frame1 : RecFrame) (R1 : Type) (t1 t2 : SpecM E1 nil R1),
+    refines eq PostRelEq eq t1 t2 ->
+    refines eq PostRelEq eq (@liftStackS E1 (frame1 :: Γ1) R1 t1) (liftStackS R1 t2).
+Proof.
+  intros E1 Γ1 frame1 R1. unfold liftStackS. pcofix CIH. intros t1 t2 Ht12.
+  unfold resumEntree. punfold Ht12. red in Ht12.
+  pstep. red. hinduction Ht12 before r; intros.
+  - constructor. auto.
+  - constructor. pclearbot. right. eauto.
+  - simpl. subst. unfold resum. unfold ReSum_nil_FunStack. destruct e2; constructor;
+      auto; intros; pclearbot; right; eauto. 
+    dependent destruction H. eapply CIH. 
+    cbn in H0. cbn in b.
+    match goal with |- refines _ _ _ (k1 ?a) _ => remember a as b' end.
+    cbn in b'. specialize (H0 b' b' (PostRelEq_intro _ _)). pclearbot. auto.
+    dependent destruction H.  eapply CIH. 
+    cbn in H0. cbn in b.
+    match goal with |- refines _ _ _ (k1 ?a) _ => remember a as b' end.
+    cbn in b'. specialize (H0 b' b' (PostRelEq_intro _ _)). pclearbot. auto.
+  - constructor. eauto.
+  - constructor. eauto.
+  - cbn. constructor. intros. eauto.
+  - econstructor. eauto.
+  - econstructor. eauto.
+  - constructor. eauto.
+Qed.
+
+Lemma pad_resumEntree_comm E1 E2 `{resret : ReSumRet E1 E2} R (t : entree E1 R) :
+      resumEntree (Padded.pad t) ≅ Padded.pad (resumEntree t).
+Proof.
+  revert t. ginit. gcofix CIH.
+  intros. unfold resumEntree at 2. unfold Padded.pad at 1.
+  destruct (observe t).
+  - setoid_rewrite Padded.pad_ret. rewrite resumEntree_Ret.
+    gstep. constructor. auto.
+  - setoid_rewrite Padded.pad_tau. rewrite resumEntree_Tau.
+    gstep. constructor. gfinal. eauto.
+  - setoid_rewrite Padded.pad_vis. rewrite resumEntree_Vis.
+    gstep. constructor. intros. red. rewrite resumEntree_Tau.
+    gstep. constructor. gfinal. eauto.
+Qed.
+
+Lemma padded_refines_liftStackS_proper:
+  forall (E1 : EvType) (Γ1 : list RecFrame) (frame1 : RecFrame) (R1 : Type) (t1 t2 : SpecM E1 nil R1),
+    padded_refines eq PostRelEq eq t1 t2 ->
+    padded_refines eq PostRelEq eq (@liftStackS E1 (frame1 :: Γ1) R1 t1) (liftStackS R1 t2).
+Proof.
+  unfold padded_refines.
+  intros.
+  eapply refines_eutt_padded_l with (t1 := liftStackS R1 (Padded.pad t1)); try apply Padded.pad_is_padded.
+  setoid_rewrite pad_resumEntree_comm. reflexivity.
+  eapply refines_eutt_padded_r with (t2 := liftStackS R1 (Padded.pad t2));
+    try apply Padded.pad_is_padded.
+  setoid_rewrite pad_resumEntree_comm. apply Padded.pad_is_padded.
+  setoid_rewrite pad_resumEntree_comm. reflexivity.
+  apply refines_liftStackS_proper. auto.
+Qed.
+    

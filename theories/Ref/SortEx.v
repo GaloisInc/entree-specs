@@ -27,6 +27,8 @@ From EnTree Require Import
      Ref.RecFixSpecTotal
 .
 
+From Coq Require Export Wellfounded Arith.Wf_nat Arith.Compare_dec Arith.Lt.
+
 Import Monad.
 Import MonadNotation.
 Local Open Scope monad_scope.
@@ -80,7 +82,27 @@ Definition dec_length {A : Type} (l1 l2 : list A) :=
   length l1 < length l2.
 
 Lemma dec_length_wf A : well_founded (@dec_length A).
-Admitted.
+Proof.
+  eapply well_founded_lt_compat.
+  unfold dec_length. eauto.
+Qed.
+
+Definition dec_either_length {A} (pr1 pr2 : list A * list A) :=
+  length (fst pr1) < length (fst pr2) /\ length (snd pr1) = length (snd pr2) \/
+  length (fst pr1) = length (fst pr2) /\ length (snd pr1) < length (snd pr2).
+
+Lemma wf_dec_either_length A : well_founded (@dec_either_length A).
+Proof.
+  apply wf_union.
+  - intros [z1 z2] [y1 y2] [] [x1 x2] []; simpl in *.
+    exists (z1, x2); simpl; split; try easy.
+    + rewrite <- H0. exact H2.
+    + rewrite H1. exact H.
+  - eapply wf_incl; [| apply well_founded_ltof ].
+    intros ? ? []. exact H.
+  - eapply wf_incl; [| apply well_founded_ltof ].
+    intros ? ? []. exact H0.
+Qed.
 
 Definition rdec_merge {A} (p1 p2 : list A * list A)  :=
   let '(l1,l2) := p1 in
@@ -91,7 +113,10 @@ Definition rdec_merge {A} (p1 p2 : list A * list A)  :=
     length l2 < length l4.
 
 Lemma rdec_merge_wf A : well_founded (@rdec_merge A).
-Admitted.
+Proof.
+  eapply wf_incl; try apply wf_dec_either_length.
+  red. intros [? ?] [? ?] H. auto.
+Qed.
 
 Definition sorted : list nat -> Prop :=
   Sorted (Nat.le).
@@ -116,6 +141,11 @@ Definition halve : list nat -> entree_spec E (list nat * list nat) :=
                         l3 <- tail l2;;
                         '(l4,l5) <- rec l3;;
                         Ret (x::l4, y::l5)).
+
+
+(* splits a list in half using th monadic, recursion operator rec_fix_spec. 
+   The calling the rec function argument corresponds to recursive calls to the halve function *)
+
 
 Definition halve_pre (l : list nat) := True.
 Definition halve_post (l : list nat) p :=

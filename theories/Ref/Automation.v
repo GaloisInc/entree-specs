@@ -24,6 +24,9 @@ From EnTree Require Import
      Ref.SpecMFacts
 .
 
+From Paco Require Import paco.
+
+
 (* From Coq 8.15 *)
 Notation "( x ; y )" := (existT _ x y) (at level 0, format "( x ;  '/  ' y )").
 Notation "x .1" := (projT1 x) (at level 1, left associativity, format "x .1").
@@ -1546,42 +1549,79 @@ Lemma spec_refines_liftStackS_ret_bind_l (E1 E2 : EvType) Γ1 Γ2 R1 R2
   (RR : Rel R1 R2) A1 a k1 t2 :
   spec_refines RPre RPost RR (k1 a) t2 ->
   spec_refines RPre RPost RR (liftStackS A1 (RetS a) >>= k1) t2.
-Admitted.
+Proof.
+  intros. setoid_rewrite resumEntree_Ret. setoid_rewrite bind_ret_l.
+  auto.
+Qed.
 
 Lemma spec_refines_liftStackS_bind_bind_l (E1 E2 : EvType) Γ1 Γ2 R1 R2
   (RPre : SpecPreRel E1 E2 Γ1 Γ2) (RPost : SpecPostRel E1 E2 Γ1 Γ2)
   (RR : Rel R1 R2) A1 B1 t1 k1 k2 t2 :
   spec_refines RPre RPost RR (x <- liftStackS A1 t1 ;; liftStackS B1 (k1 x) >>= k2) t2 ->
   spec_refines RPre RPost RR (liftStackS B1 (t1 >>= k1) >>= k2) t2.
-Admitted.
+Proof.
+  intros. setoid_rewrite resumEntree_bind. setoid_rewrite bind_bind. eauto.
+Qed.
 
 Lemma spec_refines_liftStackS_assume_bind_l (E1 E2 : EvType) Γ1 Γ2 R1 R2
   (RPre : SpecPreRel E1 E2 Γ1 Γ2) (RPost : SpecPostRel E1 E2 Γ1 Γ2)
   (RR : Rel R1 R2) P k1 t2 :
   spec_refines RPre RPost RR (AssumeS P >>= k1) t2 ->
   spec_refines RPre RPost RR (liftStackS _ (AssumeS P) >>= k1) t2.
-Admitted.
+Proof.
+  intros.
+  enough (@liftStackS E1 Γ1 unit (AssumeS P) ≅ AssumeS P).
+  rewrite H0. auto.
+  setoid_rewrite resumEntree_Vis.
+  setoid_rewrite bind_vis. cbn. apply eqit_Vis.
+  cbn. intros. rewrite bind_ret_l. setoid_rewrite resumEntree_Ret. 
+  apply eqit_Ret. auto.
+Qed.
 
 Lemma spec_refines_liftStackS_assert_bind_l (E1 E2 : EvType) Γ1 Γ2 R1 R2
   (RPre : SpecPreRel E1 E2 Γ1 Γ2) (RPost : SpecPostRel E1 E2 Γ1 Γ2)
   (RR : Rel R1 R2) P k1 t2 :
   spec_refines RPre RPost RR (AssertS P >>= k1) t2 ->
   spec_refines RPre RPost RR (liftStackS _ (AssertS P) >>= k1) t2.
-Admitted.
+Proof.
+  intros.
+  enough (@liftStackS E1 Γ1 unit (AssertS P) ≅ AssertS P).
+  rewrite H0. auto.
+  setoid_rewrite resumEntree_Vis.
+  setoid_rewrite bind_vis. cbn. apply eqit_Vis.
+  cbn. intros. rewrite bind_ret_l. setoid_rewrite resumEntree_Ret. 
+  apply eqit_Ret. auto.
+Qed.
 
 Lemma spec_refines_liftStackS_forall_bind_l (E1 E2 : EvType) Γ1 Γ2 R1 R2
   (RPre : SpecPreRel E1 E2 Γ1 Γ2) (RPost : SpecPostRel E1 E2 Γ1 Γ2)
   (RR : Rel R1 R2) A1 `{QuantType A1} k1 t2 :
   spec_refines RPre RPost RR (ForallS A1 >>= k1) t2 ->
   spec_refines RPre RPost RR (liftStackS _ (ForallS A1) >>= k1) t2.
-Admitted.
+Proof.
+  intros.
+  enough (@liftStackS E1 Γ1 A1 (ForallS A1) ≅ ForallS A1).
+  rewrite H1. auto.
+  setoid_rewrite resumEntree_Vis.
+  apply eqit_Vis.
+  cbn. intros. setoid_rewrite resumEntree_Ret. apply eqit_Ret. 
+  auto.
+Qed.
 
 Lemma spec_refines_liftStackS_exists_bind_l (E1 E2 : EvType) Γ1 Γ2 R1 R2
   (RPre : SpecPreRel E1 E2 Γ1 Γ2) (RPost : SpecPostRel E1 E2 Γ1 Γ2)
   (RR : Rel R1 R2) A1 `{QuantType A1} k1 t2 :
   spec_refines RPre RPost RR (ExistsS A1 >>= k1) t2 ->
   spec_refines RPre RPost RR (liftStackS _ (ExistsS A1) >>= k1) t2.
-Admitted.
+Proof.
+  intros.
+  enough (@liftStackS E1 Γ1 A1 (ExistsS A1) ≅ ExistsS A1).
+  rewrite H1. auto.
+  setoid_rewrite resumEntree_Vis.
+  apply eqit_Vis.
+  cbn. intros. setoid_rewrite resumEntree_Ret. apply eqit_Ret. 
+  auto.
+Qed.
 
 #[global] Hint Extern 101 (spec_refines _ _ _ (liftStackS _ (RetS _) >>= _) _) =>
   simple apply spec_refines_liftStackS_ret_bind_l : refines.
@@ -1610,6 +1650,25 @@ Proof. intro; rewrite <- (bind_ret_r (liftStackS _ _)); eauto. Qed.
 #[global] Hint Extern 101 (spec_refines _ _ _ (liftStackS _ ?t1) _) =>
   simple apply (spec_refines_liftStackS_bind_ret_l _ _ _ _ _ _ _ _ _ _ t1) : refines.
 
+
+Lemma spec_refines_liftStackS_proper:
+  forall (E1 : EvType) (Γ1 : list RecFrame) (frame1 : RecFrame) (R1 : Type) (t1 t2 : SpecM E1 nil R1),
+    spec_refines eqPreRel eqPostRel eq t1 t2 ->
+    spec_refines eqPreRel eqPostRel eq (@liftStackS E1 (frame1 :: Γ1) R1 t1) (liftStackS R1 t2).
+Proof.
+  intros E1 Γ1 frame1 R1 t1 t2 H. 
+  enough (strict_refines  (@liftStackS E1 (frame1 :: Γ1) R1 t1) (liftStackS R1 t2)).
+  {
+    eapply padded_refines_monot; try apply H0; auto.
+    intros. red in PR. dependent destruction PR. subst. cbn. constructor.
+  }
+  apply padded_refines_liftStackS_proper.
+  eapply padded_refines_monot; try apply H; auto.
+  intros. dependent destruction PR. red. econstructor.
+  Unshelve. all : auto. simpl. auto.
+Qed.
+
+(* I think this is backwards *)
 Lemma spec_refines_liftStackS_trans_bind_l {E1 E2 Γ1 Γ2 frame1 frame2 R1 R2}
       {RPre : SpecPreRel E1 E2 (frame1 :: Γ1) (frame2 :: Γ2)}
       {RPost : SpecPostRel E1 E2 (frame1 :: Γ1) (frame2 :: Γ2)}
@@ -1617,7 +1676,17 @@ Lemma spec_refines_liftStackS_trans_bind_l {E1 E2 Γ1 Γ2 frame1 frame2 R1 R2}
   spec_refines eqPreRel eqPostRel eq t1 t2 ->
   spec_refines RPre RPost RR (liftStackS R1 t2 >>= k1) t3 ->
   spec_refines RPre RPost RR (liftStackS R1 t1 >>= k1) t3.
-Admitted.
+Proof.
+  intros.
+  assert (spec_refines eqPreRel eqPostRel eq (@liftStackS E1 (frame1 :: Γ1) R1 t1) (liftStackS R1 t2)).
+  apply spec_refines_liftStackS_proper. auto.
+  eapply padded_refines_weaken_r; try eapply H0.
+  eapply padded_refines_bind with (RR := eq).
+  - red in H1. eapply padded_refines_monot; try apply H1; auto.
+    intros. dependent destruction PR. red. econstructor. auto. Unshelve. 2 : auto.
+    cbn. auto.
+  - intros. subst. reflexivity.
+Qed.
 
 Create HintDb refines_proofs.
 #[global] Hint Extern 901 (spec_refines _ _ _ (liftStackS _ _ >>= _) _) =>
