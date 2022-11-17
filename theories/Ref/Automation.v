@@ -1619,6 +1619,11 @@ Lemma spec_refines_liftStackS_trans_bind_l {E1 E2 Γ1 Γ2 frame1 frame2 R1 R2}
   spec_refines RPre RPost RR (liftStackS R1 t1 >>= k1) t3.
 Admitted.
 
+Create HintDb refines_proofs.
+#[global] Hint Extern 901 (spec_refines _ _ _ (liftStackS _ _ >>= _) _) =>
+  (simple eapply spec_refines_liftStackS_trans_bind_l;
+   [ typeclasses eauto with refines_proofs |]) || shelve : refines.
+
 
 (** * Refinement Hints About Recursion *)
 
@@ -1840,7 +1845,10 @@ Proof. intros; apply spec_refines_call; eauto. Qed.
 (** * Tactics for proving refinement *)
 
 Ltac prove_refinement_rewrite :=
-  try unshelve rewrite_strat (bottomup (hints refines)).
+  match goal with
+  | |- spec_refines _ _ _ _ _ => idtac
+  | |- _ => try unshelve rewrite_strat (bottomup (hints refines))
+  end.
 
 Ltac split_prod_goal :=
   repeat match goal with
