@@ -32,6 +32,15 @@ Notation "( x ; y )" := (existT _ x y) (at level 0, format "( x ;  '/  ' y )").
 Notation "x .1" := (projT1 x) (at level 1, left associativity, format "x .1").
 Notation "x .2" := (projT2 x) (at level 1, left associativity, format "x .2").
 
+Ltac split_prod_goal :=
+  repeat match goal with
+  | |- _ /\ _        => split
+  | |- { _ : _ & _ } => split
+  | |- _ * _         => split
+  | |- unit          => exact tt
+  | |- True          => trivial
+  end.
+
 Import SpecMNotations.
 Local Open Scope entree_scope.
 
@@ -981,6 +990,11 @@ Proof. intros H []; eauto. Qed.
 Polymorphic Lemma IntroArg_false n (goal : False -> Prop) : IntroArg n _ goal.
 Proof. intros []. Qed.
 
+Polymorphic Lemma IntroArg_eq_prod_const n A B (a a' : A) (b b' : B) (goal : Prop)
+  : IntroArg n (a = a') (fun _ => IntroArg n (b = b') (fun _ => goal)) ->
+    IntroArg n ((a,b) = (a',b')) (fun _ => goal).
+Proof. intros H eq; apply H; injection eq; eauto. Qed.
+
 Polymorphic Lemma IntroArg_eq_sigT_const n A B (a a' : A) (b b' : B) (goal : Prop)
   : IntroArg n (a = a') (fun _ => IntroArg n (b = b') (fun _ => goal)) ->
     IntroArg n (existT _ a b = existT _ a' b') (fun _ => goal).
@@ -1164,6 +1178,7 @@ Ltac IntroArg_base_tac n A g :=
   | _ /\ _ => simple apply IntroArg_and
   | True => simple apply IntroArg_true
   | False => simple apply IntroArg_false
+  | (_, _) = (_, _) => simple apply IntroArg_eq_prod_const
   | existT _ _ _ = existT _ _ _ => simple apply IntroArg_eq_sigT_const
   | eqPreRel (existT _ _ _) (existT _ _ _) => simple apply IntroArg_eq_sigT_const
   | eq_dep1 _ _ _ _ _ _ => simple apply IntroArg_eq_dep1_const
@@ -1231,9 +1246,8 @@ Proof. eauto. Qed.
 
 (* If nothing else works for a RelGoal, try reflexivity and then shelve it *)
 #[global] Hint Extern 999 (RelGoal _) =>
-  unfold RelGoal; cbn;
-  unfold resum_ret, ReSumRet_FrameCall_FunStackE;
-  (reflexivity || shelve) : refines.
+  unfold RelGoal, resum_ret, ReSumRet_FrameCall_FunStackE, lt;
+  cbn; (reflexivity || shelve) : refines.
 
 #[global] Lemma RelGoal_and P Q :
   RelGoal P -> RelGoal Q -> RelGoal (P /\ Q).
@@ -1458,9 +1472,11 @@ Definition spec_refines_forall_r_IntroArg E1 E2 Γ1 Γ2 R1 R2 A `{QuantType A}
   simple apply spec_refines_exists_l_IntroArg : refines.
 
 #[global] Hint Extern 102 (spec_refines _ _ _ _ (ExistsS _ >>= _)) =>
-  simple eapply spec_refines_exists_r : refines.
+  unshelve simple eapply spec_refines_exists_r;
+  [ split_prod_goal; shelve |] : refines.
 #[global] Hint Extern 102 (spec_refines _ _ _ (ForallS _ >>= _) _) =>
-  simple eapply spec_refines_forall_l : refines.
+  unshelve simple eapply spec_refines_forall_l;
+  [ split_prod_goal; shelve |] : refines.
 
 
 (* Rules for assume and assert *)
@@ -1495,9 +1511,9 @@ Definition spec_refines_assume_l_IntroArg E1 E2 Γ1 Γ2 R1 R2 (P:Prop)
   simple apply spec_refines_assert_l_IntroArg : refines.
 
 #[global] Hint Extern 102 (spec_refines _ _ _ _ (AssertS _ >>= _)) =>
-  simple eapply spec_refines_assert_r_IntroArg : refines.
+  simple apply spec_refines_assert_r_IntroArg : refines.
 #[global] Hint Extern 102 (spec_refines _ _ _ (AssumeS _ >>= _) _) =>
-  simple eapply spec_refines_assume_l_IntroArg : refines.
+  simple apply spec_refines_assume_l_IntroArg : refines.
 
 
 (* Rules for if-then-else *)
@@ -1879,7 +1895,7 @@ Hint Extern 101 (spec_refines ?RPre ?RPost ?RR
   unshelve (
     let HPrePost := fresh "HPrePost" in
     epose (HPrePost := from_user (A:=PreAndPostConditions frame1 frame2));
-    eapply (spec_refines_multifix_bind_IntroArg E1 E2 Γ1 Γ2 frame1 frame2 _ _
+    apply (spec_refines_multifix_bind_IntroArg E1 E2 Γ1 Γ2 frame1 frame2 _ _
               RPre RPost RR bodies1 bodies2 call1 call2 k1 k2 HPrePost)) : refines.
 #[global]
 Hint Extern 101 (spec_refines ?RPre ?RPost ?RR
@@ -1888,7 +1904,7 @@ Hint Extern 101 (spec_refines ?RPre ?RPost ?RR
   unshelve (
     let HPrePost := fresh "HPrePost" in
     epose (HPrePost := from_user (A:=PreAndPostConditions frame1 frame2));
-    eapply (spec_refines_multifix_IntroArg E1 E2 Γ1 Γ2 frame1 frame2
+    apply (spec_refines_multifix_IntroArg E1 E2 Γ1 Γ2 frame1 frame2
               RPre RPost bodies1 bodies2 call1 call2 RR HPrePost)) : refines.
 #[global]
 Hint Extern 101 (spec_refines ?RPre ?RPost ?RR
@@ -1899,7 +1915,7 @@ Hint Extern 101 (spec_refines ?RPre ?RPost ?RR
     epose (HWf := from_user (A:=WellFoundedRelation A2));
     let HPrePost := fresh "HPrePost" in
     epose (HPrePost := from_user (A:=PreAndPostConditions frame1 (unary1Frame A2 B2)));
-    eapply (spec_refines_total_spec_IntroArg E1 E2 Γ1 Γ2 frame1 A2 B2
+    apply (spec_refines_total_spec_IntroArg E1 E2 Γ1 Γ2 frame1 A2 B2
               RPre RPost bodies1 call1 a2 RR tsPre tsPost HWf HPrePost));
   unfold total_spec_fix_body : refines.
 
@@ -1955,15 +1971,6 @@ Ltac prove_refinement_rewrite :=
   match goal with
   | |- spec_refines _ _ _ _ _ => idtac
   | |- _ => try unshelve rewrite_strat (bottomup (hints refines))
-  end.
-
-Ltac split_prod_goal :=
-  repeat match goal with
-  | |- _ /\ _        => split
-  | |- { _ : _ & _ } => split
-  | |- _ * _         => split
-  | |- unit          => exact tt
-  | |- True          => trivial
   end.
 
 Ltac prove_refinement_prepostcond :=
@@ -2112,10 +2119,10 @@ Proof.
   prove_refinement.
 Qed.
 
-Lemma test_exists E x :
+Lemma test_exists E x y :
   @spec_refines E E nil nil eqPreRel eqPostRel nat nat eq
-                  (RetS (x+1))
-                  (ExistsS nat >>= RetS).
+                  (RetS ((x+1) + (y+2)))
+                  ('(x', y') <- ExistsS (nat * nat) ;; RetS (x' + y')).
 Proof.
   prove_refinement.
 Qed.
