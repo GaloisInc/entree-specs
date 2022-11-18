@@ -873,7 +873,7 @@ Lemma spec_refines_total_spec (E1 E2 : EvType) Γ1 Γ2 frame1
   precond call1 (unary1Call a2) ->
   (forall r1 r2, tsPost a2 r2 -> postcond call1 (unary1Call a2) r1 r2 -> RR r1 r2) ->
   (forall call1' a2',
-      tsPre a2' -> precond call1' (unary1Call a2') ->
+      precond call1' (unary1Call a2') ->
       spec_refines (pushTSPreRel tsPre precond RPre)
                    (pushTSPostRel tsPost postcond RPost)
                    (pushTSRR tsPost postcond call1' a2')
@@ -1772,33 +1772,14 @@ Definition postOf {frame1 frame2} :
   PreAndPostConditions frame1 frame2 ->
   PostRel (FrameCall frame1) (FrameCall frame2) := snd.
 
-Inductive ContinueType := Continue_multifix | Continue_total_spec.
-Polymorphic Definition ContinueArg ct : Type :=
-  match ct with
-  | Continue_multifix => (Prop * Type * Type)%type
-  | Continue_total_spec => (Prop * Prop * Type * Type)%type
-  end.
-Polymorphic Definition Continue {ct : ContinueType} : ContinueArg ct -> Type :=
-  match ct return ContinueArg ct -> Type with
-  | Continue_multifix => fun '(precond, goal1, goal2) => (precond * goal1 * goal2)%type
-  | Continue_total_spec => fun '(tsPre, precond, H, goal) => (tsPre * precond * H * goal)%type
-  end.
-Arguments Continue {ct carg}.
+Definition Continue {precond : Prop} {goal1 goal2} : Type :=
+  precond * goal1 * goal2.
 
-Lemma Continue_multifix_unfold precond goal1 goal2 :
+Lemma Continue_unfold precond goal1 goal2 :
   RelGoal precond -> goal1 -> goal2 ->
-  @Continue Continue_multifix (precond, goal1, goal2).
-  Proof. split; eauto. Qed.
-Lemma Continue_total_spec_unfold tsPre precond H goal :
-  RelGoal tsPre -> RelGoal precond -> H -> goal ->
-  @Continue Continue_total_spec (tsPre, precond, H, goal).
+  @Continue precond goal1 goal2.
 Proof. split; eauto. Qed.
-
-Ltac Continue_unfold :=
-  match goal with
-  | |- @Continue Continue_multifix _ => simple apply Continue_multifix_unfold
-  | |- @Continue Continue_total_spec _ => simple apply Continue_total_spec_unfold
-  end.
+Ltac Continue_unfold := simple apply Continue_unfold.
 
 #[global] Hint Opaque WellFoundedRelation : refines prepostcond.
 #[global] Hint Opaque PreAndPostConditions : refines prepostcond.
@@ -1816,16 +1797,15 @@ Lemma spec_refines_multifix_bind_IntroArg (E1 E2 : EvType) Γ1 Γ2 frame1 frame2
       (k1 : FrameCallRet frame1 call1 -> SpecM E1 Γ1 R1)
       (k2 : FrameCallRet frame2 call2 -> SpecM E2 Γ2 R2)
       (prepostconds : PreAndPostConditions frame1 frame2) :
-  @Continue Continue_multifix
-            (preOf prepostconds call1 call2,
-             IntroArg Call _ (fun call1' => IntroArg Call _ (fun call2' =>
+  @Continue (preOf prepostconds call1 call2)
+            (IntroArg Call _ (fun call1' => IntroArg Call _ (fun call2' =>
               IntroArg Hyp (preOf prepostconds call1' call2') (fun _ =>
               spec_refines (pushPreRel (preOf prepostconds) RPre)
                            (pushPostRel (postOf prepostconds) RPost)
                            (postOf prepostconds call1' call2')
                            (applyFrameTuple _ _ _ bodies1 call1')
-                           (applyFrameTuple _ _ _ bodies2 call2')))),
-             IntroArg RetAny _ (fun r1 => IntroArg RetAny _ (fun r2 =>
+                           (applyFrameTuple _ _ _ bodies2 call2')))))
+            (IntroArg RetAny _ (fun r1 => IntroArg RetAny _ (fun r2 =>
               IntroArg Hyp (postOf prepostconds call1 call2 r1 r2) (fun _ =>
               spec_refines RPre RPost RR (k1 r1) (k2 r2))))) ->
   spec_refines RPre RPost RR
@@ -1843,12 +1823,11 @@ Lemma spec_refines_multifix_IntroArg (E1 E2 : EvType) Γ1 Γ2 frame1 frame2
       (call1 : FrameCall frame1) (call2 : FrameCall frame2)
       (RR : Rel (encodes call1) (encodes call2))
       (prepostconds : PreAndPostConditions frame1 frame2) :
-  @Continue Continue_multifix
-            (preOf prepostconds call1 call2,
-             IntroArg RetAny _ (fun r1 => IntroArg RetAny _ (fun r2 =>
+  @Continue (preOf prepostconds call1 call2)
+            (IntroArg RetAny _ (fun r1 => IntroArg RetAny _ (fun r2 =>
               IntroArg Hyp (postOf prepostconds call1 call2 r1 r2) (fun _ =>
-              RelGoal (RR r1 r2)))),
-             IntroArg Call _ (fun call1' => IntroArg Call _ (fun call2' =>
+              RelGoal (RR r1 r2)))))
+            (IntroArg Call _ (fun call1' => IntroArg Call _ (fun call2' =>
               IntroArg Hyp (preOf prepostconds call1' call2') (fun _ =>
               spec_refines (pushPreRel (preOf prepostconds) RPre)
                            (pushPostRel (postOf prepostconds) RPost)
@@ -1872,25 +1851,23 @@ Lemma spec_refines_total_spec_IntroArg (E1 E2 : EvType) Γ1 Γ2 frame1
       (tsPre : A2 -> Prop) (tsPost : A2 -> B2 -> Prop)
       (rdec : WellFoundedRelation A2)
       (prepostconds : PreAndPostConditions frame1 (unary1Frame A2 B2)) :
-  @Continue Continue_total_spec
-            (tsPre a2, preOf prepostconds call1 (unary1Call a2),
-             IntroArg RetAny _ (fun r1 => IntroArg RetAny _ (fun r2 =>
+  @Continue (preOf prepostconds call1 (unary1Call a2))
+            (IntroArg RetAny _ (fun r1 => IntroArg RetAny _ (fun r2 =>
               IntroArg Hyp (tsPost a2 r2) (fun _ =>
               IntroArg Hyp (postOf prepostconds call1 (unary1Call a2) r1 r2) (fun _ =>
-              RelGoal (RR r1 r2))))),
-             IntroArg Call _ (fun call1' => IntroArg Any _ (fun a2' =>
-              IntroArg Hyp (tsPre a2') (fun _ =>
+              RelGoal (RR r1 r2))))))
+            (IntroArg Call _ (fun call1' => IntroArg Any _ (fun a2' =>
               IntroArg Hyp (preOf prepostconds call1' (unary1Call a2')) (fun _ =>
               spec_refines (pushTSPreRel tsPre (preOf prepostconds) RPre)
                            (pushTSPostRel tsPost (postOf prepostconds) RPost)
                            (pushTSRR tsPost (postOf prepostconds) call1' a2')
                            (applyFrameTuple _ _ _ bodies1 call1')
-                           (total_spec_fix_body tsPre tsPost (wfRelOf rdec) a2')))))) ->
+                           (total_spec_fix_body tsPre tsPost (wfRelOf rdec) a2'))))) ->
   spec_refines RPre RPost RR
                (MultiFixS E1 Γ1 frame1 bodies1 call1)
                (total_spec tsPre tsPost a2).
 Proof.
-  destruct rdec, prepostconds; intros [[[]]].
+  destruct rdec, prepostconds; intros [[]].
   unfold IntroArg, RelGoal in *; simpl in *.
   unshelve eapply spec_refines_total_spec; eauto.
 Qed.
