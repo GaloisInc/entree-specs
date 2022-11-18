@@ -868,7 +868,7 @@ Lemma spec_refines_total_spec (E1 E2 : EvType) Γ1 Γ2 frame1
       (tsPre : A2 -> Prop) (tsPost : A2 -> B2 -> Prop)
       (rdec : A2 -> A2 -> Prop) :
   well_founded rdec ->
-  tsPre a2 -> precond call1 (unary1Call a2) ->
+  precond call1 (unary1Call a2) ->
   (forall r1 r2, tsPost a2 r2 -> postcond call1 (unary1Call a2) r1 r2 -> RR r1 r2) ->
   (forall call1' a2',
       tsPre a2' -> precond call1' (unary1Call a2') ->
@@ -881,12 +881,17 @@ Lemma spec_refines_total_spec (E1 E2 : EvType) Γ1 Γ2 frame1
                (MultiFixS E1 Γ1 frame1 bodies1 call1)
                (total_spec tsPre tsPost a2).
 Proof.
-  intros Hwf Ha2 Hca HPost HPost'. intros.
+  intros Hwf Hca HPost HPost'. intros.
   eapply total_spec_fix_refines_total_spec in Hwf as Hstrict. Unshelve. all : auto.
   eapply padded_refines_weaken_l; eauto.
+  apply padded_refines_weaken_l with (phi2 := AssumeS (tsPre a2);; (total_spec_fix tsPre tsPost rdec a2)).
+  {
+    quantr. intros. quantl. auto. quantl. auto. reflexivity.
+  }
+  quantr. intros Ha2.
   eapply padded_refines_interp_mrec_spec with (RPreInv := lift_ts_pre tsPre precond)
                                               (RPostInv := lift_ts_post tsPost postcond). Unshelve.
-  - clear Hca Ha2 Hstrict . rename a2 into a0. intros c1 c2 Hpre. destruct c2. destruct n.
+  - clear Hca Hstrict . rename a2 into a0. intros c1 c2 Hpre. destruct c2. destruct n.
     2 : { destruct args as [ [] _]. }
     cbn in args. destruct args as [a2 [] ]. simpl. setoid_rewrite bind_ret_r.
     idtac. red in Hpre. destruct Hpre as [a2' [Heq [H1 H2] ]].
