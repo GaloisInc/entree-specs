@@ -728,7 +728,8 @@ Proof.
     destruct n. 2 : destruct args as [ [] _].
     destruct args as [a' []]. cbn. cbn. eapply padded_refines_bind with (RR := eq).
     2 : { intros. apply padded_refines_ret. subst. constructor. }
-    quantr. intros. quantl. auto. quantl. intros.
+    quantr. intros. apply padded_refines_assumel. auto.
+    apply padded_refines_exists_specl. intros.
     quantr. exists a0. eapply padded_refines_bind with (RR := eq).
     + eapply padded_refines_monot; try apply strict_refines_refl; intros; subst.
       destruct x1; constructor; auto. destruct PR. destruct H2. constructor.
@@ -761,13 +762,14 @@ Proof.
   intros x Hind. unfold total_spec_fix. unfold total_spec_fix_body. cbn.
   match goal with |- strict_refines (interp_mrec_spec ?b _) _ =>
                     set b as body end.
-  quantr. intro. quantl. auto. quantl. intros n.
+  quantr. intro. quantl. auto. apply interp_mrec_spec_exists_specl. intros n.
   induction n.
-  - cbn. rewrite bind_ret_l. quantl. intros b. quantr. exists b.
-    quantl. intros. quantr. auto. rewrite interp_mrec_spec_ret.
+  - cbn. rewrite bind_ret_l. apply interp_mrec_spec_exists_specl.
+    intros b. quantr. exists b. apply interp_mrec_spec_assertl.
+    intros. quantr. auto. rewrite interp_mrec_spec_ret.
     apply padded_refines_ret. auto.
-  - cbn. repeat rewrite bind_bind.
-    quantl. intros a. rewrite bind_bind. quantl.
+  - cbn. repeat rewrite bind_bind. apply interp_mrec_spec_exists_specl.
+    intros a. rewrite bind_bind. apply interp_mrec_spec_assertl.
     intros [Hpre Hdec]. rewrite interp_mrec_spec_bind.
     specialize (Hind a Hdec). 
     match goal with |- padded_refines eq PostRelEq eq (EnTree.bind ?tf _ ) _ =>
@@ -1080,13 +1082,60 @@ Polymorphic Lemma IntroArg_pushTSRR n frame1 A2 B2
   IntroArg n (@pushTSRR frame1 A2 B2 tsPost postcond call1 a2 r1 r2) goal.
 Proof. intro H. apply H. Qed.
 
+(*
+Polymorphic Lemma IntroArg_FrameCall_nil n goal :
+  IntroArg n (FrameCall nil) goal.
+Proof.
+  intro call. destruct call. destruct args. destruct x.
+Qed.
+
+Polymorphic Lemma IntroArg_FrameCall_cons n lrt frame goal :
+  IntroArg n (LRTInput lrt)
+           (fun args => goal (FrameCallOfArgs (lrt :: frame) 0 args)) ->
+  IntroArg n (FrameCall frame) (fun call => goal (consFrameCall call)) ->
+  IntroArg n (FrameCall (cons lrt frame)) goal.
+Proof.
+  intros H H0. intro call. destruct call. destruct n0.
+  - apply H.
+  - apply (H0 (FrameCallOfArgs frame n0 args)).
+Qed.
+*)
+
+(* A FrameCall whose index is guaranteed to be below a given upper bound *)
+Definition FrameCallIxBelow frame k : Type@{entree_u} :=
+  { call : FrameCall frame | FrameCallIndex call < k }.
+
+Program Definition incrFrameCallIxBelow {frame k} (call : FrameCallIxBelow frame k) :
+  FrameCallIxBelow frame (S k) :=
+  proj1_sig call.
+Next Obligation.
+  transitivity k; [ apply (proj2_sig call) | unfold lt; reflexivity ]. 
+Defined.
+
+Program Definition mkFrameCallIxBelow {frame k} (args : LRTInput (nthLRT frame k)) :
+  FrameCallIxBelow frame (S k) :=
+  exist _ (FrameCallOfArgs _ k args) _.
+
 Polymorphic Definition IntroArg_FrameCall n frame goal :
-  forRange (length frame)
-           (fun i goal' => IntroArg Any (LRTInput (nthLRT frame i))
-                                    (fun args => goal (lrtApply _ _ (mkFrameCall frame i) args))
-                             -> goal')
-           (IntroArg n (FrameCall frame) goal) :=
-  @recFrameCall frame goal.
+  IntroArg n (FrameCallIxBelow frame (length frame))
+           (fun fcib => goal (proj1_sig fcib)) ->
+  IntroArg n (FrameCall frame) goal :=
+  fun H call => H (exist _ call (FrameCallIndexLt frame call)).
+
+Polymorphic Definition IntroArg_FrameCallIxBelow0 n frame goal :
+  IntroArg n (FrameCallIxBelow frame 0) goal.
+Proof.
+  intro. destruct a. elimtype False. eapply Lt.lt_n_0. eassumption.
+Defined.
+
+Polymorphic Lemma IntroArg_FrameCallIxBelowS n frame k goal :
+  IntroArg n (LRTInput (nthLRT frame k))
+           (fun args => goal (mkFrameCallIxBelow args)) ->
+  IntroArg n (FrameCallIxBelow frame k)
+           (fun fcib => goal (incrFrameCallIxBelow fcib)) ->
+  IntroArg n (FrameCallIxBelow frame (S k)) goal.
+Proof.
+Admitted.
 
 Polymorphic Definition IntroArg_LRTInput_Ret {n R goal} :
   goal tt -> IntroArg n (LRTInput (LRT_Ret R)) goal :=
@@ -1142,7 +1191,14 @@ Ltac IntroArg_base_tac n A g :=
   IntroArg_base_tac n A g : refines prepostcond.
 
 #[global] Hint Extern 101 (IntroArg ?n (FrameCall ?frame) _) =>
-  apply (@IntroArg_FrameCall n frame) : refines.
+  apply (@IntroArg_FrameCall n) : refines.
+#[global] Hint Extern 101 (IntroArg ?n (FrameCallIxBelow ?frame (length ?frame)) ?goal) =>
+  let k := eval cbn in (length frame) in
+  change (IntroArg n (FrameCallIxBelow frame k) goal) : refines.
+#[global] Hint Extern 101 (IntroArg ?n (FrameCallIxBelow _ 0) _) =>
+  apply (@IntroArg_FrameCallIxBelow0 n) : refines.
+#[global] Hint Extern 101 (IntroArg ?n (FrameCallIxBelow _ (S _)) _) =>
+  apply (@IntroArg_FrameCallIxBelowS n) : refines.
 #[global] Hint Extern 101 (IntroArg ?n (LRTInput _) _) =>
   apply IntroArg_LRTInput_Fun || apply IntroArg_LRTInput_Ret;
   simpl lrtApply; simpl applyFrameTuple : refines prepostcond.
@@ -1950,7 +2006,7 @@ Ltac prove_refinement :=
   unshelve typeclasses eauto with refines;
   split_prod_goal; shelve_goal_if_Type;
   cbn [ IntroArg_prod IntroArg_sigT IntroArg_unit
-        IntroArg_FrameCall
+        IntroArg_FrameCall IntroArg_FrameCallIxBelow0 IntroArg_FrameCallIxBelowS
         IntroArg_LRTInput_Fun IntroArg_LRTInput_Ret ] in *;
   split_prod_goal; prove_refinement_rewrite;
   try solve [ assumption | reflexivity | contradiction ].
@@ -2150,8 +2206,8 @@ Proof.
     prepost_exclude_remaining.
   - prove_refinement_continue.
     + apply Nat.eqb_eq in e_if; eauto.
-    + destruct a0; [ discriminate e_if | eauto ].
-    + destruct a0; [ discriminate e_if | eauto ].
+    + destruct a; [ discriminate e_if | eauto ].
+    + destruct a; [ discriminate e_if | eauto ].
 Qed.
 
 (* 

@@ -115,10 +115,28 @@ Definition nthLRT (frame : RecFrame) n : LetRecType :=
 Inductive FrameCall frame : Type@{entree_u} :=
 | FrameCallOfArgs n (args : LRTInput (nthLRT frame n)).
 
+(* Get the index of a FrameCall *)
 Definition FrameCallIndex {frame} (call : FrameCall frame) : nat :=
   match call with
   | FrameCallOfArgs _ n _ => n
   end.
+
+(* Add a function type to the frame of a FrameCall *)
+Definition consFrameCall {lrt frame} (call : FrameCall frame)
+  : FrameCall (cons lrt frame) :=
+  match call in FrameCall _ return FrameCall (cons lrt frame) with
+  | FrameCallOfArgs _ n args => FrameCallOfArgs (cons lrt frame) (S n) args
+  end.
+
+(* The index of a FrameCall is always less than the length of the frame *)
+Lemma FrameCallIndexLt frame call : @FrameCallIndex frame call < length frame.
+Proof.
+  destruct call.
+  revert frame args; induction n; intros; destruct frame;
+    try (destruct args; destruct x).
+  - simpl. apply Lt.neq_0_lt. trivial.
+  - simpl. apply Lt.lt_n_S. apply (IHn _ args).
+Qed.
 
 (* The return type for calling a recursive function in a RecFrame *)
 Definition FrameCallRet frame (args: FrameCall frame) : Type@{entree_u} :=
@@ -140,34 +158,6 @@ Definition mkFrameCall (frame : RecFrame) n
 #[global] Instance FrameCall_ReSumRet frame n :
   ReSumRet (LRTInput (nthLRT frame n)) (FrameCall frame) :=
   fun _ r => r.
-
-Fixpoint forRange {A} (n : nat) (f : nat -> A -> A) (a0 : A) : A :=
-  match n with
-  | O   => a0
-  | S m => f 0 (forRange m (fun i a => f (S i) a) a0)
-  end.
-
-(* Destruct a frame call *)
-Polymorphic Definition recFrameCall {frame P} :
-  forRange (length frame)
-           (fun i Q => (forall (args : LRTInput (nthLRT frame i)), 
-                        P (lrtApply _ _ (mkFrameCall frame i) args)) -> Q)
-           (forall (call : FrameCall frame), P call).
-Admitted.
-
-(* Hmm, I couldn't immediately figure out a way to state the general case... *)
-Polymorphic Lemma recFrameCall_1_0_eq lrt0 P c0 args :
-  @recFrameCall (lrt0 :: nil) P c0
-                (lrtApply _ _ (mkFrameCall _ 0) args) = c0 args.
-Admitted.
-Polymorphic Lemma recFrameCall_2_0_eq lrt0 lrt1 P c0 c1 args :
-  @recFrameCall (lrt0 :: lrt1 :: nil) P c0 c1
-                (lrtApply _ _ (mkFrameCall _ 0) args) = c0 args.
-Admitted.
-Polymorphic Lemma recFrameCall_2_1_eq lrt0 lrt1 P c0 c1 args :
-  @recFrameCall (lrt0 :: lrt1 :: nil) P c0 c1
-                (lrtApply _ _ (mkFrameCall _ 1) args) = c1 args.
-Admitted.
 
 (* A FunStack is a list of RecFrame representing all of the functions bound
     by multiFixS that are currently in scope *)
