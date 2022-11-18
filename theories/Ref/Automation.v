@@ -1134,10 +1134,10 @@ Proof.
 Defined.
 
 Polymorphic Lemma IntroArg_FrameCallIxBelowS n frame k goal :
-  IntroArg n (LRTInput (nthLRT frame k))
-           (fun args => goal (mkFrameCallIxBelow args)) ->
   IntroArg n (FrameCallIxBelow frame k)
            (fun fcib => goal (incrFrameCallIxBelow fcib)) ->
+  IntroArg n (LRTInput (nthLRT frame k))
+           (fun args => goal (mkFrameCallIxBelow args)) ->
   IntroArg n (FrameCallIxBelow frame (S k)) goal.
 Proof.
 Admitted.
