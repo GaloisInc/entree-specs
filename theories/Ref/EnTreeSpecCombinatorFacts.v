@@ -32,7 +32,7 @@ Ltac use_simpobs := repeat match goal with
                            | H : observe ?t = VisF _ _ |- _ => apply simpobs in H
                            end.
 
-Instance eq_itree_refines_Proper1 {E1 E2 R1 R2 RR} `{Henc1 : EncodingType E1} `{Henc2 : EncodingType E2} {RPre : Rel E1 E2} {RPost : PostRel E1 E2} {r} : 
+Global Instance eq_itree_refines_Proper1 {E1 E2 R1 R2 RR} `{Henc1 : EncodingType E1} `{Henc2 : EncodingType E2} {RPre : Rel E1 E2} {RPost : PostRel E1 E2} {r} : 
   Proper (eq_itree eq ==> eq_itree eq ==> flip impl)
                                                            (@refines_ E1 E2 Henc1 Henc2 R1 R2 RPre RPost RR (upaco2 (refines_ RPre RPost RR) r)).
 Proof.
@@ -40,7 +40,7 @@ Proof.
   subst. auto.
 Qed.
 
-Instance eq_itree_refines_Proper2 {E1 E2 R1 R2 RR} `{Henc1 : EncodingType E1} `{Henc2 : EncodingType E2} {RPre : Rel E1 E2} {RPost : PostRel E1 E2} {r} : 
+Global Instance eq_itree_refines_Proper2 {E1 E2 R1 R2 RR} `{Henc1 : EncodingType E1} `{Henc2 : EncodingType E2} {RPre : Rel E1 E2} {RPost : PostRel E1 E2} {r} : 
   Proper (eq_itree eq ==> eq_itree eq ==> flip impl)
                                                            (paco2 (@refines_ E1 E2 Henc1 Henc2 R1 R2 RPre RPost RR) r).
 Proof.
@@ -119,7 +119,7 @@ Proof.
   eapply refines_bind; eauto.
 Qed.
 
-#[global] Instance padded_refines_bind_proper {E S R} `{EncodingType E}: Proper (strict_refines ==> pointwise_relation S strict_refines ==>
+Global Instance padded_refines_bind_proper {E S R} `{EncodingType E}: Proper (strict_refines ==> pointwise_relation S strict_refines ==>
                                 @strict_refines E R _) EnTree.bind.
 Proof.
   repeat intro. eapply padded_refines_bind; intros; subst; eauto. subst. apply H1.
@@ -345,7 +345,7 @@ Proof.
   apply padded_interp_mrec_spec_eutt. apply pad_eutt.
 Qed.
 
-Instance padded_eq_itree_proper_r {E R} `{EncodingType E} r : Proper (@eq_itree E _ R R eq ==> flip impl) (paco1 (padded_) r).
+Global Instance padded_eq_itree_proper_r {E R} `{EncodingType E} r : Proper (@eq_itree E _ R R eq ==> flip impl) (paco1 (padded_) r).
 Proof.
   repeat intro. eapply bisimulation_is_eq in H0. subst. auto.
 Qed.
@@ -493,7 +493,7 @@ Proof.
 Qed.
 End interp_mrec_spec_ev.
 
-#[global] Instance interp_mrec_spec_proper1_inst (D E R : Type) `{EncodingType D} `{EncodingType E}
+Global Instance interp_mrec_spec_proper1_inst (D E R : Type) `{EncodingType D} `{EncodingType E}
  (body : forall d : D, entree_spec (D + E) (encodes d)) :
   Proper (eq_itree eq ==> @eq_itree _ _ R R eq) (interp_mrec_spec body).
 Proof.

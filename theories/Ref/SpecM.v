@@ -91,7 +91,7 @@ Fixpoint LRTOutput lrt : EncodingType (LRTInput lrt) :=
                         LRTOutput (rest a) args'
   end.
 
-#[global] Instance LRTOutputEncoding lrt : EncodingType (LRTInput lrt) := LRTOutput lrt.
+Global Instance LRTOutputEncoding lrt : EncodingType (LRTInput lrt) := LRTOutput lrt.
 
 (* A recursive frame is a list of types for recursive functions all bound at the
    same time *)
@@ -144,7 +144,7 @@ Definition FrameCallRet frame (args: FrameCall frame) : Type@{entree_u} :=
   | FrameCallOfArgs _ n args => LRTOutput (nthLRT frame n) args
   end.
 
-#[global] Instance FrameCallRetEncoding lrt : EncodingType (FrameCall lrt) :=
+Global Instance FrameCallRetEncoding lrt : EncodingType (FrameCall lrt) :=
   FrameCallRet lrt.
 
 (* Make a recursive call from its individual arguments *)
@@ -153,9 +153,9 @@ Definition mkFrameCall (frame : RecFrame) n
   lrtLambda (nthLRT frame n) (fun _ => FrameCall frame) (FrameCallOfArgs frame n).
 
 (* ReSum instances for embedding the nth LRTInput into a FrameCall *)
-#[global] Instance FrameCall_ReSum frame n :
+Global Instance FrameCall_ReSum frame n :
   ReSum (LRTInput (nthLRT frame n)) (FrameCall frame) := FrameCallOfArgs frame n.
-#[global] Instance FrameCall_ReSumRet frame n :
+Global Instance FrameCall_ReSumRet frame n :
   ReSumRet (LRTInput (nthLRT frame n)) (FrameCall frame) :=
   fun _ r => r.
 
@@ -167,7 +167,7 @@ Definition FunStack := list RecFrame.
 Inductive ErrorE : Set :=
 | mkErrorE : string -> ErrorE.
 
-#[global] Instance EncodingType_ErrorE : EncodingType ErrorE := fun _ => void.
+Global Instance EncodingType_ErrorE : EncodingType ErrorE := fun _ => void.
 
 (* Create an event type for either an event in E or a recursive call in a stack
    Γ of recursive functions in scope *)
@@ -188,7 +188,7 @@ Fixpoint FunStackE_encodes (E : Type) `{EncodingType E} (Γ : FunStack) :
                             end
   end.
 
-#[global] Instance FunStackE_encodes' (E : Type) `{EncodingType E} (Γ : FunStack) : EncodingType (FunStackE E Γ) :=
+Global Instance FunStackE_encodes' (E : Type) `{EncodingType E} (Γ : FunStack) : EncodingType (FunStackE E Γ) :=
   FunStackE_encodes E Γ.
 
 (* Embed an underlying event into the FunStackE event type *)
@@ -206,17 +206,17 @@ Fixpoint FunStackE_embed_ev_unmap (E : Type) `{EncodingType E} Γ e
   | (_ :: Γ') => FunStackE_embed_ev_unmap E Γ' e
   end.
 
-#[global] Instance ReSum_FunStackE_E (E : Type) (Γ : FunStack) : ReSum E (FunStackE E Γ) :=
+Global Instance ReSum_FunStackE_E (E : Type) (Γ : FunStack) : ReSum E (FunStackE E Γ) :=
   fun e => FunStackE_embed_ev E Γ (inr e).
 
-#[global] Instance ReSumRet_FunStackE_E (E : Type) `{EncodingType E} Γ :
+Global Instance ReSumRet_FunStackE_E (E : Type) `{EncodingType E} Γ :
   ReSumRet E (FunStackE E Γ) :=
   fun e => FunStackE_embed_ev_unmap E Γ (inr e).
 
-#[global] Instance ReSum_FunStackE_Error (E : Type) (Γ : FunStack) : ReSum ErrorE (FunStackE E Γ) :=
+Global Instance ReSum_FunStackE_Error (E : Type) (Γ : FunStack) : ReSum ErrorE (FunStackE E Γ) :=
   fun e => FunStackE_embed_ev E Γ (inl e).
 
-#[global] Instance ReSumRet_FunStackE_Error (E : Type) `{EncodingType E} Γ :
+Global Instance ReSumRet_FunStackE_Error (E : Type) `{EncodingType E} Γ :
   ReSumRet ErrorE (FunStackE E Γ) :=
   fun e => FunStackE_embed_ev_unmap E Γ (inl e).
 
@@ -246,22 +246,22 @@ Definition mkFunStackE' E Γ fnum n
 *)
 
 (* Embed a call in the top level of the FunStack into a FunStackE *)
-#[global] Instance ReSum_LRTInput_FunStackE (E : Type) (Γ : FunStack) frame n :
+Global Instance ReSum_LRTInput_FunStackE (E : Type) (Γ : FunStack) frame n :
   ReSum (LRTInput (nthLRT frame n)) (FunStackE E (frame :: Γ)) :=
   fun args => inl (FrameCallOfArgs frame n args).
 
 (* Map the return value for embedding a call in the top level to a FunStackE *)
-#[global] Instance ReSumRet_LRTInput_FunStackE (E : Type) `{EncodingType E} Γ frame n
+Global Instance ReSumRet_LRTInput_FunStackE (E : Type) `{EncodingType E} Γ frame n
   : ReSumRet (LRTInput (nthLRT frame n)) (FunStackE E (frame :: Γ)) :=
   fun args o => o.
 
 (* Embed a call in the top level of the FunStack into a FunStackE *)
-#[global] Instance ReSum_FrameCall_FunStackE (E : Type) (Γ : FunStack) frame :
+Global Instance ReSum_FrameCall_FunStackE (E : Type) (Γ : FunStack) frame :
   ReSum (FrameCall frame) (FunStackE E (frame :: Γ)) :=
   fun args => inl args.
 
 (* Map the return value for embedding a call in the top level to a FunStackE *)
-#[global] Instance ReSumRet_FrameCall_FunStackE (E : Type) `{EncodingType E} Γ frame :
+Global Instance ReSumRet_FrameCall_FunStackE (E : Type) `{EncodingType E} Γ frame :
   ReSumRet (FrameCall frame) (FunStackE E (frame :: Γ)) :=
   fun args o => o.
 
@@ -271,7 +271,7 @@ Record EvType : Type :=
   { evTypeType :> Type@{entree_u};
     evRetType : evTypeType -> Type@{entree_u} }.
 
-Instance EncodingType_EvType (E:EvType) : EncodingType E :=
+Global Instance EncodingType_EvType (E:EvType) : EncodingType E :=
   fun e => evRetType E e.
 
 (* The SpecM monad is the entree_spec monad with FunStackE as the event type *)
@@ -295,13 +295,13 @@ Definition TriggerS {E:EvType} {Γ} (e : E) : SpecM E Γ (encodes e) := trigger 
 Definition ErrorS {E} {Γ} A (str : string) : SpecM E Γ A :=
   bind (trigger (mkErrorE str)) (fun (x:void) => match x with end).
 
-#[global] Instance SpecM_Monad {E} Γ : Monad (SpecM E Γ) :=
+Global Instance SpecM_Monad {E} Γ : Monad (SpecM E Γ) :=
   {|
     ret := fun A a => RetS a;
     bind := fun A B m k => BindS m k;
   |}.
 
-#[global] Instance ReSum_nil_FunStack E (Γ : FunStack) :
+Global Instance ReSum_nil_FunStack E (Γ : FunStack) :
   ReSum (SpecEvent (FunStackE E nil)) (SpecEvent (FunStackE E Γ)) :=
   fun e => match e with
            | Spec_vis (inl el) => Spec_vis (resum el)
@@ -310,7 +310,7 @@ Definition ErrorS {E} {Γ} A (str : string) : SpecM E Γ A :=
            | Spec_exists T => Spec_exists T
            end.
 
-#[global] Instance ReSumRet_nil_FunStack (E:EvType) (Γ : FunStack) :
+Global Instance ReSumRet_nil_FunStack (E:EvType) (Γ : FunStack) :
   ReSumRet (SpecEvent (FunStackE E nil)) (SpecEvent (FunStackE E Γ)) :=
   fun e =>
     match e return encodes (ReSum_nil_FunStack E Γ e) -> encodes e with
@@ -399,7 +399,7 @@ Section interpWithState.
 Import ExtLib.Structures.Functor.
 
 Definition StateT S M A := S -> M (S * A)%type.
-#[global] Instance Monad_StateT M s `{Monad M} : Monad (StateT s M) :=
+Global Instance Monad_StateT M s `{Monad M} : Monad (StateT s M) :=
   {|
     ret := fun A x s => ret (s, x);
     bind := fun A B m k s => bind (m s) (fun a_s =>
@@ -407,7 +407,7 @@ Definition StateT S M A := S -> M (S * A)%type.
                                            k a s')
   |}.
 
-#[global] Instance MonadIter_StateT M St `{Monad M} `{MI:MonadIter M} : MonadIter (StateT St M) :=
+Global Instance MonadIter_StateT M St `{Monad M} `{MI:MonadIter M} : MonadIter (StateT St M) :=
   fun R I body i s =>
     iter (MonadIter:=MI) (R:=St * R)
          (fun s'_i':St * I =>

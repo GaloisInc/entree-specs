@@ -26,11 +26,7 @@ From EnTree Require Import
 
 From Paco Require Import paco.
 
-
-(* From Coq 8.15 *)
-Notation "( x ; y )" := (existT _ x y) (at level 0, format "( x ;  '/  ' y )").
-Notation "x .1" := (projT1 x) (at level 1, left associativity, format "x .1").
-Notation "x .2" := (projT2 x) (at level 1, left associativity, format "x .2").
+Export SigTNotations.
 
 Ltac split_prod_goal :=
   repeat match goal with
@@ -69,7 +65,7 @@ Definition spec_refines {E1 E2 : EvType} {Γ1 Γ2}
            (t1 : @SpecM E1 Γ1 R1) (t2 : @SpecM E2 Γ2 R2) :=
   padded_refines RPre RPost RR t1 t2.
 
-Instance Proper_spec_refines E1 E2 Γ1 Γ2 RPre RPost R1 R2 RR :
+Global Instance Proper_spec_refines E1 E2 Γ1 Γ2 RPre RPost R1 R2 RR :
   Proper (eutt eq ==> eutt eq ==> Basics.flip Basics.impl)
          (@spec_refines E1 E2 Γ1 Γ2 RPre RPost R1 R2 RR).
 Proof.
@@ -157,11 +153,9 @@ Qed.
 (** Refinement rules for the SpecM combinators **)
 
 (* FIXME: maybe move these to SpecM.v? *)
-#[global]
-Instance ReSum_FunStack_EvType (E : EvType) Γ : ReSum E (FunStackE E Γ) :=
+Global Instance ReSum_FunStack_EvType (E : EvType) Γ : ReSum E (FunStackE E Γ) :=
   ReSum_FunStackE_E _ _.
-#[global]
-Instance ReSumRet_FunStack_EvType (E : EvType) Γ : ReSumRet E (FunStackE E Γ) :=
+Global Instance ReSumRet_FunStack_EvType (E : EvType) Γ : ReSumRet E (FunStackE E Γ) :=
   ReSumRet_FunStackE_E _ _.
 
 Lemma encodes_ReSum_FunStack_EvType:

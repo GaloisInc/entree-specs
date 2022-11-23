@@ -24,7 +24,7 @@ Fixpoint encodes_QuantEnc (k: QuantEnc) : Type :=
   | QEnc_pair k1 k2 => encodes_QuantEnc k1 * encodes_QuantEnc k2
   | QEnc_fun k1 k2 => encodes_QuantEnc k1 -> encodes_QuantEnc k2
   end.
-Instance EncodingType_QuantEnc : EncodingType QuantEnc :=
+Global Instance EncodingType_QuantEnc : EncodingType QuantEnc :=
   encodes_QuantEnc.
 
 (* A type whose elements can be enumerated by a function from a QuantEnc that is
@@ -36,7 +36,7 @@ Class QuantType (A:Type) : Type :=
     quantEnumInv : A -> encodes quantEnc;
     quantEnumSurjective : forall a:A, quantEnum (quantEnumInv a) = a }.
 
-Program Instance QuantType_unit : QuantType unit :=
+Program Global Instance QuantType_unit : QuantType unit :=
   { quantEnc := QEnc_prop True;
     quantEnum := fun _ => tt;
     quantEnumInv := fun _ => I; }.
@@ -44,19 +44,19 @@ Next Obligation.
   destruct a. reflexivity.
 Defined.
 
-Instance QuantType_Prop (P:Prop) : QuantType P :=
+Global Instance QuantType_Prop (P:Prop) : QuantType P :=
   { quantEnc := QEnc_prop P;
     quantEnum := fun pf => pf;
     quantEnumInv := fun pf => pf;
     quantEnumSurjective := fun pf => eq_refl pf }.
 
-Instance QuantType_nat : QuantType nat :=
+Global Instance QuantType_nat : QuantType nat :=
   { quantEnc := QEnc_nat;
     quantEnum := fun n => n;
     quantEnumInv := fun n => n;
     quantEnumSurjective := fun n => eq_refl n }.
 
-Program Instance QuantType_sum (A B:Type) `{QuantType A} `{QuantType B} : QuantType (A + B) :=
+Program Global Instance QuantType_sum (A B:Type) `{QuantType A} `{QuantType B} : QuantType (A + B) :=
   { quantEnc := QEnc_sum (quantEnc (A:=A)) (quantEnc (A:=B));
     quantEnum := fun s => match s with
                           | inl x => inl (quantEnum x)
@@ -70,7 +70,7 @@ Next Obligation.
   destruct a; rewrite quantEnumSurjective; reflexivity.
 Defined.
 
-Program Instance QuantType_pair (A B:Type) `{QuantType A} `{QuantType B} : QuantType (A * B) :=
+Program Global Instance QuantType_pair (A B:Type) `{QuantType A} `{QuantType B} : QuantType (A * B) :=
   { quantEnc := QEnc_pair (quantEnc (A:=A)) (quantEnc (A:=B));
     quantEnum := fun p => (quantEnum (fst p), quantEnum (snd p));
     quantEnumInv := fun p => (quantEnumInv (fst p), quantEnumInv (snd p)) }.
@@ -78,7 +78,7 @@ Next Obligation.
   repeat rewrite quantEnumSurjective. reflexivity.
 Defined.
 
-Program Instance QuantType_fun (A B:Type) `{QuantType A} `{QuantType B} : QuantType (A -> B) :=
+Program Global Instance QuantType_fun (A B:Type) `{QuantType A} `{QuantType B} : QuantType (A -> B) :=
   { quantEnc := QEnc_fun (quantEnc (A:=A)) (quantEnc (A:=B));
     quantEnum := fun f x => quantEnum (f (quantEnumInv x));
     quantEnumInv := fun f x => quantEnumInv (f (quantEnum x)) }.
@@ -93,7 +93,7 @@ unit+ is needed in case A is not inhabited *)
 Definition build_list (A:Type) len (f : nat -> A) : list A :=
   map f (seq 0 len).
 
-Program Instance QuantType_list (A:Type) `{QuantType A} : QuantType (list A) :=
+Program Global Instance QuantType_list (A:Type) `{QuantType A} : QuantType (list A) :=
   { quantEnc :=
       QEnc_sum (QEnc_prop True) (QEnc_pair
                                    QEnc_nat (QEnc_fun QEnc_nat (quantEnc (A:=A))));
