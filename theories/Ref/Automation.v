@@ -28,15 +28,6 @@ From Paco Require Import paco.
 
 Export SigTNotations.
 
-Ltac split_prod_goal :=
-  repeat match goal with
-  | |- _ /\ _        => split
-  | |- { _ : _ & _ } => split
-  | |- _ * _         => split
-  | |- unit          => exact tt
-  | |- True          => trivial
-  end.
-
 Import SpecMNotations.
 Local Open Scope entree_scope.
 
@@ -1397,6 +1388,31 @@ Proof. intro H. apply H. Qed.
   apply RelGoal_pushTSRR : refines.
 
 
+(** Hints for Goals to Shelve **)
+
+Polymorphic Definition Shelve (A : Type) := A.
+
+#[global] Hint Opaque Shelve : refines prepostcond.
+
+Ltac Shelve_fold :=
+  match goal with
+  | |- ?A => change (Shelve A)
+  end.
+
+#[global] Hint Extern 999 (Shelve _) => shelve : refines.
+
+#[global] Hint Extern 101 (Shelve (_ /\ _)) =>
+  unfold Shelve; split; Shelve_fold : refines.
+#[global] Hint Extern 101 (Shelve ({ _ : _ & _ })) =>
+  unfold Shelve; split; Shelve_fold : refines.
+#[global] Hint Extern 101 (Shelve (_ * _)) =>
+  unfold Shelve; split; Shelve_fold : refines.
+#[global] Hint Extern 101 (Shelve unit) =>
+  unfold Shelve; exact tt : refines.
+#[global] Hint Extern 101 (Shelve True) =>
+  unfold Shelve; trivial : refines.
+
+
 (** Refinement hints using IntroArg and RelGoal **)
 
 (* RetS |= RetS *)
@@ -1466,11 +1482,9 @@ Definition spec_refines_forall_r_IntroArg E1 E2 Γ1 Γ2 R1 R2 A `{QuantType A}
   simple apply spec_refines_exists_l_IntroArg : refines.
 
 #[global] Hint Extern 102 (spec_refines _ _ _ _ (ExistsS _ >>= _)) =>
-  unshelve simple eapply spec_refines_exists_r;
-  [ split_prod_goal; shelve |] : refines.
+  unshelve simple eapply spec_refines_exists_r; [ Shelve_fold |] : refines.
 #[global] Hint Extern 102 (spec_refines _ _ _ (ForallS _ >>= _) _) =>
-  unshelve simple eapply spec_refines_forall_l;
-  [ split_prod_goal; shelve |] : refines.
+  unshelve simple eapply spec_refines_forall_l; [ Shelve_fold |] : refines.
 
 
 (* Rules for assume and assert *)
@@ -1509,6 +1523,38 @@ Definition spec_refines_assume_l_IntroArg E1 E2 Γ1 Γ2 R1 R2 (P:Prop)
 #[global] Hint Extern 102 (spec_refines _ _ _ (AssumeS _ >>= _) _) =>
   simple apply spec_refines_assume_l_IntroArg : refines.
 
+
+(** * Rules for Coq quantifiers *)
+
+Lemma exists_IntroArg n A (P : A -> Prop) (goal : Prop) :
+  IntroArg Any A (fun x => IntroArg n (P x) (fun _ => goal)) ->
+  IntroArg n (exists x, P x) (fun _ => goal).
+Proof. intros H []; eapply H; eauto. Qed.
+
+#[global] Hint Extern 101 (IntroArg _ (ex _ _) _) =>
+  simple apply exists_IntroArg : refines.
+
+Lemma exists_RelGoal A P (x : A) :
+  RelGoal (P x) -> RelGoal (exists x, P x).
+Proof. intro; econstructor; eauto. Qed.
+
+Lemma forall_RelGoal A P :
+  IntroArg Any A (fun x => RelGoal (P x)) ->
+  RelGoal (forall x, P x).
+Proof. intros H x; apply H; eauto. Qed.
+
+Lemma impl_RelGoal P Q :
+  IntroArg Hyp P (fun _ => RelGoal Q) ->
+  RelGoal (P -> Q).
+Proof. intros H x; apply H; eauto. Qed.
+
+#[global] Hint Extern 101 (RelGoal (@ex _ _)) =>
+  unshelve simple eapply exists_RelGoal; [ Shelve_fold |] : refines.
+#[global] Hint Extern 102 (RelGoal (forall _, _)) =>
+  simple apply forall_RelGoal : refines.
+#[global] Hint Extern 101 (RelGoal (_ -> _)) =>
+  simple apply impl_RelGoal : refines.
+  
 
 (* Rules for if-then-else *)
 
@@ -1970,28 +2016,20 @@ Ltac prove_refinement_rewrite :=
 Ltac prove_refinement_prepostcond :=
   unshelve typeclasses eauto with prepostcond;
   simpl LRTOutput in *; simpl FrameCallIndex;
-  split_prod_goal; prove_refinement_rewrite.
+  prove_refinement_rewrite.
 
-Ltac shelve_goal_if_Type :=
-  match goal with
-  | |- WellFoundedRelation _ => idtac
-  | |- PreAndPostConditions _ _ => idtac
-  | |- Continue => idtac
-  | |- ?g => let t := type of g in
-             match t with
-             | Type => shelve
-             | Set => shelve
-             | _ => idtac
-             end
+Ltac shelve_goals_marked_Shelve :=
+  try match goal with
+  | |- Shelve _ => unfold Shelve; shelve
   end.
 
 Ltac prove_refinement :=
   unshelve typeclasses eauto with refines;
-  split_prod_goal; shelve_goal_if_Type;
+  shelve_goals_marked_Shelve;
   cbn [ IntroArg_prod IntroArg_sigT IntroArg_unit
         IntroArg_FrameCall IntroArg_FrameCallIxBelow0 IntroArg_FrameCallIxBelowS
         IntroArg_LRTInput_Fun IntroArg_LRTInput_Ret ] in *;
-  split_prod_goal; prove_refinement_rewrite;
+  prove_refinement_rewrite;
   try solve [ assumption | reflexivity | contradiction ].
 
 Ltac prove_refinement_continue :=
