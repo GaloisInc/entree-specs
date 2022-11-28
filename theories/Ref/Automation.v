@@ -1232,7 +1232,7 @@ Proof. eauto. Qed.
 (* If nothing else works for a RelGoal, try reflexivity and then shelve it *)
 #[global] Hint Extern 999 (RelGoal _) =>
   unfold RelGoal, resum_ret, ReSumRet_FrameCall_FunStackE, lt;
-  cbn; (reflexivity || shelve) : refines.
+  (reflexivity || apply RelGoal_fold; shelve) : refines.
 
 #[global] Lemma RelGoal_and P Q :
   RelGoal P -> RelGoal Q -> RelGoal (P /\ Q).
@@ -2015,17 +2015,19 @@ Ltac prove_refinement_rewrite :=
 
 Ltac prove_refinement_prepostcond :=
   unshelve typeclasses eauto with prepostcond;
-  simpl LRTOutput in *; simpl FrameCallIndex;
+  unfold RelGoal; simpl LRTOutput in *; simpl FrameCallIndex;
   prove_refinement_rewrite.
 
-Ltac shelve_goals_marked_Shelve :=
-  try match goal with
+Tactic Notation "prove_refinement_eauto" tactic(tac) :=
+  unshelve typeclasses eauto with refines;
+  match goal with
   | |- Shelve _ => unfold Shelve; shelve
-  end.
+  | |- RelGoal _ => tac
+  | |- _ => idtac
+  end; unfold RelGoal.
 
 Ltac prove_refinement :=
-  unshelve typeclasses eauto with refines;
-  shelve_goals_marked_Shelve;
+  (prove_refinement_eauto (prove_refinement_eauto idtac)); 
   cbn [ IntroArg_prod IntroArg_sigT IntroArg_unit
         IntroArg_FrameCall IntroArg_FrameCallIxBelow0 IntroArg_FrameCallIxBelowS
         IntroArg_LRTInput_Fun IntroArg_LRTInput_Ret ] in *;
@@ -2113,6 +2115,11 @@ Tactic Notation "prepost_case" constr(i) constr(j) "with" uconstr(pre) "," ucons
 
 Definition PreExcludedCase (i j : nat) := False.
 Definition PostExcludedCase (i j : nat) := False.
+
+#[global] Hint Extern 101 (IntroArg ?n (PreExcludedCase _ _) _) =>
+  apply IntroArg_false : refines.
+#[global] Hint Extern 101 (IntroArg ?n (PostExcludedCase _ _) _) =>
+ apply IntroArg_false : refines.
 
 Tactic Notation "prepost_exclude_case" constr(i) constr(j) :=
   apply (prepost_case i j); [ exact (fun _ _ => PreExcludedCase i j)
