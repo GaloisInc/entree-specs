@@ -1481,9 +1481,9 @@ Definition spec_refines_forall_r_IntroArg E1 E2 Γ1 Γ2 R1 R2 A `{QuantType A}
 #[global] Hint Extern 101 (spec_refines _ _ _ (ExistsS _ >>= _) _) =>
   simple apply spec_refines_exists_l_IntroArg : refines.
 
-#[global] Hint Extern 102 (spec_refines _ _ _ _ (ExistsS _ >>= _)) =>
+#[global] Hint Extern 202 (spec_refines _ _ _ _ (ExistsS _ >>= _)) =>
   unshelve simple eapply spec_refines_exists_r; [ Shelve_fold |] : refines.
-#[global] Hint Extern 102 (spec_refines _ _ _ (ForallS _ >>= _) _) =>
+#[global] Hint Extern 202 (spec_refines _ _ _ (ForallS _ >>= _) _) =>
   unshelve simple eapply spec_refines_forall_l; [ Shelve_fold |] : refines.
 
 
@@ -1518,9 +1518,9 @@ Definition spec_refines_assume_l_IntroArg E1 E2 Γ1 Γ2 R1 R2 (P:Prop)
 #[global] Hint Extern 101 (spec_refines _ _ _ (AssertS _ >>= _) _) =>
   simple apply spec_refines_assert_l_IntroArg : refines.
 
-#[global] Hint Extern 102 (spec_refines _ _ _ _ (AssertS _ >>= _)) =>
+#[global] Hint Extern 101 (spec_refines _ _ _ _ (AssertS _ >>= _)) =>
   simple apply spec_refines_assert_r_IntroArg : refines.
-#[global] Hint Extern 102 (spec_refines _ _ _ (AssumeS _ >>= _) _) =>
+#[global] Hint Extern 101 (spec_refines _ _ _ (AssumeS _ >>= _) _) =>
   simple apply spec_refines_assume_l_IntroArg : refines.
 
 
@@ -1789,13 +1789,13 @@ Qed.
 Lemma spec_refines_liftStackS_trans_bind_l {E1 E2 Γ1 Γ2 frame1 frame2 R1 R2}
       {RPre : SpecPreRel E1 E2 (frame1 :: Γ1) (frame2 :: Γ2)}
       {RPost : SpecPostRel E1 E2 (frame1 :: Γ1) (frame2 :: Γ2)}
-      {RR : Rel R1 R2} {t1 t2 k1 t3} :
+      {RR : Rel R1 R2} {A t1 t2 k1 t3} :
   spec_refines eqPreRel eqPostRel eq t1 t2 ->
-  spec_refines RPre RPost RR (liftStackS R1 t2 >>= k1) t3 ->
-  spec_refines RPre RPost RR (liftStackS R1 t1 >>= k1) t3.
+  spec_refines RPre RPost RR (liftStackS A t2 >>= k1) t3 ->
+  spec_refines RPre RPost RR (liftStackS A t1 >>= k1) t3.
 Proof.
   intros.
-  assert (spec_refines eqPreRel eqPostRel eq (@liftStackS E1 (frame1 :: Γ1) R1 t1) (liftStackS R1 t2)).
+  assert (spec_refines eqPreRel eqPostRel eq (@liftStackS E1 (frame1 :: Γ1) A t1) (liftStackS A t2)).
   apply spec_refines_liftStackS_proper. auto.
   eapply padded_refines_weaken_r; try eapply H0.
   eapply padded_refines_bind with (RR := eq).
@@ -1806,7 +1806,7 @@ Proof.
 Qed.
 
 Create HintDb refines_proofs.
-#[global] Hint Extern 901 (spec_refines _ _ _ (liftStackS _ _ >>= _) _) =>
+#[global] Hint Extern 201 (spec_refines _ _ _ (liftStackS _ _ >>= _) _) =>
   (simple eapply spec_refines_liftStackS_trans_bind_l;
    [ typeclasses eauto with refines_proofs |]) || shelve : refines.
 
@@ -1989,9 +1989,9 @@ Proof. intros; apply spec_refines_call; eauto. Qed.
 #[global] Hint Extern 101 (spec_refines _ _ _ (CallS _ _ _ _) (CallS _ _ _ _)) =>
   apply spec_refines_call_IntroArg : refines.
 
-#[global] Hint Extern 201 (spec_refines _ _ _ (CallS _ _ _ ?call1) _) =>
+#[global] Hint Extern 102 (spec_refines _ _ _ (CallS _ _ _ ?call1) _) =>
   simple apply (spec_refines_call_bind_ret_l _ _ _ _ _ _ _ _ _ call1) : refines.
-#[global] Hint Extern 201 (spec_refines _ _ _ _ (CallS _ _ _ ?call2)) =>
+#[global] Hint Extern 102 (spec_refines _ _ _ _ (CallS _ _ _ ?call2)) =>
   simple apply (spec_refines_call_bind_ret_r _ _ _ _ _ _ _ _ _ _ _ call2) : refines.
 
 #[global] Hint Extern 991 (spec_refines _ _ _ (CallS _ _ _ _ >>= _) (trepeat _ _)) =>
