@@ -2021,11 +2021,6 @@ Proof. intros; apply spec_refines_call; eauto. Qed.
 
 (** * Tactics for proving refinement *)
 
-Ltac unfold_RelGoal_goals :=
-  try match goal with
-  | |- RelGoal _ => unfold RelGoal
-  end.
-
 Ltac prove_refinement_rewrite :=
   match goal with
   | |- spec_refines _ _ _ _ _ => idtac
@@ -2034,7 +2029,7 @@ Ltac prove_refinement_rewrite :=
 
 Ltac prove_refinement_prepostcond :=
   unshelve typeclasses eauto with prepostcond;
-  unfold_RelGoal_goals; simpl LRTOutput in *; simpl FrameCallIndex;
+  unfold RelGoal; simpl LRTOutput in *; simpl FrameCallIndex;
   prove_refinement_rewrite.
 
 Tactic Notation "prove_refinement_eauto" tactic(tac) :=
@@ -2042,10 +2037,11 @@ Tactic Notation "prove_refinement_eauto" tactic(tac) :=
   try match goal with
   | |- Shelve _ => unfold Shelve; shelve
   | |- RelGoal _ => tac
-  end; unfold_RelGoal_goals.
+  end.
 
 Ltac prove_refinement :=
   (prove_refinement_eauto (prove_refinement_eauto idtac)); 
+  unfold RelGoal;
   prove_refinement_rewrite;
   try solve [ assumption | reflexivity | contradiction ].
 
