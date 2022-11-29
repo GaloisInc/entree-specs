@@ -2026,19 +2026,6 @@ Ltac unfold_RelGoal_goals :=
   | |- RelGoal _ => unfold RelGoal
   end.
 
-Ltac cbn_IntroArg_rules :=
-  cbn [ IntroArg_prod IntroArg_sigT IntroArg_unit
-        IntroArg_FrameCall IntroArg_FrameCallIxBelow0 IntroArg_FrameCallIxBelowS
-        IntroArg_LRTInput_Fun IntroArg_LRTInput_Ret ].
-Ltac cbn_IntroArg_rules_in e :=
-  cbn [ IntroArg_prod IntroArg_sigT IntroArg_unit
-        IntroArg_FrameCall IntroArg_FrameCallIxBelow0 IntroArg_FrameCallIxBelowS
-        IntroArg_LRTInput_Fun IntroArg_LRTInput_Ret ] in e.
-Ltac cbn_IntroArg_rules_in_all :=
-  cbn [ IntroArg_prod IntroArg_sigT IntroArg_unit
-        IntroArg_FrameCall IntroArg_FrameCallIxBelow0 IntroArg_FrameCallIxBelowS
-        IntroArg_LRTInput_Fun IntroArg_LRTInput_Ret ] in *.
-
 Ltac prove_refinement_rewrite :=
   match goal with
   | |- spec_refines _ _ _ _ _ => idtac
@@ -2059,7 +2046,6 @@ Tactic Notation "prove_refinement_eauto" tactic(tac) :=
 
 Ltac prove_refinement :=
   (prove_refinement_eauto (prove_refinement_eauto idtac)); 
-  cbn_IntroArg_rules_in_all;
   prove_refinement_rewrite;
   try solve [ assumption | reflexivity | contradiction ].
 
@@ -2158,76 +2144,49 @@ Tactic Notation "prepost_exclude_remaining" :=
   exact (fun calli callj => PreExcludedCase (FrameCallIndex calli) (FrameCallIndex callj),
          fun calli callj _ _ => PostExcludedCase (FrameCallIndex calli) (FrameCallIndex callj)).
 
+Ltac wf_pre_post_IntroArg_cbn A :=
+  let A' := eval cbn [ wfRelOf proj1_sig preOf fst postOf snd prepost_case
+                       Nat.eq_dec nat_rec nat_rect f_equal_nat f_equal
+                       IntroArg_prod IntroArg_sigT IntroArg_unit IntroArg_FrameCall
+                       IntroArg_FrameCallIxBelow0 IntroArg_FrameCallIxBelowS
+                       IntroArg_LRTInput_Fun IntroArg_LRTInput_Ret ]
+              in A in A'.
+
 #[global] Hint Extern 101 (IntroArg ?n (wfRelOf ?H ?a1 ?a2) ?g) =>
-  let e := argName n in IntroArg_intro e;
-  unfold H, from_user in e; cbn [ wfRelOf proj1_sig ] in e;
-  revert e; apply (IntroArg_fold n _ _) : refines.
+  let H' := eval unfold H, from_user in H in
+  let A' := wf_pre_post_IntroArg_cbn (wfRelOf H' a1 a2) in
+  progress change (IntroArg n A' g) : refines.
 #[global] Hint Extern 101 (RelGoal (wfRelOf ?H ?a1 ?a2)) =>
-  unfold H, from_user; cbn [ wfRelOf proj1_sig ] : refines.
+  let H' := eval unfold H, from_user in H in
+  let A' := wf_pre_post_IntroArg_cbn (wfRelOf H' a1 a2) in
+  progress change (RelGoal A') : refines.
 
 #[global] Hint Extern 101 (IntroArg ?n (preOf ?H ?call1 ?call2) ?g) =>
   let H' := eval unfold H, from_user in H in
   let call1' := eval cbn in call1 in
   let call2' := eval cbn in call2 in
-  let A' := eval cbn [ preOf fst prepost_case ]
-              in (preOf H' call1' call2') in
+  let A' := wf_pre_post_IntroArg_cbn (preOf H' call1' call2') in
   progress change (IntroArg n A' g) : refines.
 #[global] Hint Extern 101 (RelGoal (preOf ?H ?call1 ?call2)) =>
   let H' := eval unfold H, from_user in H in
   let call1' := eval cbn in call1 in
   let call2' := eval cbn in call2 in
-  let A' := eval cbn [ preOf fst prepost_case ]
-              in (preOf H' call1' call2') in
+  let A' := wf_pre_post_IntroArg_cbn (preOf H' call1' call2') in
   progress change (RelGoal A') : refines.
 
 #[global] Hint Extern 101 (IntroArg ?n (postOf ?H ?call1 ?call2 ?r1 ?r2) ?g) =>
   let H' := eval unfold H, from_user in H in
   let call1' := eval cbn in call1 in
   let call2' := eval cbn in call2 in
-  let A' := eval cbn [ postOf snd prepost_case ]
-              in (postOf H' call1' call2' r1 r2) in
+  let A' := wf_pre_post_IntroArg_cbn (postOf H' call1' call2' r1 r2) in
   progress change (IntroArg n A' g) : refines.
 #[global] Hint Extern 101 (RelGoal (postOf ?H ?call1 ?call2 ?r1 ?r2)) =>
   let H' := eval unfold H, from_user in H in
   let call1' := eval cbn in call1 in
   let call2' := eval cbn in call2 in
-  let A' := eval cbn [ postOf snd prepost_case ]
-              in (postOf H' call1' call2' r1 r2) in
+  let A' := wf_pre_post_IntroArg_cbn (postOf H' call1' call2' r1 r2)  in
   progress change (RelGoal A') : refines.
 
-#[global] Hint Extern 101 (IntroArg ?n (match Nat.eq_dec ?i ?j with
-                                        | left _ => _
-                                        | right _ => _
-                                        end) _) =>
-  let s' := eval cbn in (Nat.eq_dec i j) in
-  progress change (Nat.eq_dec i j) with s';
-  let e := argName n in IntroArg_intro e;
-  cbn beta iota in e; cbn_IntroArg_rules_in e;
-  revert e; apply (IntroArg_fold n _ _) : refines.
-#[global] Hint Extern 101 (RelGoal (match Nat.eq_dec ?i ?j with
-                                    | left _ => _
-                                    | right _ => _
-                                    end)) =>
-  let s' := eval cbn in (Nat.eq_dec i j) in
-  progress change (Nat.eq_dec i j) with s';
-  cbn beta iota; cbn_IntroArg_rules : refines.
-
-#[global] Hint Extern 101 (IntroArg ?n (match Nat.eq_dec ?i ?j with
-                                        | left _ => _
-                                        | right _ => _
-                                        end _ _) _) =>
-  let s' := eval cbn in (Nat.eq_dec i j) in
-  progress change (Nat.eq_dec i j) with s';
-  let e := argName n in IntroArg_intro e;
-  cbn beta iota in e; cbn_IntroArg_rules_in e;
-  revert e; apply (IntroArg_fold n _ _) : refines.
-#[global] Hint Extern 101 (RelGoal (match Nat.eq_dec ?i ?j with
-                                    | left _ => _
-                                    | right _ => _
-                                    end _ _)) =>
-  let s' := eval cbn in (Nat.eq_dec i j) in
-  progress change (Nat.eq_dec i j) with s';
-  cbn beta iota; cbn_IntroArg_rules : refines.
 
 (** * Testing *)
 
