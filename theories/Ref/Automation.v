@@ -1,6 +1,7 @@
 From Coq Require Export
      Datatypes
      Arith.PeanoNat
+     Arith.Compare
      Wf_nat
      Morphisms
      Setoid
@@ -1115,16 +1116,15 @@ Qed.
 Definition FrameCallIxBelow frame k : Type@{entree_u} :=
   { call : FrameCall frame | FrameCallIndex call < k }.
 
-Program Definition incrFrameCallIxBelow {frame k} (call : FrameCallIxBelow frame k) :
+Definition incrFrameCallIxBelow {frame k} (fcib : FrameCallIxBelow frame k) :
   FrameCallIxBelow frame (S k) :=
-  proj1_sig call.
-Next Obligation.
-  transitivity k; [ apply (proj2_sig call) | unfold lt; reflexivity ]. 
-Defined.
+  match fcib with
+  | exist _ call ix_lt => exist _ call (le_S _ _ ix_lt)
+  end.
 
-Program Definition mkFrameCallIxBelow {frame k} (args : LRTInput (nthLRT frame k)) :
+Definition mkFrameCallIxBelow {frame k} (args : LRTInput (nthLRT frame k)) :
   FrameCallIxBelow frame (S k) :=
-  exist _ (FrameCallOfArgs _ k args) _.
+  exist _ (FrameCallOfArgs _ k args) (le_n _).
 
 Polymorphic Definition IntroArg_FrameCall n frame goal :
   IntroArg n (FrameCallIxBelow frame (length frame))
@@ -1138,6 +1138,10 @@ Proof.
   intro. destruct a. elimtype False. eapply Lt.lt_n_0. eassumption.
 Defined.
 
+Lemma le_proofs_eq n m (pf1 pf2 : n <= m) : pf1 = pf2.
+Proof.
+Admitted.
+
 Polymorphic Lemma IntroArg_FrameCallIxBelowS n frame k goal :
   IntroArg n (FrameCallIxBelow frame k)
            (fun fcib => goal (incrFrameCallIxBelow fcib)) ->
@@ -1145,7 +1149,14 @@ Polymorphic Lemma IntroArg_FrameCallIxBelowS n frame k goal :
            (fun args => goal (mkFrameCallIxBelow args)) ->
   IntroArg n (FrameCallIxBelow frame (S k)) goal.
 Proof.
-Admitted.
+  intros H H0 [ call ix_lt ].
+  destruct (le_decide _ _ (Le.le_S_n _ _ ix_lt)).
+  - rewrite (le_proofs_eq _ _ ix_lt (le_S _ _ g)).
+    apply (H (exist _ call g)).
+  - destruct call. simpl in e; subst n0.
+    rewrite (le_proofs_eq _ _ ix_lt (le_n _)).
+    apply H0.
+Qed.
 
 Polymorphic Definition IntroArg_LRTInput_Ret {n R goal} :
   goal tt -> IntroArg n (LRTInput (LRT_Ret R)) goal :=
