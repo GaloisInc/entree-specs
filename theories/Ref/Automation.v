@@ -918,13 +918,14 @@ Create HintDb prepostcond.
 (** IntroArg Definition and Hints **)
 
 (* Classes of variables and their associated naming conventions *)
-Inductive ArgName := Any | RetAny | Hyp | Call | Exists | Forall | If | Match.
+Inductive ArgName := Any | RetAny | Hyp | Call | SAWLet | Exists | Forall | If | Match.
 Ltac argName n :=
   match n with
   | Any      => fresh "a"
   | RetAny   => fresh "r"
   | Hyp      => fresh "H"
   | Call     => fresh "call"
+  | SAWLet   => fresh "e_let"
   | Exists   => fresh "e_exists"
   | Forall   => fresh "e_forall"
   | If       => fresh "e_if"
@@ -1222,10 +1223,13 @@ Ltac IntroArg_base_tac n A g :=
   unfold eqPreRel in e;
   revert e; apply (IntroArg_fold n _ _) : refines.
 
-#[global] Hint Extern 102 (IntroArg ?n (@eq bool _ _) _) =>
+#[global] Hint Extern 199 (IntroArg SAWLet _ _) =>
+  let e := argName SAWLet in IntroArg_intro e : refinesFun.
+
+#[global] Hint Extern 201 (IntroArg ?n (@eq bool _ _) _) =>
   let e := argName n in IntroArg_intro e; rewrite e in * : refines prepostcond.
 
-#[global] Hint Extern 199 (IntroArg ?n (?x = ?y) _) =>
+#[global] Hint Extern 299 (IntroArg ?n (?x = ?y) _) =>
   let e := argName n in IntroArg_intro e;
     try first [ is_var x; subst x | is_var y; subst y ] : refines.
 
@@ -1246,7 +1250,7 @@ Proof. eauto. Qed.
 (* If nothing else works for a RelGoal, try reflexivity and then shelve it *)
 #[global] Hint Extern 999 (RelGoal _) =>
   unfold RelGoal, resum_ret, ReSumRet_FrameCall_FunStackE, lt;
-  (reflexivity || apply RelGoal_fold; shelve) : refines.
+  (timeout 1 reflexivity || apply RelGoal_fold; shelve) : refines.
 
 #[global] Lemma RelGoal_and P Q :
   RelGoal P -> RelGoal Q -> RelGoal (P /\ Q).
