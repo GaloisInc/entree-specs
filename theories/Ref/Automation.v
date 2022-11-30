@@ -1,14 +1,17 @@
 From Coq Require Export
      Datatypes
      Arith.PeanoNat
+     Arith.Peano_dec
      Arith.Compare
      Wf_nat
      Morphisms
      Setoid
      Program.Equality
      Lists.List
+     Logic.Eqdep_dec
      Logic.EqdepFacts
      Eqdep EqdepFacts
+     Logic.ProofIrrelevance
 .
 
 From EnTree Require Import
@@ -1138,9 +1141,25 @@ Proof.
   intro. destruct a. elimtype False. eapply Lt.lt_n_0. eassumption.
 Defined.
 
-Lemma le_proofs_eq n m (pf1 pf2 : n <= m) : pf1 = pf2.
+Lemma le_n_equals_le_n n (pf : n <= n) : pf = le_n n.
 Proof.
-Admitted.
+  assert (forall n m (pf : n <= m) (e : n = m),
+             pf = eq_rect n (fun x => n <= x) (le_n n) m e).
+  - clear n pf. intros n m pf. destruct pf.
+    + intros. apply eq_rect_eq_dec. apply Nat.eq_dec.
+    + intros. subst n. elimtype False.
+      eapply (Lt.lt_not_le _ _ pf). apply le_n.
+  - etransitivity; [ apply (H _ _ _ (eq_refl _)) | ].
+    symmetry. apply eq_rect_eq_dec. apply Nat.eq_dec.
+Qed.
+
+(* NOTE: this should be provable just using UIP in a manner similar to the
+above, but we use full proof irrelevance because it is easier *)
+Lemma le_S_equals_le_S n m (pf : n <= S m) (pf2 : n <= m) :
+  { pf' | pf = le_S _ _ pf' }.
+Proof.
+  exists pf2. apply proof_irrelevance.
+Qed.
 
 Polymorphic Lemma IntroArg_FrameCallIxBelowS n frame k goal :
   IntroArg n (FrameCallIxBelow frame k)
@@ -1151,10 +1170,10 @@ Polymorphic Lemma IntroArg_FrameCallIxBelowS n frame k goal :
 Proof.
   intros H H0 [ call ix_lt ].
   destruct (le_decide _ _ (Le.le_S_n _ _ ix_lt)).
-  - rewrite (le_proofs_eq _ _ ix_lt (le_S _ _ g)).
-    apply (H (exist _ call g)).
+  - destruct (le_S_equals_le_S _ _ ix_lt g) as [ pf' e ]. rewrite e.
+    apply (H (exist _ call pf')).
   - destruct call. simpl in e; subst n0.
-    rewrite (le_proofs_eq _ _ ix_lt (le_n _)).
+    rewrite (le_n_equals_le_n _ ix_lt).
     apply H0.
 Qed.
 
