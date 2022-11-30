@@ -274,6 +274,11 @@ Record EvType : Type :=
 Global Instance EncodingType_EvType (E:EvType) : EncodingType E :=
   fun e => evRetType E e.
 
+Global Instance ReSum_FunStack_EvType (E : EvType) Γ : ReSum E (FunStackE E Γ) :=
+  ReSum_FunStackE_E _ _.
+Global Instance ReSumRet_FunStack_EvType (E : EvType) Γ : ReSumRet E (FunStackE E Γ) :=
+  ReSumRet_FunStackE_E _ _.
+
 (* The SpecM monad is the entree_spec monad with FunStackE as the event type *)
 Definition SpecM (E:EvType) Γ A : Type@{entree_u} :=
   entree_spec (FunStackE E Γ) A.
