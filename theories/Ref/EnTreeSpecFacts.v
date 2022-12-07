@@ -12,6 +12,7 @@ From ITree Require Import
 From EnTree Require Import
      Basics.HeterogeneousRelations
      Core.EnTreeDefinition
+     Core.SubEvent
      Eq.Eqit
      Ref.Padded
      Ref.EnTreeSpecDefinition
@@ -976,5 +977,3 @@ Lemma padded_refines_weaken_r {E1 E2 R1 R2} `{EncodingType E1} `{EncodingType E2
 Proof.
   intros. eapply strict_refines_proper; eauto. reflexivity.
 Qed.
-
-

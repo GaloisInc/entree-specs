@@ -23,6 +23,22 @@ From Paco Require Import paco.
 
 Local Open Scope entree_scope.
 
+Section mrec.
+Context {D E} `{EncodingType D} `{EncodingType E}.
+Context (bodies : forall (d : D), entree (D + E) (encodes d) ).
+CoFixpoint interp_mrec' {R} (ot : entree' (D + E) R) : entree E R :=
+  match ot with
+  | RetF r => Ret r
+  | TauF t => Tau (interp_mrec' (observe t) )
+  | VisF ((inl d)) k => Tau (interp_mrec' (observe (EnTree.bind (bodies d) k )) )
+  | VisF ((inr e)) k => Vis e (fun x => interp_mrec' (observe (k x))) 
+  end.
+Definition interp_mrec {R} (t : entree (D + E) R) : entree E R :=
+  interp_mrec' (observe t).
+Definition mrec (d : D) := interp_mrec (bodies d).
+
+End mrec.
+
 Section mrec_spec.
 Context {D E} `{EncodingType D} `{EncodingType E}.
 Context (bodies : forall (d : D), entree_spec (D + E) (encodes d) ).
@@ -44,8 +60,3 @@ End mrec_spec.
 Variant callE (A B : Type@{entree_u}) : Type@{entree_u} := Call (a : A).
 #[global] Instance callE_encodes {A B} : EncodingType (callE A B) :=
   fun _ => B.
-
-Section spec_fix.
-
-
-End spec_fix.

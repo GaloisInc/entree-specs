@@ -14,8 +14,8 @@ Require Import HeterogeneousRelations EnTreeDefinition.
 Require Import Eq.Eqit.
 From Paco Require Import paco.
 
+(** Typeclasses designed to implement a subevent relation, relied on by the trigger function *)
 Class ReSum (E1 E2 : Type) : Type := resum : E1 -> E2.
-
 Class ReSumRet E1 E2 `{EncodingType E1} `{EncodingType E2} `{ReSum E1 E2} : Type :=
   resum_ret : forall (e : E1), encodes (resum e) -> encodes e.
 
@@ -26,6 +26,7 @@ Class ReSumRet E1 E2 `{EncodingType E1} `{EncodingType E2} `{ReSum E1 E2} : Type
 #[global] Instance ReSumRet_inr E1 E2 `{EncodingType E1} `{EncodingType E2} : ReSumRet E2 (E1 + E2) :=
   fun _ e => e.
 
+(** Injects an event into an EnTree, relying on the subevent typeclasses ReSum and ReSumRet *)
 Definition trigger {E1 E2 : Type} `{ReSumRet E1 E2}
            (e : E1) : entree E2 (encodes e) :=
   Vis (resum e) (fun x : encodes (resum e) => Ret (resum_ret e x)).

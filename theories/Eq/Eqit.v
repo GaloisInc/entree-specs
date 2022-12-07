@@ -29,6 +29,7 @@ Proof. auto. Qed.
 #[global] Instance Transitive_bot2 (A : Type) : @Transitive A bot2.
 Proof. auto. Qed.
 
+(** Definition of core equivalence relation for EnTrees *)
 Section eqit.
 
   Context {E : Type} `{EncodingType E} {R1 R2 : Type@{entree_u}} (RR : R1 -> R2 -> Prop).

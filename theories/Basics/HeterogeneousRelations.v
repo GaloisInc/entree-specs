@@ -9,7 +9,7 @@ Require Import ITree.Basics.Basics ITree.Basics.HeterogeneousRelations.
 (* should this be polymorphic ? *)
 Universe entree_u.
 
-(* Types that encode other types *)
+(** Types whose inhabitants represent another type *)
 Class EncodingType (E : Type) := encodes : E -> Type@{entree_u}.
 
 #[global] Instance EncodingSum (E1 E2 : Type@{entree_u}) `{EncodingType E1} `{EncodingType E2} : EncodingType (sum E1 E2) :=
