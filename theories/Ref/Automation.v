@@ -1,13 +1,17 @@
 From Coq Require Export
      Datatypes
      Arith.PeanoNat
+     Arith.Peano_dec
+     Arith.Compare
      Wf_nat
      Morphisms
      Setoid
      Program.Equality
      Lists.List
+     Logic.Eqdep_dec
      Logic.EqdepFacts
      Eqdep EqdepFacts
+     Logic.ProofIrrelevance
 .
 
 From EnTree Require Import
@@ -18,6 +22,7 @@ From EnTree Require Import
      Ref.EnTreeSpecDefinition
      Ref.EnTreeSpecFacts
      Ref.EnTreeSpecCombinatorFacts
+     Ref.RecSpecFix
      Ref.SpecM
      Eq.Eqit
      Ref.MRecSpec
@@ -30,6 +35,41 @@ Export SigTNotations.
 
 Import SpecMNotations.
 Local Open Scope entree_scope.
+
+(* FIXME: There has to be a better way... *)
+Ltac resum_unfold :=
+  unfold (* SubEvent.v *)
+         resum, resum_ret,
+         ReSum_inl, ReSumRet_inl,
+         ReSum_inr, ReSumRet_inr,
+         (* EnTreeDefinition.v *)
+         SpecEventReSum, SpecEventReSumRet,
+         (* RecSpecFix.v *)
+         ReSum_id, ReSumRet_id,
+         callESpecReSum, callESpecReSumRet,
+         (* SpecM.v *)
+         FrameCall_ReSum, FrameCall_ReSumRet,
+         ReSum_FunStackE_E, ReSumRet_FunStackE_E,
+         ReSum_FunStackE_Error, ReSumRet_FunStackE_Error,
+         FunStackE_embed_ev, FunStackE_embed_ev_unmap,
+         ReSum_LRTInput_FunStackE, ReSumRet_LRTInput_FunStackE,
+         ReSum_FrameCall_FunStackE, ReSumRet_FrameCall_FunStackE,
+         ReSum_FunStack_EvType, ReSumRet_FunStack_EvType,
+         ReSum_nil_FunStack, ReSumRet_nil_FunStack.
+Ltac encodes_unfold_in H :=
+  unfold (* HeterogeneousRelations.v *)
+         encodes,
+         EncodingSum,
+         (* QuantEnc.v *)
+         EncodingType_QuantEnc, encodes_QuantEnc,
+         (* EnTreeSpecDefinition *)
+         SpecEventEncoding,
+         (* SpecM.v *)
+         LRTOutputEncoding,
+         FrameCallRetEncoding,
+         EncodingType_ErrorE,
+         FunStackE_encodes', FunStackE_encodes,
+         EncodingType_EvType in H.
 
 (***
  *** Definition and basic properties of spec_refines
@@ -142,12 +182,6 @@ Qed.
 
 
 (** Refinement rules for the SpecM combinators **)
-
-(* FIXME: maybe move these to SpecM.v? *)
-Global Instance ReSum_FunStack_EvType (E : EvType) Γ : ReSum E (FunStackE E Γ) :=
-  ReSum_FunStackE_E _ _.
-Global Instance ReSumRet_FunStack_EvType (E : EvType) Γ : ReSumRet E (FunStackE E Γ) :=
-  ReSumRet_FunStackE_E _ _.
 
 Lemma encodes_ReSum_FunStack_EvType:
   forall (E1 : EvType) (Γ1 : FunStack) (e1 : E1), encodes (ReSum_FunStack_EvType E1 Γ1 e1) = encodes e1.
@@ -976,17 +1010,17 @@ Proof. intros H []; eauto. Qed.
 Polymorphic Lemma IntroArg_false n (goal : False -> Prop) : IntroArg n _ goal.
 Proof. intros []. Qed.
 
-Polymorphic Lemma IntroArg_eq_prod_const n A B (a a' : A) (b b' : B) (goal : Prop)
+Polymorphic Lemma IntroArg_eq_prod_const n A B (a a' : A) (b b' : B) (goal : Type)
   : IntroArg n (a = a') (fun _ => IntroArg n (b = b') (fun _ => goal)) ->
     IntroArg n ((a,b) = (a',b')) (fun _ => goal).
 Proof. intros H eq; apply H; injection eq; eauto. Qed.
 
-Polymorphic Lemma IntroArg_eq_sigT_const n A B (a a' : A) (b b' : B) (goal : Prop)
+Polymorphic Lemma IntroArg_eq_sigT_const n A B (a a' : A) (b b' : B) (goal : Type)
   : IntroArg n (a = a') (fun _ => IntroArg n (b = b') (fun _ => goal)) ->
     IntroArg n (existT _ a b = existT _ a' b') (fun _ => goal).
 Proof. intros H eq; apply H; injection eq; eauto. Qed.
 
-Polymorphic Lemma IntroArg_eq_dep1_const n A B (a : A) (b b' : B a) (goal : Prop)
+Polymorphic Lemma IntroArg_eq_dep1_const n A B (a : A) (b b' : B a) (goal : Type)
   : IntroArg n (b = b') (fun _ => goal) ->
     IntroArg n (eq_dep1 A B a b a b') (fun _ => goal).
 Proof.
@@ -1115,16 +1149,15 @@ Qed.
 Definition FrameCallIxBelow frame k : Type@{entree_u} :=
   { call : FrameCall frame | FrameCallIndex call < k }.
 
-Program Definition incrFrameCallIxBelow {frame k} (call : FrameCallIxBelow frame k) :
+Definition incrFrameCallIxBelow {frame k} (fcib : FrameCallIxBelow frame k) :
   FrameCallIxBelow frame (S k) :=
-  proj1_sig call.
-Next Obligation.
-  transitivity k; [ apply (proj2_sig call) | unfold lt; reflexivity ]. 
-Defined.
+  match fcib with
+  | exist _ call ix_lt => exist _ call (le_S _ _ ix_lt)
+  end.
 
-Program Definition mkFrameCallIxBelow {frame k} (args : LRTInput (nthLRT frame k)) :
+Definition mkFrameCallIxBelow {frame k} (args : LRTInput (nthLRT frame k)) :
   FrameCallIxBelow frame (S k) :=
-  exist _ (FrameCallOfArgs _ k args) _.
+  exist _ (FrameCallOfArgs _ k args) (le_n _).
 
 Polymorphic Definition IntroArg_FrameCall n frame goal :
   IntroArg n (FrameCallIxBelow frame (length frame))
@@ -1138,6 +1171,26 @@ Proof.
   intro. destruct a. elimtype False. eapply Lt.lt_n_0. eassumption.
 Defined.
 
+Lemma le_n_equals_le_n n (pf : n <= n) : pf = le_n n.
+Proof.
+  assert (forall n m (pf : n <= m) (e : n = m),
+             pf = eq_rect n (fun x => n <= x) (le_n n) m e).
+  - clear n pf. intros n m pf. destruct pf.
+    + intros. apply eq_rect_eq_dec. apply Nat.eq_dec.
+    + intros. subst n. elimtype False.
+      eapply (Lt.lt_not_le _ _ pf). apply le_n.
+  - etransitivity; [ apply (H _ _ _ (eq_refl _)) | ].
+    symmetry. apply eq_rect_eq_dec. apply Nat.eq_dec.
+Qed.
+
+(* NOTE: this should be provable just using UIP in a manner similar to the
+above, but we use full proof irrelevance because it is easier *)
+Lemma le_S_equals_le_S n m (pf : n <= S m) (pf2 : n <= m) :
+  { pf' | pf = le_S _ _ pf' }.
+Proof.
+  exists pf2. apply proof_irrelevance.
+Qed.
+
 Polymorphic Lemma IntroArg_FrameCallIxBelowS n frame k goal :
   IntroArg n (FrameCallIxBelow frame k)
            (fun fcib => goal (incrFrameCallIxBelow fcib)) ->
@@ -1145,7 +1198,14 @@ Polymorphic Lemma IntroArg_FrameCallIxBelowS n frame k goal :
            (fun args => goal (mkFrameCallIxBelow args)) ->
   IntroArg n (FrameCallIxBelow frame (S k)) goal.
 Proof.
-Admitted.
+  intros H H0 [ call ix_lt ].
+  destruct (le_decide _ _ (Le.le_S_n _ _ ix_lt)).
+  - destruct (le_S_equals_le_S _ _ ix_lt g) as [ pf' e ]. rewrite e.
+    apply (H (exist _ call pf')).
+  - destruct call. simpl in e; subst n0.
+    rewrite (le_n_equals_le_n _ ix_lt).
+    apply H0.
+Qed.
 
 Polymorphic Definition IntroArg_LRTInput_Ret {n R goal} :
   goal tt -> IntroArg n (LRTInput (LRT_Ret R)) goal :=
@@ -1155,6 +1215,16 @@ Polymorphic Definition IntroArg_LRTInput_Fun {n A lrt goal} :
   IntroArg n A (fun a => IntroArg n (LRTInput (lrt a)) (fun args => goal (existT _ a args))) ->
   IntroArg n (LRTInput (LRT_Fun A lrt)) goal :=
   fun H '(existT _ x l) => H x l.
+
+Polymorphic Definition IntroArg_LRTOutput_Ret {n R goal} :
+  IntroArg n R goal ->
+  IntroArg n (LRTOutput (LRT_Ret R) tt) goal :=
+  fun H r => H r.
+
+Polymorphic Definition IntroArg_LRTOutput_Fun {n A lrt a args goal} :
+  IntroArg n (LRTOutput (lrt a) args) goal ->
+  IntroArg n (LRTOutput (LRT_Fun A lrt) (existT _ a args)) goal :=
+  fun H r => H r.
 
 Ltac IntroArg_intro_dependent_destruction n :=
   let e := argName n in
@@ -1169,7 +1239,7 @@ Ltac IntroArg_base_tac n A g :=
   | _ /\ _ => simple apply IntroArg_and
   | True => simple apply IntroArg_true
   | False => simple apply IntroArg_false
-  | (_, _) = (_, _) => simple apply IntroArg_eq_prod_const
+  | @eq (prod _ _) _ _  => simple apply IntroArg_eq_prod_const
   | eq_rect _ _ _ _ _ = _ => simple apply IntroArg_eq_rect_const_l
   | eq_dep1 _ _ _ _ _ _ => simple apply IntroArg_eq_dep1_const
   | @pushPreRel _ _ _ _ _ _ _ _ (inl _) (inl _) =>
@@ -1209,9 +1279,21 @@ Ltac IntroArg_base_tac n A g :=
   apply (@IntroArg_FrameCallIxBelow0 n) : refines.
 #[global] Hint Extern 101 (IntroArg ?n (FrameCallIxBelow _ (S _)) _) =>
   apply (@IntroArg_FrameCallIxBelowS n) : refines.
+
+#[global] Hint Extern 101 (IntroArg ?n (encodes ?x) ?g) =>
+  let e := argName n in IntroArg_intro e;
+  progress encodes_unfold_in e;
+  revert e; apply (IntroArg_fold n _ _) : refines.
+
 #[global] Hint Extern 101 (IntroArg ?n (LRTInput _) _) =>
-  apply IntroArg_LRTInput_Fun || apply IntroArg_LRTInput_Ret;
-  simpl lrtApply; simpl applyFrameTuple : refines prepostcond.
+  apply IntroArg_LRTInput_Fun || apply IntroArg_LRTInput_Ret : refines prepostcond.
+#[global] Hint Extern 101 (IntroArg ?n (LRTOutput _ _) _) =>
+  apply IntroArg_LRTOutput_Fun || apply IntroArg_LRTOutput_Ret : refines prepostcond.
+
+#[global] Hint Extern 101 (IntroArg ?n (FrameCallRet ?frame ?args) ?g) =>
+  let args' := eval hnf in args in
+  let A' := eval unfold FrameCallRet in (FrameCallRet frame args') in
+  progress change (IntroArg n A' g) : refines.
 
 #[global] Hint Extern 101 (IntroArg ?n (existT _ _ _ = existT _ _ _) _) =>
   let e1 := argName n in IntroArg_intro e1;
@@ -1249,7 +1331,7 @@ Proof. eauto. Qed.
 
 (* If nothing else works for a RelGoal, try reflexivity and then shelve it *)
 #[global] Hint Extern 999 (RelGoal _) =>
-  unfold RelGoal, resum_ret, ReSumRet_FrameCall_FunStackE, lt;
+  unfold RelGoal, lt;
   (timeout 1 reflexivity || apply RelGoal_fold; shelve) : refines.
 
 #[global] Lemma RelGoal_and P Q :
@@ -1477,7 +1559,7 @@ Definition spec_refines_trigger_bind_IntroArg (E1 E2 : EvType) Γ1 Γ2 R1 R2
 
 #[global]
 Hint Extern 102 (spec_refines _ _ _ (TriggerS _ >>= _) (TriggerS _ >>= _)) =>
-  apply spec_refines_trigger_bind_IntroArg : refines.
+  apply spec_refines_trigger_bind_IntroArg; resum_unfold : refines.
 
 
 (* Rules for quantifiers *)
@@ -1549,7 +1631,7 @@ Lemma exists_IntroArg n A (P : A -> Prop) (goal : Prop) :
   IntroArg n (exists x, P x) (fun _ => goal).
 Proof. intros H []; eapply H; eauto. Qed.
 
-#[global] Hint Extern 101 (IntroArg _ (ex _ _) _) =>
+#[global] Hint Extern 101 (IntroArg _ (@ex _ _) _) =>
   simple apply exists_IntroArg : refines.
 
 Lemma exists_RelGoal A P (x : A) :
@@ -1566,7 +1648,7 @@ Lemma impl_RelGoal P Q :
   RelGoal (P -> Q).
 Proof. intros H x; apply H; eauto. Qed.
 
-#[global] Hint Extern 101 (RelGoal (@ex _ _)) =>
+#[global] Hint Extern 202 (RelGoal (@ex _ _)) =>
   unshelve simple eapply exists_RelGoal; [ Shelve_fold |] : refines.
 #[global] Hint Extern 102 (RelGoal (forall _, _)) =>
   simple apply forall_RelGoal : refines.
@@ -2003,7 +2085,7 @@ Lemma spec_refines_call_IntroArg (E1 E2 : EvType) Γ1 Γ2 frame1 frame2
 Proof. intros; apply spec_refines_call; eauto. Qed.
 
 #[global] Hint Extern 101 (spec_refines _ _ _ (CallS _ _ _ _ >>= _) (CallS _ _ _ _ >>= _)) =>
-  apply spec_refines_call_bind_IntroArg : refines.
+  apply spec_refines_call_bind_IntroArg; resum_unfold : refines.
 #[global] Hint Extern 101 (spec_refines _ _ _ (CallS _ _ _ _) (CallS _ _ _ _)) =>
   apply spec_refines_call_IntroArg : refines.
 
@@ -2022,8 +2104,29 @@ Proof. intros; apply spec_refines_call; eauto. Qed.
 #[global] Hint Extern 992 (spec_refines _ _ _ _ (trepeat _ _ >>= _)) =>
   simple apply spec_refines_trepeat_bind_zero_r : refines.
 
+#[global] Hint Extern 101 (spec_refines ?RPre ?RPost ?RR
+                                        (applyFrameTuple ?E ?Γ ?frame ?bodies ?call) ?t2) =>
+  let call' := eval hnf in call in
+  let frame' := eval cbv in frame in
+  let t1' := eval cbv [ applyFrameTuple nthLRT nth_default'
+                        lrtApply nthFrameTupleFun fst snd ]
+                   in (applyFrameTuple E Γ frame' bodies call') in
+  progress change (spec_refines RPre RPost RR t1' t2) : refines.
+#[global] Hint Extern 101 (spec_refines ?RPre ?RPost ?RR ?t1
+                                        (applyFrameTuple ?E ?Γ ?frame ?bodies ?call)) =>
+  let call' := eval hnf in call in
+  let frame' := eval cbv in frame in
+  let t2' := eval cbv [ applyFrameTuple nthLRT nth_default'
+                        lrtApply nthFrameTupleFun fst snd ]
+                   in (applyFrameTuple E Γ frame' bodies call') in
+  progress change (spec_refines RPre RPost RR t1 t2') : refines.
 
 (** * Tactics for proving refinement *)
+
+Ltac unfold_RelGoal_goals :=
+  try match goal with
+  | |- RelGoal _ => unfold RelGoal
+  end.
 
 Ltac prove_refinement_rewrite :=
   match goal with
@@ -2033,7 +2136,7 @@ Ltac prove_refinement_rewrite :=
 
 Ltac prove_refinement_prepostcond :=
   unshelve typeclasses eauto with prepostcond;
-  unfold RelGoal; simpl LRTOutput in *; simpl FrameCallIndex;
+  unfold_RelGoal_goals; cbn [ FrameCallIndex ];
   prove_refinement_rewrite.
 
 Tactic Notation "prove_refinement_eauto" tactic(tac) :=
@@ -2045,7 +2148,7 @@ Tactic Notation "prove_refinement_eauto" tactic(tac) :=
 
 Ltac prove_refinement :=
   (prove_refinement_eauto (prove_refinement_eauto idtac)); 
-  unfold RelGoal;
+  unfold_RelGoal_goals;
   prove_refinement_rewrite;
   try solve [ assumption | reflexivity | contradiction ].
 
@@ -2144,47 +2247,48 @@ Tactic Notation "prepost_exclude_remaining" :=
   exact (fun calli callj => PreExcludedCase (FrameCallIndex calli) (FrameCallIndex callj),
          fun calli callj _ _ => PostExcludedCase (FrameCallIndex calli) (FrameCallIndex callj)).
 
-Ltac wf_pre_post_IntroArg_cbn A :=
-  let A' := eval cbn [ wfRelOf proj1_sig preOf fst postOf snd prepost_case
+Ltac wf_pre_post_IntroArg_unfold A :=
+  let A' := eval cbv [ wfRelOf proj1_sig preOf fst postOf snd prepost_case
                        Nat.eq_dec nat_rec nat_rect f_equal_nat f_equal
                        IntroArg_prod IntroArg_sigT IntroArg_unit IntroArg_FrameCall
-                       IntroArg_FrameCallIxBelow0 IntroArg_FrameCallIxBelowS
-                       IntroArg_LRTInput_Fun IntroArg_LRTInput_Ret ]
+                       IntroArg_FrameCallIxBelow0
+                       IntroArg_LRTInput_Fun IntroArg_LRTInput_Ret
+                       IntroArg_LRTOutput_Fun IntroArg_LRTOutput_Ret ]
               in A in A'.
 
 #[global] Hint Extern 101 (IntroArg ?n (wfRelOf ?H ?a1 ?a2) ?g) =>
   let H' := eval unfold H, from_user in H in
-  let A' := wf_pre_post_IntroArg_cbn (wfRelOf H' a1 a2) in
+  let A' := wf_pre_post_IntroArg_unfold (wfRelOf H' a1 a2) in
   progress change (IntroArg n A' g) : refines.
 #[global] Hint Extern 101 (RelGoal (wfRelOf ?H ?a1 ?a2)) =>
   let H' := eval unfold H, from_user in H in
-  let A' := wf_pre_post_IntroArg_cbn (wfRelOf H' a1 a2) in
+  let A' := wf_pre_post_IntroArg_unfold (wfRelOf H' a1 a2) in
   progress change (RelGoal A') : refines.
 
 #[global] Hint Extern 101 (IntroArg ?n (preOf ?H ?call1 ?call2) ?g) =>
   let H' := eval unfold H, from_user in H in
-  let call1' := eval cbn in call1 in
-  let call2' := eval cbn in call2 in
-  let A' := wf_pre_post_IntroArg_cbn (preOf H' call1' call2') in
+  let call1' := eval hnf in call1 in
+  let call2' := eval hnf in call2 in
+  let A' := wf_pre_post_IntroArg_unfold (preOf H' call1' call2') in
   progress change (IntroArg n A' g) : refines.
 #[global] Hint Extern 101 (RelGoal (preOf ?H ?call1 ?call2)) =>
   let H' := eval unfold H, from_user in H in
-  let call1' := eval cbn in call1 in
-  let call2' := eval cbn in call2 in
-  let A' := wf_pre_post_IntroArg_cbn (preOf H' call1' call2') in
+  let call1' := eval hnf in call1 in
+  let call2' := eval hnf in call2 in
+  let A' := wf_pre_post_IntroArg_unfold (preOf H' call1' call2') in
   progress change (RelGoal A') : refines.
 
 #[global] Hint Extern 101 (IntroArg ?n (postOf ?H ?call1 ?call2 ?r1 ?r2) ?g) =>
   let H' := eval unfold H, from_user in H in
-  let call1' := eval cbn in call1 in
-  let call2' := eval cbn in call2 in
-  let A' := wf_pre_post_IntroArg_cbn (postOf H' call1' call2' r1 r2) in
+  let call1' := eval hnf in call1 in
+  let call2' := eval hnf in call2 in
+  let A' := wf_pre_post_IntroArg_unfold (postOf H' call1' call2' r1 r2) in
   progress change (IntroArg n A' g) : refines.
 #[global] Hint Extern 101 (RelGoal (postOf ?H ?call1 ?call2 ?r1 ?r2)) =>
   let H' := eval unfold H, from_user in H in
-  let call1' := eval cbn in call1 in
-  let call2' := eval cbn in call2 in
-  let A' := wf_pre_post_IntroArg_cbn (postOf H' call1' call2' r1 r2)  in
+  let call1' := eval hnf in call1 in
+  let call2' := eval hnf in call2 in
+  let A' := wf_pre_post_IntroArg_unfold (postOf H' call1' call2' r1 r2)  in
   progress change (RelGoal A') : refines.
 
 
