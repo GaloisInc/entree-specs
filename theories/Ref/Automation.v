@@ -952,7 +952,9 @@ Create HintDb prepostcond.
 (** IntroArg Definition and Hints **)
 
 (* Classes of variables and their associated naming conventions *)
-Inductive ArgName := Any | RetAny | Hyp | Call | SAWLet | Exists | Forall | If | Match.
+Inductive ArgName := Any | RetAny | Hyp | Call |
+                     SAWLet | Assert | Assume | Exists | Forall |
+                     If | Match | Destruct.
 Ltac argName n :=
   match n with
   | Any      => fresh "a"
@@ -960,10 +962,13 @@ Ltac argName n :=
   | Hyp      => fresh "H"
   | Call     => fresh "call"
   | SAWLet   => fresh "e_let"
+  | Assert   => fresh "e_assert"
+  | Assume   => fresh "e_assume"
   | Exists   => fresh "e_exists"
   | Forall   => fresh "e_forall"
   | If       => fresh "e_if"
   | Match    => fresh "e_match"
+  | Destruct => fresh "e_destruct"
   end.
 
 (* IntroArg marks a goal which introduces a variable. This is used to control
@@ -1591,13 +1596,13 @@ Definition spec_refines_forall_r_IntroArg E1 E2 Γ1 Γ2 R1 R2 A `{QuantType A}
 
 Definition spec_refines_assert_l_IntroArg E1 E2 Γ1 Γ2 R1 R2 (P:Prop)
       RPre RPost RR (phi : SpecM E2 Γ2 R2) (kphi : unit -> SpecM E1 Γ1 R1) :
-  (IntroArg Hyp P (fun _ => spec_refines RPre RPost RR (kphi tt) phi)) ->
+  (IntroArg Assert P (fun _ => spec_refines RPre RPost RR (kphi tt) phi)) ->
   spec_refines RPre RPost RR (AssertS P >>= kphi) phi :=
   spec_refines_assert_l E1 E2 Γ1 Γ2 R1 R2 P RPre RPost RR phi kphi.
 
 Definition spec_refines_assume_r_IntroArg E1 E2 Γ1 Γ2 R1 R2 (P:Prop)
       RPre RPost RR (phi : SpecM E1 Γ1 R1) (kphi : unit -> SpecM E2 Γ2 R2) :
-  (IntroArg Hyp P (fun _ => spec_refines RPre RPost RR phi (kphi tt))) ->
+  (IntroArg Assume P (fun _ => spec_refines RPre RPost RR phi (kphi tt))) ->
   spec_refines RPre RPost RR phi (AssumeS P >>= kphi) :=
   spec_refines_assume_r E1 E2 Γ1 Γ2 R1 R2 P RPre RPost RR phi kphi.
 
@@ -2124,8 +2129,9 @@ Proof. intros; apply spec_refines_call; eauto. Qed.
 (** * Tactics for proving refinement *)
 
 Ltac unfold_RelGoal_goals :=
-  try match goal with
+  match goal with
   | |- RelGoal _ => unfold RelGoal
+  | |- _ => idtac
   end.
 
 Ltac prove_refinement_rewrite :=
@@ -2141,9 +2147,10 @@ Ltac prove_refinement_prepostcond :=
 
 Tactic Notation "prove_refinement_eauto" tactic(tac) :=
   unshelve typeclasses eauto with refines;
-  try match goal with
+  match goal with
   | |- Shelve _ => unfold Shelve; shelve
   | |- RelGoal _ => tac
+  | |- _ => idtac
   end.
 
 Ltac prove_refinement :=
