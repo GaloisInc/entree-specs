@@ -1,6 +1,6 @@
 opam-version: "2.0"
 name: "entree-specs"
-version: "0.1"
+version: "dev"
 synopsis: "One-line description"
 license: "BSD-3-Clause"
 maintainer: "Galois, Inc."
