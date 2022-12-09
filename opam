@@ -1,0 +1,20 @@
+opam-version: "2.0"
+name: "entree-specs"
+version: "0.1"
+synopsis: "One-line description"
+license: "BSD-3-Clause"
+maintainer: "Galois, Inc."
+authors: "Galois, Inc."
+homepage: "https://github.com/GaloisInc/entree-specs"
+bug-reports: "https://github.com/GaloisInc/entree-specs/issues"
+depends: [
+  "ocaml"
+  "ocamlfind"
+  "coq" {>= "8.15"}
+  "coq-itree" {>= "5.0.0"}
+  "coq-paco" {>= "4.1.2"}
+]
+build: [
+  [make]
+]
+install: [make "install"]
