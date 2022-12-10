@@ -1,3 +1,67 @@
+# Overview
+This artifact is the ECOOP submission, Interaction Tree Specifications: A Framework for Specifying Recursive, Effectful Computations that Supports Auto-active Verification, submission #10.
+
+It contains a Coq library containing formalized versions of all definitions and proofs contained in the paper relating to ITree Specifications.
+It also contains code for typechecking and extraction for Heapster types, as part of the `saw` tool
+Finally, it contains the C source code for the `mbox` examples, with Heapster types already included, as well as Coq proofs of the correctness of the output specifications.
+ We have included the source code, relevant build scripts, as well as a Docker image (to quickly verify that the code builds without needing to install dependencies).
+
+# Core Claims
+We claim this artifact deserves the reusable badge (and therefore functional and available as well).
+This document provides a mapping from definitions and proofs in the paper to formalized versions in the artifact, as well as all of the code needed to run all examples.
+
+## Potential Reuse Scenario
+A research team could apply the techniques we used to verify the `mbox` examples to other C programs.
+This would involve giving correct Heapster types to the program, extracting functional specifications, writing correctness specifications as ITree Specs, and running the `prove_refinement` tactic and solving all goals that it provides.
+
+A research team could also use ITree Specifications as a target semantics for another programming language.
+This would enable them towrite similar specifications, and use the `prove_refinement` tactic to help verify them.
+
+# Getting Started
+## Docker
+
+## Build from Source
+
+### Dependencies
+#### Saw dependencies
+- ghc 8.10.7
+- cabal 3.8.1.0
+- z3
+#### Coq dependencies
+- coq 8.15.2
+- coq-paco >= 4.1.2
+- coq-ext-lib >= 0.11.7
+- coq-itree >= 5.0.0
+### Build
+To build `saw`, which includes the `heapster` tool, navigate to the `saw-script` directory and run `cabal build saw`. This will produce the `saw` executable
+
+To build the ITree Specification library, navigate to the `entree_specs` directory, and run `make && make install`.
+
+To run the `mbox` examples, first navigate to `saw-script/saw-core-coq/coq` and run `make`. Then navigate to `saw-script/heapster-saw/examples` and run `make`.
+### Heapster Tool
+
+Heapster can be run using the `saw` executible installed in the Docker image.
+For example, running `saw mbox.saw` as discussed below.
+
+
+### MBox Example
+
+The `mbox` example is located in `/home/coq/saw-script/heapster-saw/examples` in the Docker image. The relevant files are:
+- `mbox.c` – the source C file
+- `mbox.saw` – the saw-script file which, when executed using `saw mbox.saw`, instructs Heapster to generate `mbox_gen.v`
+- `mbox_gen.v` – contains the Heaspter-generated Coq specifications extracted from the C functions in `mbox.c`
+- `mbox_proofs.v` – contains proofs of correctness of most of the functions above
+
+The Docker image comes with `mbox_gen.v` generated and `mbox_proofs.v` verified.
+However, you can also generate and verify these files yourself as follows:
+```
+$ rm -rf mbox_gen.v
+$ make
+```
+Instead of calling `make`, you can also go through each step individually by running: `saw mbox.saw` (or `make mbox_gen.v`), `make mbox_gen.vo`, and `make mbox_proofs.vo`.
+
+
+
 # Core ITree Specifications Library
 ## Definitions Table
 - `paper_name` -> `repo_name` at `filpath:line#`
@@ -51,24 +115,3 @@
 - `total_spec_fix_correct` -> `total_spec_fix_refines_total_spec'` at `theories/Ref/RecFixSpecTotal.v:66`
 - `merge_correct` -> `merge_correct` at `theories/Ref/SortEx.v:423`
 - `server_correct` -> `server_correct` at `theories/Ref/RecFixSpecTotal.v:619`
-
-# Heapster Tool
-
-Heapster can be run using the `saw` executible installed in the Docker image.
-For example, running `saw mbox.saw` as discussed below.
-
-# MBox Example
-
-The `mbox` example is located in `/home/coq/saw-script/heapster-saw/examples` in the Docker image. The relevant files are:
-- `mbox.c` – the source C file
-- `mbox.saw` – the saw-script file which, when executed using `saw mbox.saw`, instructs Heapster to generate `mbox_gen.v`
-- `mbox_gen.v` – contains the Heaspter-generated Coq specifications extracted from the C functions in `mbox.c`
-- `mbox_proofs.v` – contains proofs of correctness of most of the functions above
-
-The Docker image comes with `mbox_gen.v` generated and `mbox_proofs.v` verified.
-However, you can also generate and verify these files yourself as follows:
-```
-$ rm -rf mbox_gen.v
-$ make
-```
-Instead of calling `make`, you can also go through each step individually by running: `saw mbox.saw` (or `make mbox_gen.v`), `make mbox_gen.vo`, and `make mbox_proofs.vo`.
