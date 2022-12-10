@@ -51,6 +51,24 @@
 - `total_spec_fix_correct` -> `total_spec_fix_refines_total_spec'` at `theories/Ref/RecFixSpecTotal.v:66`
 - `merge_correct` -> `merge_correct` at `theories/Ref/SortEx.v:423`
 - `server_correct` -> `server_correct` at `theories/Ref/RecFixSpecTotal.v:619`
+
 # Heapster Tool
 
+Heapster can be run using the `saw` executible installed in the Docker image.
+For example, running `saw mbox.saw` as discussed below.
+
 # MBox Example
+
+The `mbox` example is located in `/home/coq/saw-script/heapster-saw/examples` in the Docker image. The relevant files are:
+- `mbox.c` – the source C file
+- `mbox.saw` – the saw-script file which, when executed using `saw mbox.saw`, instructs Heapster to generate `mbox_gen.v`
+- `mbox_gen.v` – contains the Heaspter-generated Coq specifications extracted from the C functions in `mbox.c`
+- `mbox_proofs.v` – contains proofs of correctness of most of the functions above
+
+The Docker image comes with `mbox_gen.v` generated and `mbox_proofs.v` verified.
+However, you can also generate and verify these files yourself as follows:
+```
+$ rm -rf mbox_gen.v
+$ make
+```
+Instead of calling `make`, you can also go through each step individually by running: `saw mbox.saw` (or `make mbox_gen.v`), `make mbox_gen.vo`, and `make mbox_proofs.vo`.
