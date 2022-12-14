@@ -44,6 +44,14 @@ Next Obligation.
   destruct a. reflexivity.
 Defined.
 
+Program Global Instance QuantType_bool : QuantType bool :=
+  { quantEnc := QEnc_nat;
+    quantEnum := fun n => Nat.eqb n 0;
+    quantEnumInv := fun b => if b then 0 else 1; }.
+Next Obligation.
+  destruct a; reflexivity.
+Defined.
+
 Global Instance QuantType_Prop (P:Prop) : QuantType P :=
   { quantEnc := QEnc_prop P;
     quantEnum := fun pf => pf;
