@@ -1,7 +1,7 @@
 Require Import Coq.Lists.List.
-
+Require Import Coq.Logic.JMeq. 
 From Equations Require Import Equations Signature.
-
+Require Import Coq.Program.Equality.
 
 Inductive var {A : Type} : A -> list A -> Type := 
   | VarZ (a : A) l : var a (a :: l)
@@ -11,14 +11,64 @@ Equations remove {A : Type} (a : A) (l : list A) (x : var a l) : list A :=
   remove a (a :: l) (VarZ a l) := l;
   remove a (b :: l) (VarS _ _ y) := b :: (remove a l y).
 
+Inductive var_eq {A : Type} : forall (a b : A) (l : list A), var a l -> var b l -> Type :=
+  | var_eq_ZZ a l : var_eq a a (a :: l) (VarZ a l) (VarZ a l)
+  | var_eq_SS a b c l x y : var_eq a b l x y -> var_eq a b (c :: l) (VarS a c l x) (VarS b c l y).
+
 Inductive var_neq {A : Type} : forall (a b : A) (l : list A), var a l -> var b l -> Type :=
   | var_neq_ZS a b l x : var_neq a b (a :: l) (VarZ a l) (VarS b a l x)
   | var_neq_SZ a b l x : var_neq a b (b :: l) (VarS a b l x) (VarZ b l)
   | var_neq_SS a b c l x y : 
     var_neq a b l x y -> var_neq a b (c :: l) (VarS a c l x) (VarS b c l y)
 .
-
+Arguments var_eq  {_ _ _ _}.
 Arguments var_neq {_ _ _ _}.
+
+Equations var_eq_neq {A} (a b : A) (l : list A) (x : var a l) (y : var b l) : var_eq x y + var_neq x y:=
+  var_eq_neq _ _ _ (VarZ a l) (VarZ a l) := inl (var_eq_ZZ a l);
+  var_eq_neq _ _ _ (VarZ a l) (VarS b a l y) := inr (var_neq_ZS a b l y);
+  var_eq_neq _ _ _ (VarS a b l x) (VarZ b l) := inr (var_neq_SZ a b l x);
+  var_eq_neq _ _ _ (VarS a c l x) (VarS b c l y) := match (var_eq_neq a b l x y) with
+                                                    | inl e => inl (var_eq_SS a b c l x y e)
+                                                    | inr n => inr (var_neq_SS a b c l x y n) end.
+
+Equations var_neq_sym {A} {a b : A} {l} (x : var a l) (y : var b l) (Hn : var_neq x y) : var_neq y x :=
+  var_neq_sym a b (var_neq_ZS a b l x) := var_neq_SZ b a l x;
+  var_neq_sym a b (var_neq_SZ a b l x) := var_neq_ZS b a l x;
+  var_neq_sym a b (var_neq_SS a b c l x y Hn) := var_neq_SS b a c l y x (var_neq_sym x y Hn).
+
+Lemma var_eq_surj A (a b : A) (l : list A) (x : var a l) (y : var b l) :
+  var_eq x y -> a = b.
+Proof.
+  intros Heq. induction Heq; auto.
+Qed.
+
+Lemma var_eq_eq A (a : A) l (x y : var a l) : var_eq x y -> x = y.
+Proof.
+  intros Heq. dependent induction Heq.
+  auto. erewrite IHHeq; eauto.
+Defined.
+
+Equations var_eq_eq' {A} {a b : A} {l : list A} (x : var a l) (y : var b l) (Heq : var_eq x y) :
+  a = b :=
+  var_eq_eq' _ _ (var_eq_ZZ _ _) := eq_refl;
+  var_eq_eq' _ _ (var_eq_SS _ _ _ _ x y Heq) :=
+    var_eq_eq' x y Heq.
+
+Equations var_eq_elim {A} {ll : list (list A)} {l1 l2 : list A} {a : A}
+          (xl : var l1 ll) (yl : var l2 ll) (Heq : var_eq xl yl) (x : var a l2) : var a l1 :=
+  var_eq_elim _ _ (var_eq_ZZ _ _) x := x;
+  var_eq_elim _ _ (var_eq_SS _ _ _ _ xl yl Heq) x :=
+    var_eq_elim xl yl Heq x.
+
+
+Lemma var_neq_JMeq A (a b : A) (l : list A) (x : var a l) (y : var b l) : JMeq x y \/ (exists n : var_neq x y, True) .
+Proof.
+  specialize (var_eq_neq a b l x y) as [ | ].
+  - assert (a = b). apply var_eq_surj in v; auto. subst. 
+    left. apply var_eq_eq in v. subst. auto.
+  - right. eauto.
+Qed.
 
 Equations var_eqb {A : Type} {l : list A} {a b} (x : var a l) (y : var b l) : bool :=
   var_eqb (VarZ a l) (VarZ a l) := true;
@@ -36,13 +86,14 @@ induction vn.
 - exact (VarS b c (remove a l x) IHvn).
 Defined.
 *)
-Definition remove_var {A : Type} (a b : A) (l : list A) (x : var a l) (y : var b l) 
+
+  
+
+Equations remove_var {A : Type} (a b : A) (l : list A) (x : var a l) (y : var b l) 
   (vn : var_neq x y) : var b (remove a l x) :=
-  var_neq_rect A (fun a b l x y _ => var b (remove a l x))
-                 (fun a b l x => x)
-                 (fun a b l x => VarZ b (remove a l x))
-                 (fun a b c l x y vn zrem => VarS b c (remove a l x) zrem )
-                 a b l x y vn.
+  remove_var a b _ _ _ (var_neq_ZS a b _ x)  := x;
+  remove_var a b _ _ _ (var_neq_SZ a b _ x) := VarZ b (remove a _ x);
+  remove_var a b _ _ _ (var_neq_SS a b c l x y vn) := VarS b c (remove a _ x) (remove_var a b _ x y vn).
 
 
 Equations append_var {A : Type} (l1 l2 : list A) (a : A) (x : var a l1) : var a (l1 ++ l2) :=

@@ -267,6 +267,12 @@ Inductive position {T1 T2} : forall {MR : mrec_ctx}, var (T1 && T2) MR -> T1 -> 
 | pos_varS T1' T2' MR v e y : position y v e -> position (VarS _ (T1' && T2') MR y) v (inr e)
 .
 
+Lemma encodes_positions {In MR} `{Out : EncodedType In} (x : var (In && Out) MR) (e : denote_mrec_ctx MR) (v : In) : 
+  position x v e ->  encodes v = encodes e.
+Proof.
+  intro Hpos. induction Hpos; auto.
+Qed.
+
 Lemma call_position {MR T1} {T2 : EncodedType T1} (x : var (T1 && T2) MR) : 
   forall v : T1 , position x v (projT1 (call x v)).
 Proof.
@@ -293,6 +299,27 @@ Proof.
   apply bring_to_front_position. apply call_position.
 Qed.
 
+Lemma bring_to_front_call_neq {MR In1 In2 Out1 Out2} (x : var (In1 && Out1) MR) (y : var (In2 && Out2) MR) (Hneq : var_neq x y) v:
+      projT1 (bring_to_front MR x (projT1 (call y v) ) ) = inr (projT1 (call (remove_var _ _ _ x y Hneq) v )).
+Proof.
+  dependent induction Hneq.
+  - cbv. simp call.  destruct (call x0 v) eqn : Hcall . cbn.
+    Transparent bring_to_front. cbn. 
+    Transparent remove_var. cbn.
+    Transparent remove. cbn.
+    setoid_rewrite Hcall. Opaque bring_to_front. Opaque remove. Opaque remove.
+    auto.
+  - simp call. cbv. simp bring_to_front. Transparent call. cbn. Opaque call. auto.
+  - destruct c. cbn.
+    specialize (IHHneq _ _ _ _ _ _ Hneq eq_refl eq_refl JMeq_refl JMeq_refl JMeq_refl v). 
+    cbn in IHHneq.
+    simp call. simp remove. destruct (call y0 v) eqn : Hcall.
+    cbn in *. simp bring_to_front. destruct (bring_to_front l x0 x1) eqn : Hb.
+    cbn. destruct x2; try discriminate. cbn. injection IHHneq. intros.
+    subst. cbn. set (remove_var (In1 && Out1) (In2 && Out2) l x0 y0 Hneq) as z.
+    Transparent call. cbn. Opaque call. destruct (call z v). auto.
+Qed.
+
 Lemma call_cont {MR T1} {T2 : EncodedType T1} (x : var (T1 && T2) MR) (v : T1) : 
   projT2 (call x v) ~= (@id (encodes v)).
 Proof.
@@ -303,13 +330,13 @@ Proof.
     auto.
 Qed.
 
-Lemma bring_to_front_cont {MR In Out} (x : var (In && Out) MR) (i : In) (e : denote_mrec_ctx MR) : 
+Lemma bring_to_front_cont {MR In Out} (x : var (In && Out) MR) (e : denote_mrec_ctx MR) : 
   projT2 (bring_to_front MR x e) ~= (@id (encodes e)).
 Proof.
   revert e. dependent induction x.
   - intros [ | ]; simp bring_to_front; auto.
   - destruct b. intros [ | ]; simp bring_to_front; auto.
-    specialize (IHx In Out x eq_refl JMeq_refl i d).
+    specialize (IHx In Out x eq_refl JMeq_refl d).
     destruct (bring_to_front l x d). cbn in *. destruct x1; auto.
 Qed.
 (*

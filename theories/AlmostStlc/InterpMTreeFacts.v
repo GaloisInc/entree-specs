@@ -152,39 +152,41 @@ End interp_mtree_bind.
 
 
 Lemma JMeq_comp (A B : Type) (f : A -> B) (g : B -> A) : 
+  B = A ->
   f ~= @id B -> g ~= @id A ->
   forall a, g (f a) = a.
 Proof.
-  intros Hf Hg a. apply JMeq_eq. Set Printing Implicit.
-  (*
-  eapply JMeq_trans with (y:= @id B (@id A a)).
-  2 : reflexivity. Set Printing Implicit. setoid_rewrite Hg.
-  etransitivity.  (id a).
-  Set Printing Implicit. intros a. inv Hf.
-  *)
-Admitted.
-
-Unset Printing Implicit.
+  intros. subst. auto.
+Qed.
+Lemma JMeq_comp' (A B C : Type) (f : A -> B) (g : C -> B) (h : C -> A) :
+  A = B -> B = C ->   f ~= @id B -> g ~= @id B -> h ~= @id A -> 
+  forall c, (f (h c) =  g c).
+Proof.
+  intros. subst. auto.
+Qed.
+(*
+Lemma JMeq_comp' (A B C : Type) (f : A -> B) (g : C -> B) (h : ) :
+  A = B -> B = C ->   f ~= @id B -> g ~= @id A -> h ~= @id C -> 
+  forall a, ()
+*)
  Section interp_mtree_callm.
 Context (MR : mrec_ctx) (In : Type) (Out : EncodedType In) (x : var (In && Out) MR).
 Context (body : forall i : In, mtree MR (encodes i)).
-Print Assumptions JMeq_comp.
+
 Lemma interp_mtree_callm (v : In) : interp_mtree MR In Out x body (callm x v) ≈ interp_mtree MR In Out x body (body v).
 Proof.
   unfold callm.
   specialize (bring_to_front_call x v) as Hcall1.
   specialize (call_cont x v) as Hcall2.
-  specialize (bring_to_front_cont x v (projT1 (call x v))) as Hcall3.
+  specialize (bring_to_front_cont x (projT1 (call x v))) as Hcall3.
+  specialize (encodes_positions x (projT1 (call x v) ) v (call_position x v)) as Henc.
   destruct (call x v). setoid_rewrite bind_trigger.
   rewrite interp_mtree_vis. cbn in *. 
   destruct (bring_to_front MR x x0). cbn in *. subst.
-  assert (Hid : forall x, e (e0 x) = x ).
-  { apply JMeq_comp; auto. }
-  cbn in Hid.
   rewrite tau_eutt. setoid_rewrite interp_mtree_bind.
   setoid_rewrite interp_mtree_ret. setoid_rewrite <- bind_ret_r at 5.
   eapply eqit_bind. reflexivity.
-  intros. subst. rewrite Hid. reflexivity.
+  intros. subst. rewrite JMeq_comp; auto. reflexivity.
 Qed.
 
 Context (T1 : Type) (T2 : EncodedType T1) (y : var (T1 && T2) MR).
@@ -193,9 +195,22 @@ Lemma interp_mtree_callm_neq (v : T1) (Hneq : var_neq x y) :
                                                      callm (remove_var _ _ _ x y Hneq) v.
 Proof.
   unfold callm.
-  dependent induction Hneq.
-  - simp call. simp remove_var.
-Admitted.
+  specialize (bring_to_front_call_neq x y Hneq v) as Hcall1.
+  specialize (call_cont y v) as Hcall2.
+  specialize (bring_to_front_cont x (projT1 (call y v))) as Hcall3.
+  specialize (call_cont ((remove_var (In && Out) (T1 && T2) MR x y Hneq)) v ) as Hcall4.
+  specialize (encodes_positions y (projT1 (call y v) ) v (call_position y v)) as Henc.
+  assert (Henc' : encodes v = 
+           encodes (projT1 (call (remove_var (In && Out) (T1 && T2) MR x y Hneq) v))).
+  { eapply encodes_positions. eapply call_position. }
+  destruct (call y v). cbn in *.
+  destruct (call (remove_var (In && Out) (T1 && T2) MR x y Hneq) v).
+  setoid_rewrite bind_trigger.
+  rewrite interp_mtree_vis. destruct (bring_to_front MR x x0).
+  cbn in *. subst. pstep. constructor. left. setoid_rewrite interp_mtree_ret.
+  cbn in *. pstep. constructor. apply JMeq_comp'; eauto.
+Qed.
+
 (* reason about remove_var, call and bring_to_front *)
 
-End interp_mtree_facts. 
+End interp_mtree_callm.

@@ -1,3 +1,4 @@
+
 Require Export MrecMonad.
 Require Export HeterogeneousRelations.
 Require Export EnTreeDefinition.
@@ -9,6 +10,7 @@ From Equations Require Import Equations Signature.
 Import Monads.
 Import MonadNotation.
 Local Open Scope monad_scope.
+
 
 Global Instance inout_encoded T1 T2 : EncodedType (T1) :=
   fun _ => T2. 
@@ -79,30 +81,21 @@ induction y.
 - specialize (IHy x) as [v' f]. simpl. exact (inr v' && f).
 Defined.
 *)
-Equations call_mrec_type {t1 t2 R} MR (x :  var (t1, t2) R) (v : denote_type t1) : 
-  {d : denote_mrec_ctx (denote_mfix_ctx (R :: MR) ) & encodes d -> denote_type t2 } :=
-  call_mrec_type MR (VarZ _ R) v := (inl (inl v) && id);
-  call_mrec_type MR (VarS _ (t3,t4) R' y) v := 
-    let '(d && f) := call_mrec_type MR y v in
-    match d with
-    | inl d => 
-        (fun (f : encodes (inl d) -> denote_type t2 ) => (inl (inr d) && f))
-    | inr d => (fun f => (inr d && f))
-    end f.
-Arguments call_mrec_type { _ _ _ _}.
 
-(* maybe I need two functions? *)
+Equations call_mrec_call_frame {t1 t2 R} (x :  var (t1, t2) R) (v : denote_type t1) : 
+  {d : denote_call_frame R & encodes d -> denote_type t2} :=
+  call_mrec_call_frame (VarZ _ R) v := (inl v && id);
+  call_mrec_call_frame (VarS _ (t3,t4) R' y) v := 
+    let '(d && f) := call_mrec_call_frame y v in
+    (inr d && f).
+
+(* rewrite call_mrec in terms of call_mrec_call_frame *)
 Equations  call_mrec {t1 t2 MR R} (x : var (t1,t2) R) (y : var R MR ) (v : denote_type t1) :
           {d : denote_mrec_ctx (denote_mfix_ctx MR) & encodes d -> denote_type t2 } :=
-  call_mrec (VarZ _ _) (VarZ _ _) v := (inl (inl v) && id );
-  call_mrec (VarS _ (_, _) _ y ) (VarZ R MR) v :=
-        let '(d && f) := call_mrec_type y v in
-        match d with
-        | inl d => 
-            (fun (f : encodes (inl d) -> denote_type t2 ) => (inl (inr d) && f))
-        | inr d => (fun f => (inr d && f)) end f;
+  call_mrec x (VarZ _ _) v := let '(d && f) := call_mrec_call_frame x v in
+                              (inl d && f);
   call_mrec x (VarS _ _ _ y) v := let '(d && f) := call_mrec x y v in
-                                               (inr d && f).
+                                  (inr d && f).
 
 Definition call_term {t1 t2 MR R} (x : var (t1,t2) R) (y : var R MR ) (v : denote_type t1) 
   : mtree (denote_mfix_ctx MR) (denote_type t2) :=
@@ -125,6 +118,7 @@ Equations denote_var {cf : call_frame} {MR : mfix_ctx} (x : var cf MR) :
   var (denote_call_frame cf && encodes_call_frame cf) (denote_mfix_ctx MR) :=
 denote_var (VarZ cf MR) := VarZ _ _;
 denote_var (VarS _ _ _ y) := VarS _ _ _ (denote_var y).
+
 Equations remove_denote {R : call_frame} {MR : mfix_ctx} (x : var R MR)
           (d : denote_mrec_ctx (TypedVar.remove _ _ (denote_var x))) : 
   {d' : denote_mrec_ctx (denote_mfix_ctx (TypedVar.remove R MR x) ) & encodes d' -> encodes d} :=
@@ -132,6 +126,16 @@ remove_denote (VarZ _ _) d := (d && id);
 remove_denote (VarS _ _ _ _) (inl d) := (inl d && id);
 remove_denote (VarS _ _ _ y) (inr d) := let '(d' && f) := remove_denote y d in
                                         (inr d' && f).
+
+Equations remove_denote' {R : call_frame} {MR : mfix_ctx} (x : var R MR)
+          (d : denote_mrec_ctx (denote_mfix_ctx (TypedVar.remove R MR x) )) : 
+  {d' : denote_mrec_ctx (TypedVar.remove _ _ (denote_var x)) & encodes d' -> encodes d} :=
+
+remove_denote' (VarZ _ _) d := (d && id);
+remove_denote' (VarS _ _ _ _) (inl d) := (inl d && id);
+remove_denote' (VarS _ _ _ y) (inr d) := let '(d' && f) := remove_denote' y d in
+                                        (inr d' && f).
+
 (*
 Lemma remove_denote_jmeq R MR (x : var R MR) : 
   forall d d' f, remove_denote x d = (d' && f) -> (JMeq d' d).
@@ -225,3 +229,4 @@ Arguments mfix_bodies_cons {_ _ _ _ _}.
 Arguments term_lift {_ _} (_) {_}.
 Arguments VarZ {_ _ _}.
 Arguments VarS {_ _ _ _}.
+
