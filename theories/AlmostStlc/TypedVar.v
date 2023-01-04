@@ -2,7 +2,8 @@ Require Import Coq.Lists.List.
 Require Import Coq.Logic.JMeq. 
 From Equations Require Import Equations Signature.
 Require Import Coq.Program.Equality.
-
+Open Scope list_scope.
+Import ListNotations.
 Inductive var {A : Type} : A -> list A -> Type := 
   | VarZ (a : A) l : var a (a :: l)
   | VarS (a b : A) l : var a l -> var a (b :: l).
@@ -164,46 +165,54 @@ Equations perm_map {A B : Type} {f : A -> B} {l1 l2 : list A} (Hperm : perm l1 l
     perm_swap (f x) (f y) _ _ (perm_map  Hperm);
   @perm_map _ _ f l1 l3 (perm_trans l1 l2 l3 Hperm12 Hperm23) :=
     perm_trans (map f l1) (map f l2) (map f l3) (perm_map Hperm12) (perm_map Hperm23).
+Arguments VarZ {_ _ _}.
+Arguments VarS {_ _ _ _}.
+Arguments perm_trans {_ _ _ _}.
+Arguments perm_swap {_ _ _ _ _}.
+Arguments perm_refl {_ _ }.
+Arguments perm_skip {_ _ _ _}.
+Arguments perm_var {_ _ _ _}.
 
-(*
+Definition weaken_var_r {A} : forall (l1 l2 : list A) (a : A), var a l1 -> var a (l1 ++ l2) := @append_var A.
 
-got some weird error working with equations, not sure it would even be better
-then the var_neq_rect solution
-Set Equations With UIP.
-
-Equations remove_var {A : Type} `{EqDec A} (a b : A) (l : list A) (x : var a l) (y : var b l) 
-  (vn : var_neq x y) : var b (remove a l x) :=
-  remove_var a b (c :: l) (VarS _ _ x) (VarS _ _ y) (var_neq_SS a b c l x y vn) :=
-    VarS b c (remove a l x) (remove_var a b l x y vn);
-  remove_var a b (a :: l) (VarZ a l)     (VarS b a l y) (var_neq_ZS a b l y) := y;
-  remove_var a b (b :: l) (VarS a b l x) (VarZ b l)     (var_neq_SZ a b l x) :=
-    VarZ b (remove a l x).
-*)
-
-(*logic for remove and var, things like 
-  x <> y -> var x t -> var x (remove y t)
-  and this should be computable 
-
-
-  this translation could be used in the interp and
-  in the small step whenever you pass an event, 
-  (which will be required to have decidable equality)
-
-  this would be interesting 
-
-  interp_mtree (x : var D R) ->  (forall (d : D), mtree R (encodes d)) -> mtree R A
-    mtree (remove x R) A
+Equations weaken_var_l {A} (l1 l2 : list A) (a : A) (x : var a l2) : var a (l1 ++ l2) :=
+  weaken_var_l nil l2 a x := x;
+  weaken_var_l (b :: l1) l2 a x := VarS (weaken_var_l l1 l2 a x). 
+Transparent weaken_var_l.
+Equations swap_var {A} (l: list A) (a b c: A) (x : var a ([b] ++ [c] ++ l) ) :
+  var a ([c] ++ [b] ++ l) :=
+  swap_var l a a c VarZ :=  VarS VarZ;
+  swap_var l a b a (VarS VarZ) := VarZ;
+  swap_var l a b c (VarS (VarS y) ) := VarS (VarS y).
 
 
-  there are a bunch of interesting questions here, I think it is worth exploring
-  some of this before getting too in depth on the small step
-  this exploration could lead to a refactoring of the language
+Equations weaken_var_mid {A} (l1 l2 l3 : list A) (a : A) (x : var a (l1 ++ l3) ) :
+  var a (l1 ++ l2 ++ l3)  :=
+  weaken_var_mid (b :: l1) _ _ b VarZ := VarZ;
+  weaken_var_mid (b :: l1) l2 l3 a (VarS y) := VarS (weaken_var_mid _ _ _ a y);
+  weaken_var_mid nil l2 l3 a y := weaken_var_l l2 l3 a y.
 
-  if it can lead to more interesting and flexible language with a tractable denotational semantics
-  then that would be great, worth taking the time as I am not in too big a rush to publish atm
+Equations exchange_var_r_perm {A} (l1 l2 : list A) (a b : A) : 
+  perm ([a] ++ l1 ++ [b] ++ l2) ([b] ++ l1 ++ [a] ++ l2) :=
+  exchange_var_r_perm [] l2 a b := perm_swap perm_refl;
+  exchange_var_r_perm (c :: l1) l2 a b :=
+    let IHl2 := exchange_var_r_perm l1 l2 a b in
+    perm_trans (perm_swap perm_refl) (perm_trans (perm_skip IHl2) (perm_swap perm_refl)).
 
-  but this is not something I should focus on tomorrow
+Equations exchange_var_perm {A} (G1 G2 G3 : list A) (u1 u2 : A) :
+  perm (G1 ++ [u1] ++ G2 ++ [u2] ++ G3) (G1 ++ [u2] ++ G2 ++ [u1] ++ G3 ) :=
+  exchange_var_perm [] G2 G3 u1 u2 := exchange_var_r_perm G2 G3 u1 u2;
+  exchange_var_perm (c :: G1) G2 G3 u1 u2 :=
+    perm_skip (exchange_var_perm G1 G2 G3 u1 u2).
 
- *)
+Definition exchange_var {A} (G1 G2 G3 : list A) (u1 u2 t : A) 
+           (x : var t (G1 ++ [u1] ++ G2 ++ [u2] ++ G3)) : 
+  var t (G1 ++ [u2] ++ G2 ++ [u1] ++ G3 ) :=
+  perm_var x (exchange_var_perm G1 G2 G3 u1 u2).
 
-(*remove with decidable equality*)
+Equations var_map_skip {A} (l1 l2 : list A) (b : A) (f : forall c, var c l1 -> var c l2) a
+          (x : var a (b :: l1)) : var a (b :: l2) :=
+  var_map_skip l1 l2 _ _ f VarZ := VarZ;
+  var_map_skip l1 l2 _ _ f (VarS y) := VarS (f _ y).
+
+Arguments var_map_skip {_ _ _ _}.

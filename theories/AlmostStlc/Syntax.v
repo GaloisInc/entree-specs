@@ -83,7 +83,7 @@ Transparent term_of_call.
 *)
 (* essential when reducing denote_bodies *)
 Equations nth_body {Γ MR R t1 t2} (bodies : mfix_bodies Γ MR R) (x : var (t1, t2) R) : term t2 (t1 :: Γ) MR :=
-  nth_body (mfix_bodies_cons _ _ _ _ _ e _) (VarZ _) := e;
-  nth_body (mfix_bodies_cons _ _ _ _ _ _ bodies) (VarS _ _ x) := nth_body bodies x.
+  nth_body (mfix_bodies_cons _ _ _ _ _ e _) VarZ := e;
+  nth_body (mfix_bodies_cons _ _ _ _ _ _ bodies) (VarS x) := nth_body bodies x.
 (* reasoning about *)
 

@@ -62,10 +62,10 @@ Equations bring_to_front (MR : mrec_ctx) {In : Type} {Out : EncodedType In}
           (x : var (In && Out) MR)
           (e : denote_mrec_ctx MR) :
   {e' : (In + denote_mrec_ctx (remove (In && Out) MR x )) & encodes e' -> encodes e } :=
-bring_to_front ((In && Out) :: MR) (VarZ _ MR ) (inl i) := (inl i && id);
-bring_to_front ((In && Out) :: MR) (VarZ _ MR ) (inr e) := (inr e && id);
-bring_to_front ((T1 && T2) :: MR) (VarS  _ MR y) (inl i) := (inr (inl i) && id );
-bring_to_front ((T1 && T2) :: MR) (VarS _ _ MR y) (inr e) :=
+bring_to_front ((In && Out) :: MR) VarZ (inl i) := (inl i && id);
+bring_to_front ((In && Out) :: MR) VarZ (inr e) := (inr e && id);
+bring_to_front ((T1 && T2) :: MR) (VarS y) (inl i) := (inr (inl i) && id );
+bring_to_front ((T1 && T2) :: MR) (VarS y) (inr e) :=
   match bring_to_front MR y e with
   | ((inl i) && f) => inl i && f
   | ((inr e) && f) => (inr (inr e)) && f end.
@@ -216,19 +216,19 @@ Definition mapE {D1 D2 R} `{EncodedType D1} `{EncodedType D2} (h : handler D1 D2
 Equations perm_handler (MR1 MR2 : mrec_ctx) (Hperm : perm MR1 MR2)
           (d : denote_mrec_ctx MR1) : {d' : denote_mrec_ctx MR2 & encodes d' -> encodes d} :=
   perm_handler nil nil perm_nil v := match v : void with end;
-  perm_handler ((T1 && T2) :: MR1) ((T1 && T2) :: MR2) (perm_skip _ MR1 MR2 Hperm)
+  perm_handler ((T1 && T2) :: MR1) ((T1 && T2) :: MR2) (@perm_skip _ MR1 MR2 Hperm)
                (inl i) := (inl i && id);
-  perm_handler ((T1 && T2) :: MR1) ((T1 && T2) :: MR2) (perm_skip _ MR1 MR2 Hperm)
+  perm_handler ((T1 && T2) :: MR1) ((T1 && T2) :: MR2) (@perm_skip _ MR1 MR2 Hperm)
                (inr d) := let '(d' && f) := perm_handler MR1 MR2 Hperm d in
                           (inr d' && f);
-  perm_handler _ _ (perm_swap _ _ _ _ Hperm)
+  perm_handler _ _ (@perm_swap _ _ _ _ Hperm)
                (inl i) := (inr (inl i) && id);
-  perm_handler _ _ (perm_swap _ _ _ _ Hperm)
+  perm_handler _ _ (@perm_swap _ _ _ _ Hperm)
                (inr (inl i)) := (inl i && id);
-  perm_handler _ _ (perm_swap _ _ MR1 MR2 Hperm)
+  perm_handler _ _ (@perm_swap _ _ MR1 MR2 Hperm)
                (inr (inr d)) := let '(d' && f) := perm_handler MR1 MR2 Hperm d in
                                 (inr (inr d') && f );
-  perm_handler MR1 MR3 (perm_trans MR1 MR2 MR3 Hp12 Hp23) d1 :=
+  perm_handler MR1 MR3 (@perm_trans MR1 MR2 MR3 Hp12 Hp23) d1 :=
     let '(d2 && f12) := perm_handler MR1 MR2 Hp12 d1 in
     let '(d3 && f23) := perm_handler MR2 MR3 Hp23 d2 in
     (d3 && (fun x => f12 (f23 x) )).
@@ -252,8 +252,8 @@ Global Instance Monad_mtree MR : (Monad (mtree MR)) := Monad_entree.
 
 Equations call {MR T1} {T2 : EncodedType T1} (x : var (T1 && T2) MR) (v : T1) : 
   {d : denote_mrec_ctx MR & encodes d -> encodes v} :=
-  call (VarZ _ _) v := (inl v && id);
-  call (VarS _ (_ && _) _ y) v := let '(d && f) := call y v in
+  call (VarZ ) v := (inl v && id);
+  call (@VarS _ (_ && _) _ y) v := let '(d && f) := call y v in
                            (inr d && f).
 
 Definition callm {MR T1} {T2 : EncodedType T1} (x : var (T1 && T2) MR) (v : T1) : 
@@ -263,8 +263,8 @@ Definition callm {MR T1} {T2 : EncodedType T1} (x : var (T1 && T2) MR) (v : T1) 
 
 
 Inductive position {T1 T2} : forall {MR : mrec_ctx}, var (T1 && T2) MR -> T1 -> denote_mrec_ctx MR -> Prop := 
-| pos_varZ MR v : position (VarZ _ MR) v (inl v)
-| pos_varS T1' T2' MR v e y : position y v e -> position (VarS _ (T1' && T2') MR y) v (inr e)
+| pos_varZ (MR : mrec_ctx) v : position (@VarZ _ _ MR) v (inl v)
+| pos_varS T1' T2' MR v e y  : position y v e -> position (@VarS _ (T1 && T2 ) (T1' && T2') MR y) v (inr e)
 .
 
 Lemma encodes_positions {In MR} `{Out : EncodedType In} (x : var (In && Out) MR) (e : denote_mrec_ctx MR) (v : In) : 

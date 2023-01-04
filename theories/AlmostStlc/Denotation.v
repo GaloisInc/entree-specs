@@ -62,8 +62,8 @@ Fixpoint denote_ctx (Γ : ctx) : Type@{entree_u} :=
   | t :: Γ' => denote_type t * denote_ctx Γ' end.
 
 Equations index_ctx {t : type} {Γ} (x : var t Γ) (hyps : denote_ctx Γ) : denote_type t :=
-  index_ctx (VarZ x Γ') (v, _) := v;
-  index_ctx (VarS v1 v2 Γ' y) (_, hyps) := index_ctx y hyps.
+  index_ctx (@VarZ x Γ') (v, _) := v;
+  index_ctx (@VarS _ v1 v2 Γ' y) (_, hyps) := index_ctx y hyps.
 (*
 Definition call_mrec {t1 t2 MR R} (x : var (t1,t2) R) (y : var R MR ) (v : denote_type t1) :
           {d : denote_mrec_ctx (denote_mfix_ctx MR) & encodes d -> denote_type t2 }.
@@ -84,17 +84,17 @@ Defined.
 
 Equations call_mrec_call_frame {t1 t2 R} (x :  var (t1, t2) R) (v : denote_type t1) : 
   {d : denote_call_frame R & encodes d -> denote_type t2} :=
-  call_mrec_call_frame (VarZ _ R) v := (inl v && id);
-  call_mrec_call_frame (VarS _ (t3,t4) R' y) v := 
+  call_mrec_call_frame (@VarZ _ R) v := (inl v && id);
+  call_mrec_call_frame (@VarS _ _ (t3,t4) R' y) v := 
     let '(d && f) := call_mrec_call_frame y v in
     (inr d && f).
 
 (* rewrite call_mrec in terms of call_mrec_call_frame *)
 Equations  call_mrec {t1 t2 MR R} (x : var (t1,t2) R) (y : var R MR ) (v : denote_type t1) :
           {d : denote_mrec_ctx (denote_mfix_ctx MR) & encodes d -> denote_type t2 } :=
-  call_mrec x (VarZ _ _) v := let '(d && f) := call_mrec_call_frame x v in
+  call_mrec x VarZ v := let '(d && f) := call_mrec_call_frame x v in
                               (inl d && f);
-  call_mrec x (VarS _ _ _ y) v := let '(d && f) := call_mrec x y v in
+  call_mrec x (VarS y) v := let '(d && f) := call_mrec x y v in
                                   (inr d && f).
 
 Definition call_term {t1 t2 MR R} (x : var (t1,t2) R) (y : var R MR ) (v : denote_type t1) 
@@ -116,24 +116,24 @@ Arguments lift_handler {_ _}.
 
 Equations denote_var {cf : call_frame} {MR : mfix_ctx} (x : var cf MR) : 
   var (denote_call_frame cf && encodes_call_frame cf) (denote_mfix_ctx MR) :=
-denote_var (VarZ cf MR) := VarZ _ _;
-denote_var (VarS _ _ _ y) := VarS _ _ _ (denote_var y).
+denote_var VarZ := VarZ;
+denote_var (VarS y) := VarS (denote_var y).
 
 Equations remove_denote {R : call_frame} {MR : mfix_ctx} (x : var R MR)
           (d : denote_mrec_ctx (TypedVar.remove _ _ (denote_var x))) : 
   {d' : denote_mrec_ctx (denote_mfix_ctx (TypedVar.remove R MR x) ) & encodes d' -> encodes d} :=
-remove_denote (VarZ _ _) d := (d && id);
-remove_denote (VarS _ _ _ _) (inl d) := (inl d && id);
-remove_denote (VarS _ _ _ y) (inr d) := let '(d' && f) := remove_denote y d in
+remove_denote VarZ d := (d && id);
+remove_denote (VarS _) (inl d) := (inl d && id);
+remove_denote (VarS y) (inr d) := let '(d' && f) := remove_denote y d in
                                         (inr d' && f).
 
 Equations remove_denote' {R : call_frame} {MR : mfix_ctx} (x : var R MR)
           (d : denote_mrec_ctx (denote_mfix_ctx (TypedVar.remove R MR x) )) : 
   {d' : denote_mrec_ctx (TypedVar.remove _ _ (denote_var x)) & encodes d' -> encodes d} :=
 
-remove_denote' (VarZ _ _) d := (d && id);
-remove_denote' (VarS _ _ _ _) (inl d) := (inl d && id);
-remove_denote' (VarS _ _ _ y) (inr d) := let '(d' && f) := remove_denote' y d in
+remove_denote' VarZ d := (d && id);
+remove_denote' (VarS _) (inl d) := (inl d && id);
+remove_denote' (VarS y) (inr d) := let '(d' && f) := remove_denote' y d in
                                         (inr d' && f).
 
 (*
@@ -227,6 +227,5 @@ Arguments term_mfix {_ _} (_) {_}.
 Arguments mfix_bodies_nil {_ _}.
 Arguments mfix_bodies_cons {_ _ _ _ _}.
 Arguments term_lift {_ _} (_) {_}.
-Arguments VarZ {_ _ _}.
-Arguments VarS {_ _ _ _}.
+
 

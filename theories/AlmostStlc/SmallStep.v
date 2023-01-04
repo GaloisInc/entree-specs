@@ -14,24 +14,7 @@ Local Open Scope monad_scope.
 Arguments VarZ {_ _ _}.
 Arguments VarS {_ _ _ _}.
 
-Definition weaken_var_r {A} : forall (l1 l2 : list A) (a : A), var a l1 -> var a (l1 ++ l2) := @append_var A.
 
-Equations weaken_var_l {A} (l1 l2 : list A) (a : A) (x : var a l2) : var a (l1 ++ l2) :=
-  weaken_var_l nil l2 a x := x;
-  weaken_var_l (b :: l1) l2 a x := VarS (weaken_var_l l1 l2 a x). 
-Transparent weaken_var_l.
-Equations swap_var {A} (l: list A) (a b c: A) (x : var a ([b] ++ [c] ++ l) ) :
-  var a ([c] ++ [b] ++ l) :=
-  swap_var l a a c VarZ :=  VarS VarZ;
-  swap_var l a b a (VarS VarZ) := VarZ;
-  swap_var l a b c (VarS (VarS y) ) := VarS (VarS y).
-
-
-Equations weaken_var_mid {A} (l1 l2 l3 : list A) (a : A) (x : var a (l1 ++ l3) ) :
-  var a (l1 ++ l2 ++ l3)  :=
-  weaken_var_mid (b :: l1) _ _ b VarZ := VarZ;
-  weaken_var_mid (b :: l1) l2 l3 a (VarS y) := VarS (weaken_var_mid _ _ _ a y);
-  weaken_var_mid nil l2 l3 a y := weaken_var_l l2 l3 a y.
 
 
 Arguments perm_trans {_ _ _ _}.
@@ -39,23 +22,7 @@ Arguments perm_swap {_ _ _ _ _}.
 Arguments perm_refl {_ _ }.
 Arguments perm_skip {_ _ _ _}.
 Arguments perm_var {_ _ _ _}.
-Equations exchange_var_r_perm {A} (l1 l2 : list A) (a b : A) : 
-  perm ([a] ++ l1 ++ [b] ++ l2) ([b] ++ l1 ++ [a] ++ l2) :=
-  exchange_var_r_perm [] l2 a b := perm_swap perm_refl;
-  exchange_var_r_perm (c :: l1) l2 a b :=
-    let IHl2 := exchange_var_r_perm l1 l2 a b in
-    perm_trans (perm_swap perm_refl) (perm_trans (perm_skip IHl2) (perm_swap perm_refl)).
 
-Equations exchange_var_perm {A} (G1 G2 G3 : list A) (u1 u2 : A) :
-  perm (G1 ++ [u1] ++ G2 ++ [u2] ++ G3) (G1 ++ [u2] ++ G2 ++ [u1] ++ G3 ) :=
-  exchange_var_perm [] G2 G3 u1 u2 := exchange_var_r_perm G2 G3 u1 u2;
-  exchange_var_perm (c :: G1) G2 G3 u1 u2 :=
-    perm_skip (exchange_var_perm G1 G2 G3 u1 u2).
-
-Definition exchange_var {A} (G1 G2 G3 : list A) (u1 u2 t : A) 
-           (x : var t (G1 ++ [u1] ++ G2 ++ [u2] ++ G3)) : 
-  var t (G1 ++ [u2] ++ G2 ++ [u1] ++ G3 ) :=
-  perm_var x (exchange_var_perm G1 G2 G3 u1 u2).
 
 Arguments term_const (_) {_ _}.
 Arguments term_cons {_ _ _}.
@@ -74,19 +41,14 @@ Arguments term_mfix {_ _} (_) {_}.
 Arguments mfix_bodies_nil {_ _}.
 Arguments mfix_bodies_cons {_ _ _ _ _}.
 
-
+(*
 Scheme term_mind := Induction for term Sort Type
   with mfix_bodies_mind := Induction for mfix_bodies Sort Type.
 
 Combined Scheme term_mfix_bodies_mutind from term_mind, mfix_bodies_mind.
+*)
 
 
-Equations var_map_skip {A} (l1 l2 : list A) (b : A) (f : forall c, var c l1 -> var c l2) a
-          (x : var a (b :: l1)) : var a (b :: l2) :=
-  var_map_skip l1 l2 _ _ f VarZ := VarZ;
-  var_map_skip l1 l2 _ _ f (VarS y) := VarS (f _ y).
-
-Arguments var_map_skip {_ _ _ _}.
 
 Equations term_map {t : type} {G1 G2 : ctx} {MR : mfix_ctx} (e : term t G1 MR) 
           (f : forall t', var t' G1 -> var t' G2) : term t G2 MR :=
