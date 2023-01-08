@@ -4,6 +4,8 @@ theories/Basics/HeterogeneousRelations.v
 theories/Core/EnTreeDefinition.v
 theories/Core/SubEvent.v
 theories/Eq/Eqit.v
+theories/Eq/Rutt.v
+theories/Eq/RuttFacts.v
 theories/Ref/Padded.v
 theories/Ref/EnTreeSpecDefinition.v
 theories/Ref/MRecSpec.v
@@ -13,8 +15,17 @@ theories/AlmostStlc/TypedVar.v
 theories/AlmostStlc/MrecMonad.v
 theories/AlmostStlc/InterpMTreeFacts.v
 theories/AlmostStlc/MapEFacts.v
+
+theories/AlmostStlc/Types.v
+
+
 theories/AlmostStlc/Syntax.v
 theories/AlmostStlc/Denotation.v
 
 theories/AlmostStlc/SyntaxSeq.v
 theories/AlmostStlc/SmallStepSeq.v
+theories/AlmostStlc/DenotationSeq.v
+
+theories/AlmostStlc/DenotationFacts.v
+
+theories/AlmostStlc/SemanticsFactsSeq.v

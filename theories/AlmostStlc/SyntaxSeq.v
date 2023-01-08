@@ -1,14 +1,6 @@
 Require Export TypedVar.
+Require Export Types.
 
-Inductive vtype : Type :=
-  | Nat : vtype
-  | List : vtype -> vtype
-  | Pair : vtype -> vtype -> vtype
-  | Arrow : vtype -> (list (list (vtype * vtype))) -> vtype -> vtype
-.
-Notation ctx := (list vtype).
-Notation call_frame := (list (vtype * vtype)).
-Notation mfix_ctx := (list call_frame).
 
 Inductive value : vtype -> ctx -> Type :=
   | val_const (n : nat) Γ : value Nat Γ
@@ -43,6 +35,12 @@ with mfix_bodies : ctx -> mfix_ctx -> call_frame -> Type :=
   | mfix_bodies_cons Γ MR t1 t2 R' (body : comp t2 (t1 :: Γ) MR) (bodies : mfix_bodies Γ MR R') :
     mfix_bodies Γ MR ((t1,t2) :: R')
 .
+
+Scheme value_mind := Induction for value Sort Prop
+  with comp_mind := Induction for comp Sort Prop
+  with mfix_bodies_mind := Induction for mfix_bodies Sort Prop.
+Combined Scheme comp_value_mutind from comp_mind, value_mind, mfix_bodies_mind.
+
 Arguments val_const n {_}.
 Arguments val_nil {_ _}.
 Arguments val_cons {_ _}.

@@ -181,8 +181,8 @@ Qed.
 (* need to fmap the typecast *)
 Lemma denote_mfix t1 t2 (R : call_frame) (MR : mfix_ctx) (xt : var (t1,t2) R) (xR : var R MR) (v : denote_type t1) f :
   let '(d && g) := call_mrec_call_frame xt v in
-  mapE (remove_denote xR) (interp_mtree _ _ _ (denote_var xR) f (call_term xt xR v)) ≈
-       mapE (remove_denote xR) (interp_mtree _ _ _ (denote_var xR) f (Functor.fmap g (f d))).
+  mapE (remove_denote xR) (interp_mtree (denote_var xR) f (call_term xt xR v)) ≈
+       mapE (remove_denote xR) (interp_mtree (denote_var xR) f (Functor.fmap g (f d))).
 Proof.
   destruct (call_mrec_call_frame xt v) eqn : Hcall1. unfold call_term.
   destruct (call_mrec xt xR v) eqn : Hcall2. setoid_rewrite interp_mtree_bind at 1.
@@ -239,7 +239,7 @@ Qed.
 
 Lemma denote_mfix_neq t1 t2 (R1 R2 : call_frame) (MR : mfix_ctx) (xt : var (t1,t2) R1) (xR : var R1 MR)
       (yR : var R2 MR) (Hneq : var_neq xR yR) (v : denote_type t1) f :
-  mapE (remove_denote yR) (interp_mtree _ _ _ (denote_var yR) f (call_term xt xR v)) ≈
+  mapE (remove_denote yR) (interp_mtree (denote_var yR) f (call_term xt xR v)) ≈
        call_term xt (remove_var R2 R1 MR yR xR (var_neq_sym xR yR Hneq)) v.
 Proof.
   unfold call_term.

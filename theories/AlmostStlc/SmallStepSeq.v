@@ -332,23 +332,3 @@ Definition step {t MR} (c : comp t [] MR) : option (comp t [] MR) + closed_value
   | inl (bec r E) => inl (step_eval_context _ r E)
   | inr v => inr v 
   end.
-
-
-(*
-(* the *)
-Equations step {t MR} (c : comp t [] MR) : comp t [] MR + closed_value t by struct c :=
-  step (comp_ret v) := inr v;
-  step (comp_let c1 c2) :=
-    match c1 with
-    | comp_ret v => hole
-    | _ => match step c1 with
-          | inl c1' => inl (comp_let c1' c2)
-          | inr v => inl (comp_let (comp_ret v) c2) end
-          end; (* if I use the pattern in the normal way, it can't recognize the recursion is wf*)
-  step (comp_mfix xR bodies c) :=
-    match c with
-    | comp_ret v => inl (comp_ret v)
-    | comp_call yR y v => hole
-    | comp_let c1 c2 => inl (comp_let (comp_mfix xR bodies c1) (comp_mfix xR bodies c2)) end;   
-  step _ := hole.
-*)

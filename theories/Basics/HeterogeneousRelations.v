@@ -3,6 +3,13 @@ Require Import ExtLib.Structures.Applicative.
 Require Import ExtLib.Structures.Monad.
 Require Import Program.Tactics.
 
+From Coq Require Import
+  Program
+  Setoid
+  Morphisms
+  RelationClasses.
+
+
 Require Import ITree.Basics.Basics ITree.Basics.HeterogeneousRelations.
 
 (* should this be polymorphic ? *)
@@ -31,3 +38,19 @@ Variant RComposePostRel {E1 E2 E3} `{EncodedType E1} `{EncodedType E2} `{Encoded
   | RComposePostRel_intro (e1 : E1) (e3 : E3) a c : 
     (forall e2, RPre1 e1 e2 -> RPre2 e2 e3 -> exists b, RPost1 e1 e2 a b /\ RPost2 e2 e3 b c) ->
     RComposePostRel RPre1 RPre2 RPost1 RPost2 e1 e3 a c.
+
+Definition PostRelEq {E1 E2} `{EncodedType E1} `{EncodedType E2} :
+  PostRel E1 E2 -> PostRel E1 E2 -> Prop :=
+  fun RPost1 RPost2 => forall e1 e2 a b, RPost1 e1 e2 a b <-> RPost2 e1 e2 a b.
+
+#[global] Instance PostRelEqEquiv {E1 E2} `{EncodedType E1} `{EncodedType E2} :
+  Equivalence (@PostRelEq E1 E2 _ _).
+Proof.
+  constructor.
+  - repeat intro. reflexivity.
+  - repeat intro. symmetry. apply H1.
+  - repeat intro. etransitivity; eauto.
+Qed.
+
+Definition FlipPostRel {E1 E2} `{EncodedType E1} `{EncodedType E2} : PostRel E1 E2 -> PostRel E2 E1 :=
+  fun RPost e2 e1 b a => RPost e1 e2 a b.

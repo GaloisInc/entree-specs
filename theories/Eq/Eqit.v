@@ -446,7 +446,7 @@ Section eqit_eq.
 Context {E : Type} `{EncodedType E} {R : Type}.
 
 
-Lemma itree_eta_ (t : entree E R) : t ≅ go _ _ (_observe _ _ t).
+Lemma entree_eta_ (t : entree E R) : t ≅ go _ _ (_observe _ _ t).
 Proof. 
   revert t.
   pcofix CIH. intros t. pstep. red. cbn.
@@ -455,16 +455,22 @@ Proof.
   - constructor. left. eapply paco2_mon; eauto. eapply Reflexive_eqit. typeclasses eauto.
 Qed.
 
-Lemma itree_eta (t : entree E R) : t ≅ go _ _ (observe t).
-Proof. apply itree_eta_. Qed.
+Lemma entree_eta (t : entree E R) : t ≅ go _ _ (observe t).
+Proof. apply entree_eta_. Qed.
 
-Lemma itree_eta' (ot : entree' E R) : ot = observe (go _ _ ot).
+Lemma entree_eta' (ot : entree' E R) : ot = observe (go _ _ ot).
 Proof. auto. Qed.
 
 End eqit_eq.
 
-
 (** ** Equations for core combinators *)
+
+Notation bind_ t k :=
+  match observe t with
+  | RetF r => k%function r
+  | VisF e ke => Vis e (fun x => EnTree.bind (ke x) k)
+  | TauF t => Tau (EnTree.bind t k)
+  end.
 
 Lemma bind_ret_l {E} `{EncodedType E} {R S} (r : R) (k : R -> entree E S) : 
   EnTree.bind (Ret r) k ≅ k r.
@@ -488,6 +494,15 @@ Proof.
   left. unfold EnTree.subst, EnTree.subst'.
   match goal with |- paco2 _ _ ?t1 ?t2 => enough (t1 ≅ t2) end.
   auto. reflexivity.
+Qed.
+
+Lemma unfold_bind {E R S} `{EncodedType E} (t : entree E R) (k : R -> entree E S)
+  : EnTree.bind t k ≅ bind_ t k.
+Proof.
+  unfold EnTree.bind, EnTree.subst. destruct (observe t).
+  setoid_rewrite bind_ret_l. reflexivity.
+  setoid_rewrite bind_tau. reflexivity.
+  setoid_rewrite bind_vis. reflexivity.
 Qed.
 
 Lemma bind_trigger {E} `{EncodedType E} {S} (e : E) (k : encodes e -> entree E S) :
@@ -595,7 +610,7 @@ Qed.
 Lemma simpobs {E R} `{EncodedType E} ot (t : entree E R) :
   ot = (observe t) -> go _ _ ot ≅ t.
 Proof.
-  intros. pstep. red. rewrite <- H0. rewrite itree_eta'. pstep_reverse.
+  intros. pstep. red. rewrite <- H0. rewrite entree_eta'. pstep_reverse.
   apply Reflexive_eqit. auto.
 Qed.
 
@@ -773,3 +788,51 @@ constructor.
 - intros. apply bind_bind.
 - intros. apply eqit_bind_proper.
 Qed.
+
+Lemma eutt_inv_Ret_l {E R} `{EncodedType E} (r1: R) (t2: entree E R):
+  (Ret r1) ≈ t2 -> t2 ≳ (Ret r1).
+Proof.
+  intros Heutt. punfold Heutt; red in Heutt; cbn in Heutt.
+  rewrite entree_eta. remember (RetF r1) as ot1.
+  induction Heutt; intros; try discriminate.
+  - inv Heqot1. reflexivity.
+  - inv Heqot1. rewrite tau_euttge. rewrite entree_eta. now apply IHHeutt.
+Qed.
+
+Lemma eutt_inv_Ret_r {E R} `{EncodedType E} (t1: entree E R) (r2: R):
+  t1 ≈ (Ret r2) -> t1 ≳ (Ret r2).
+Proof.
+  intros Heutt. punfold Heutt; red in Heutt; cbn in Heutt.
+  rewrite entree_eta. remember (RetF r2) as ot2.
+  induction Heutt; intros; try discriminate.
+  - inv Heqot2. reflexivity.
+  - inv Heqot2. rewrite tau_euttge. rewrite entree_eta. now apply IHHeutt.
+Qed.
+
+
+Lemma fold_eqitF:
+  forall {E R1 R2} `{EncodedType E} (RR: R1 -> R2 -> Prop) b1 b2 (t1 : entree E R1) (t2 : entree E R2) ot1 ot2,
+    eqitF RR b1 b2 id (upaco2 (eqit_ RR b1 b2 id) bot2) ot1 ot2 ->
+    ot1 = observe t1 ->
+    ot2 = observe t2 ->
+    eqit RR b1 b2 t1 t2.
+Proof.
+  intros * eq -> ->; pfold; auto.
+Qed.
+
+(* Tactic to fold eqitF automatically by expanding observe if needed *)
+Tactic Notation "fold_eqitF" hyp(H) :=
+  try punfold H;
+  try red in H;
+  match type of H with
+  | eqitF ?_RR ?_B1 ?_B2 id (upaco2 (eqit_ ?_RR ?_B1 ?_B2 id) bot2) ?_OT1 ?_OT2 =>
+      match _OT1 with
+      | observe _ => idtac
+      | ?_OT1 => change _OT1 with (observe (go _ _ _OT1)) in H
+      end;
+      match _OT2 with
+      | observe _ => idtac
+      | ?_OT2 => change _OT2 with (observe (go _ _ _OT2)) in H
+      end;
+      eapply fold_eqitF in H; [| eauto | eauto]
+  end.

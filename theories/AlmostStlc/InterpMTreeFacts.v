@@ -20,6 +20,9 @@ From EnTree Require Import
      Core.EnTreeDefinition
      Core.SubEvent
      Eq.Eqit
+     Eq.Rutt
+     Eq.RuttFacts
+     AlmostStlc.TypedVar
 .
 
 Require Import ExtLib.Structures.Functor.
@@ -214,3 +217,75 @@ Qed.
 (* reason about remove_var, call and bring_to_front *)
 
 End interp_mtree_callm.
+Notation denote_remainder MR x :=
+  (denote_mrec_ctx (remove (_ && _) MR x ) ).
+
+Section insert_rel.
+Context (MR1 MR2 : mrec_ctx) (In1 In2: Type) (Out1 : EncodedType In1) (Out2 : EncodedType In2) 
+        (x : var (In1 && Out1) MR1) (y : var (In2 && Out2) MR2).
+Context (RPreInv : Rel In1 In2) (RPostInv : PostRel In1 In2).
+Context (RPre : Rel (denote_remainder MR1 x) (denote_remainder MR2 y)).
+Context (RPost : PostRel (denote_remainder MR1 x) (denote_remainder MR2 y)).
+
+Definition InsertPreRel : Rel (denote_mrec_ctx MR1) (denote_mrec_ctx MR2) :=
+  fun d1 d2 => sum_rel RPreInv RPre (projT1 (bring_to_front _ x d1)) (projT1 (bring_to_front _ y d2)).
+(* use the position *)
+Inductive InsertPostRel : PostRel (denote_mrec_ctx MR1) (denote_mrec_ctx MR2) :=
+  | ipr_intro_l (d1 : denote_mrec_ctx MR1) (d2 : denote_mrec_ctx MR2) (a : encodes d1) (b : encodes d2)
+                d1' d2' f1 f2 (a' : encodes d1') (b' : encodes d2') :
+    d1' && f1 = bring_to_front _ x d1 -> d2' && f2 = bring_to_front _ y d2 ->
+    a = f1 a' -> b = f2 b' -> SumPostRel RPostInv RPost d1' d2' a' b' -> InsertPostRel d1 d2 a b.
+
+End insert_rel.
+Arguments InsertPreRel {_ _ _ _ _ _}.
+Arguments InsertPostRel {_ _ _ _ _ _}.
+Arguments interp_mtree {MR In Out} (x) {A}. 
+Section interp_mtree_rutt.
+Context (MR1 MR2 : mrec_ctx) (In1 In2: Type) (Out1 : EncodedType In1) (Out2 : EncodedType In2) 
+        (x : var (In1 && Out1) MR1) (y : var (In2 && Out2) MR2).
+Context (bodies1 : forall i : In1, mtree MR1 (encodes i)) (bodies2 : forall i : In2, mtree MR2 (encodes i)).
+Context (RPreInv : Rel In1 In2) (RPostInv : PostRel In1 In2).
+Context (RPre : Rel (denote_remainder MR1 x) (denote_remainder MR2 y)).
+Context (RPost : PostRel (denote_remainder MR1 x) (denote_remainder MR2 y)).
+Context (R1 R2 : Type) (RR : Rel R1 R2).
+
+Context (Hbodies : forall i1 i2, RPreInv i1 i2 -> 
+                            rutt (InsertPreRel x y RPreInv RPre) (InsertPostRel x y RPostInv RPost)
+                                 (RPostInv i1 i2) (bodies1 i1) (bodies2 i2)).
+
+Theorem interp_mtree_rutt : 
+  forall (m1 : mtree MR1 R1) (m2 : mtree MR2 R2),
+    rutt (InsertPreRel x y RPreInv RPre) (InsertPostRel x y RPostInv RPost)
+                                 RR m1 m2 ->
+    rutt RPre RPost RR (interp_mtree x bodies1 m1) (interp_mtree y bodies2 m2).
+Proof.
+  ginit. gcofix CIH. intros m1 m2 Hm12. punfold Hm12. red in Hm12.
+  remember (observe m1) as om1. remember (observe m2) as om2.
+  hinduction Hm12 before r; intros.
+  - apply simpobs in Heqom1, Heqom2. rewrite <- Heqom1, <- Heqom2.
+    setoid_rewrite interp_mtree_ret. gstep. constructor. auto.
+  - apply simpobs in Heqom1, Heqom2. rewrite <- Heqom1, <- Heqom2.
+    setoid_rewrite interp_mtree_tau. gstep. constructor. pclearbot.
+    gfinal. eauto.
+  - apply simpobs in Heqom1, Heqom2. rewrite <- Heqom1, <- Heqom2.
+    setoid_rewrite interp_mtree_vis. red in H. cbn.
+    destruct (bring_to_front MR1 x e1) as [ [i1 | d1]  f1];
+    destruct (bring_to_front MR2 y e2) as [ [i2 | d2]  f2];
+    inversion H; subst.
+    + gstep. constructor. gfinal. left. eapply CIH. eapply rutt_bind; eauto.
+      intros. enough ( InsertPostRel x y RPostInv RPost e1 e2 (f1 r1) (f2 r2)).
+      apply H0 in H2. pclearbot. auto. 
+      admit.
+      (* econstructor. *)
+    + gstep. constructor. auto. intros. gfinal. left. eapply CIH.
+      pclearbot.
+      enough ( InsertPostRel x y RPostInv RPost e1 e2 (f1 a) (f2 b)).
+      apply H0 in H2. pclearbot. auto.
+      admit.
+      (* just need some lemmas about InsertPostRel *)
+  (* would be easy to prove if we could should f1 and f2 are id *)
+  - apply simpobs in Heqom1. rewrite <- Heqom1. rewrite tau_euttge. eauto.
+  - apply simpobs in Heqom2. rewrite <- Heqom2. rewrite tau_euttge. eauto.
+Admitted.
+
+End interp_mtree_rutt.
