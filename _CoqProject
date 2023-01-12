@@ -27,5 +27,7 @@ theories/AlmostStlc/SmallStepSeq.v
 theories/AlmostStlc/DenotationSeq.v
 
 theories/AlmostStlc/DenotationFacts.v
+theories/AlmostStlc/TypesEquiv.v
+
 
 theories/AlmostStlc/SemanticsFactsSeq.v

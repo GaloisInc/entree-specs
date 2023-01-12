@@ -220,6 +220,16 @@ End interp_mtree_callm.
 Notation denote_remainder MR x :=
   (denote_mrec_ctx (remove (_ && _) MR x ) ).
 
+Equations id_eq {A B : Type} (Heq : A = B) (a : A) : B :=
+  id_eq eq_refl a := a.
+
+Lemma id_eq_eq A (H : A = A) (a : A) : id_eq H a = a.
+Proof.
+  dependent destruction H. simp id_eq. auto.
+Qed.
+
+
+
 Section insert_rel.
 Context (MR1 MR2 : mrec_ctx) (In1 In2: Type) (Out1 : EncodedType In1) (Out2 : EncodedType In2) 
         (x : var (In1 && Out1) MR1) (y : var (In2 && Out2) MR2).
@@ -229,6 +239,7 @@ Context (RPost : PostRel (denote_remainder MR1 x) (denote_remainder MR2 y)).
 
 Definition InsertPreRel : Rel (denote_mrec_ctx MR1) (denote_mrec_ctx MR2) :=
   fun d1 d2 => sum_rel RPreInv RPre (projT1 (bring_to_front _ x d1)) (projT1 (bring_to_front _ y d2)).
+
 (* use the position *)
 Inductive InsertPostRel : PostRel (denote_mrec_ctx MR1) (denote_mrec_ctx MR2) :=
   | ipr_intro_l (d1 : denote_mrec_ctx MR1) (d2 : denote_mrec_ctx MR2) (a : encodes d1) (b : encodes d2)
@@ -269,23 +280,22 @@ Proof.
     gfinal. eauto.
   - apply simpobs in Heqom1, Heqom2. rewrite <- Heqom1, <- Heqom2.
     setoid_rewrite interp_mtree_vis. red in H. cbn.
-    destruct (bring_to_front MR1 x e1) as [ [i1 | d1]  f1];
-    destruct (bring_to_front MR2 y e2) as [ [i2 | d2]  f2];
+    destruct (bring_to_front MR1 x e1) as [ [i1 | d1]  f1] eqn : Heq1;
+    destruct (bring_to_front MR2 y e2) as [ [i2 | d2]  f2] eqn : Heq2;
     inversion H; subst.
     + gstep. constructor. gfinal. left. eapply CIH. eapply rutt_bind; eauto.
       intros. enough ( InsertPostRel x y RPostInv RPost e1 e2 (f1 r1) (f2 r2)).
-      apply H0 in H2. pclearbot. auto. 
-      admit.
-      (* econstructor. *)
+      apply H0 in H2. pclearbot. auto. econstructor; eauto. 
+      constructor. auto.
     + gstep. constructor. auto. intros. gfinal. left. eapply CIH.
       pclearbot.
       enough ( InsertPostRel x y RPostInv RPost e1 e2 (f1 a) (f2 b)).
-      apply H0 in H2. pclearbot. auto.
-      admit.
+      apply H0 in H2. pclearbot. auto. econstructor; eauto.
+      constructor. auto.
       (* just need some lemmas about InsertPostRel *)
   (* would be easy to prove if we could should f1 and f2 are id *)
   - apply simpobs in Heqom1. rewrite <- Heqom1. rewrite tau_euttge. eauto.
   - apply simpobs in Heqom2. rewrite <- Heqom2. rewrite tau_euttge. eauto.
-Admitted.
-
+Qed.
+ 
 End interp_mtree_rutt.
