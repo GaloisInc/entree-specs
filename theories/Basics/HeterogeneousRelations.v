@@ -71,15 +71,5 @@ Qed.
 Definition TransitivePostRel {E : Type} `{enc : EncodedType E} (RPre : Rel E E) (RPost : PostRel E E) 
   : Prop :=
   forall (e1 e3 : E) (a : encodes e1) (c : encodes e3),
-    (forall e2, RPre e1 e2 -> RPre e2 e3 -> exists b, RPost e1 e2 a b /\ RPost e2 e3 b c) <-> RPost e1 e3 a c.
-
-Theorem transitive_rcompose_postrel E `{enc : EncodedType E} (RPre : Rel E E) (RPost : PostRel E E) :
-  TransitivePostRel RPre RPost ->
-  PostRelEq RPost (RComposePostRel RPre RPre RPost RPost).
-Proof.
-  intro H. red in H. intros e1 e3 a c.
-  split.
-  - intros Hac. econstructor. eapply H. auto.
-  - intros. inversion H0. inj_existT. subst.
-    eapply H. eauto.
-Qed.
+    RPost e1 e3 a c ->
+    (forall e2, RPre e1 e2 -> RPre e2 e3 -> exists b, RPost e1 e2 a b /\ RPost e2 e3 b c).

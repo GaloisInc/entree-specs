@@ -509,7 +509,7 @@ Proof.
   assert (Ht13 :rutt (rcompose RPre RPre) (RComposePostRel RPre RPre RPost RPost) (rcompose RR RR) t1 t3).
   eapply rutt_trans; eauto.
   eapply rutt_mon; try apply Ht13; try (apply trans_rcompose; auto).
-  intros. apply transitive_rcompose_postrel; auto.
+  intros. apply Htranspost in H0. constructor. auto.
 Qed.
 
 Section RuttProper.
