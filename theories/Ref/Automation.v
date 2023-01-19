@@ -12,6 +12,7 @@ From Coq Require Export
      Logic.EqdepFacts
      Eqdep EqdepFacts
      Logic.ProofIrrelevance
+     Bool.Sumbool
 .
 
 From EnTree Require Import
@@ -2145,7 +2146,7 @@ Ltac prove_refinement_prepostcond :=
   unfold_RelGoal_goals; cbn [ FrameCallIndex ];
   prove_refinement_rewrite.
 
-Tactic Notation "prove_refinement_eauto" tactic(tac) :=
+Tactic Notation "prove_refinement_eauto_then" tactic(tac) :=
   unshelve typeclasses eauto with refines;
   match goal with
   | |- Shelve _ => unfold Shelve; shelve
@@ -2153,14 +2154,40 @@ Tactic Notation "prove_refinement_eauto" tactic(tac) :=
   | |- _ => idtac
   end.
 
-Ltac prove_refinement :=
-  (prove_refinement_eauto (prove_refinement_eauto idtac)); 
-  unfold_RelGoal_goals;
-  prove_refinement_rewrite;
+Ltac prove_refinement_eauto :=
+  (prove_refinement_eauto_then (prove_refinement_eauto_then idtac)).
+
+Ltac prove_refinement_solve :=
   try solve [ assumption | reflexivity | contradiction ].
+
+Variant ProveRefOpt := NoRewrite | NoSolve.
+
+Definition in_opts (o : ProveRefOpt) (os : list ProveRefOpt) : bool.
+Proof.
+  refine (proj1_sig (bool_of_sumbool (in_dec _ o os))).
+  destruct x, y ; (left; reflexivity) || (right; discriminate).
+Defined.
+
+Ltac prove_refinement_with opts :=
+  prove_refinement_eauto; unfold_RelGoal_goals;
+  let noRewrite := eval vm_compute in (in_opts NoRewrite opts) in
+  first [ constr_eq_strict noRewrite true | prove_refinement_rewrite ];
+  let noSolve := eval vm_compute in (in_opts NoSolve opts) in
+  first [ constr_eq_strict noSolve true | prove_refinement_solve   ].
+
+Ltac prove_refinement :=
+  prove_refinement_with (@nil ProveRefOpt).
+Tactic Notation "prove_refinement" "with" constr(o) :=
+  prove_refinement_with (cons o nil).
+Tactic Notation "prove_refinement" "with" constr(o1) constr(o2) :=
+  prove_refinement_with (cons o1 (cons o2 nil)).
 
 Ltac prove_refinement_continue :=
   Continue_unfold; prove_refinement.
+Tactic Notation "prove_refinement_continue" "with" constr(o) :=
+  Continue_unfold; prove_refinement with o.
+Tactic Notation "prove_refinement_continue" "with" constr(o1) constr(o2) :=
+  Continue_unfold; prove_refinement with o1 o2.
 
 
 (** * Tactics for pre/post-conditions and well-founded relations *)
