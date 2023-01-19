@@ -27,7 +27,7 @@ Equations comp_map {t : vtype} {Γ1 Γ2} {MR : mfix_ctx} (c : comp t Γ1 MR)
     comp_map (comp_app v1 v2) f :=
       comp_app (val_map v1 f) (val_map v2 f);
     comp_map (comp_call xR x v) f := comp_call xR x (val_map v f);
-    comp_map (comp_mfix xR bodies c) f := comp_mfix xR (bodies_map bodies f) (comp_map c f);
+    comp_map (comp_mfix R bodies c) f := comp_mfix R (bodies_map bodies f) (comp_map c f);
     comp_map (comp_lift c) f := comp_lift (comp_map c f);
     comp_map (comp_perm Hperm c) f := comp_perm Hperm (comp_map c f);
   }
@@ -98,8 +98,8 @@ Equations subst_comp {t u Γ2 MR} Γ1 (c1 : comp u (Γ1 ++ [t] ++ Γ2) MR) (v : 
       comp_app (subst_value vf v) (subst_value varg v);
     subst_comp _ (comp_call xR x varg) v :=
       comp_call xR x (subst_value varg v);
-    subst_comp _ (comp_mfix xR bodies c) v :=
-      comp_mfix xR (subst_bodies bodies v) (subst_comp _ c v);
+    subst_comp _ (comp_mfix R bodies c) v :=
+      comp_mfix R (subst_bodies bodies v) (subst_comp _ c v);
     subst_comp _ (comp_lift c) v := comp_lift (subst_comp _ c v);
     subst_comp _ (comp_perm Hperm c) v := comp_perm Hperm (subst_comp _ c v);
 }
@@ -132,8 +132,8 @@ Inductive bredex : vtype -> mfix_ctx -> Type :=
     bredex t2 MR
   | bredex_split t1 t2 t3 MR (vp : closed_value (Pair t1 t2)) (cs : comp t3 [t1; t2] MR) : 
     bredex t3 MR
-  | bredex_mfix t MR R (xR : var R MR) (bodies : mfix_bodies [] MR R) (v : closed_value t) : 
-    bredex t (remove R MR xR)
+  | bredex_mfix t MR R (bodies : mfix_bodies [] (R :: MR) R) (v : closed_value t) : 
+    bredex t MR
   | bredex_perm t MR1 MR2 (Hperm : perm MR1 MR2) (v : closed_value t) :
     bredex t MR2
   | bredex_lift t MR1 MR2 (v : closed_value t) : 
@@ -144,7 +144,7 @@ Arguments bredex_app {t1 t2 MR}.
 Arguments bredex_match_nat {t MR}.
 Arguments bredex_match_list {t1 t2 MR}.
 Arguments bredex_split {t1 t2 t3 MR}.
-Arguments bredex_mfix {t MR R}.
+Arguments bredex_mfix {t MR}.
 Arguments bredex_perm {t MR1 MR2}.
 Arguments bredex_lift {t MR1 MR2}.
 
@@ -157,9 +157,9 @@ Inductive eval_context : vtype -> mfix_ctx -> forall t MR, bredex t MR + call t 
   | ev_let b t1 t2 t3 MR1 MR2 (r : bredex t3 MR2 + call t3 MR2) (E : eval_context t1 MR1 _ _ r b) (c : comp t2 [t1] MR1) : 
     eval_context t2 MR1 _ _ r b
   | ev_mfix b t1 t2 R MR1 MR2 (r : bredex t2 MR2 + call t2 MR2) 
-            (xR : var R MR1) (bodies : mfix_bodies [] MR1 R)
-            (E : eval_context t1 MR1 _ _ r b) :
-    eval_context t1 (remove R MR1 xR) _ _ r false
+            (bodies : mfix_bodies [] (R :: MR1) R)
+            (E : eval_context t1 (R :: MR1) _ _ r b) :
+    eval_context t1 MR1 _ _ r false
   | ev_perm b t1 t2 MR1 MR2 MR3 (r : bredex t2 MR3 + call t2 MR3)
             (Hperm : perm MR1 MR2)
             (E : eval_context t1 MR1 _ _ r b) : 
@@ -171,7 +171,7 @@ Inductive eval_context : vtype -> mfix_ctx -> forall t MR, bredex t MR + call t 
 Arguments eval_context (_ _) {_ _}.
 Arguments ev_hole {t MR r}.
 Arguments ev_let {b t1 t2 t3 MR1 MR2 r}.
-Arguments ev_mfix (b) {t1 t2 R MR1 MR2 r}.
+Arguments ev_mfix (b) {t1 t2} (R) {MR1 MR2 r}.
 Arguments ev_perm (b) {t1 t2 MR1 MR2 MR3 r}.
 Arguments ev_lift (b) {t1 t2 MR1 MR2 MR3 r}.
 
@@ -204,7 +204,7 @@ Equations subst_eval_context {b t1 t2 MR1 MR2} {r : bredex t2 MR2 + call t2 MR2}
           (c : comp t2 [] MR2 ) : comp t1 [] MR1 :=
   subst_eval_context ev_hole c := c;
   subst_eval_context (ev_let E1 c2) c := comp_let (subst_eval_context E1 c) c2;
-  subst_eval_context (ev_mfix _ xR bodies E) c := comp_mfix xR bodies (subst_eval_context E c);
+  subst_eval_context (ev_mfix _ R bodies E) c := comp_mfix R bodies (subst_eval_context E c);
   subst_eval_context (ev_perm _ Hperm E) c := comp_perm Hperm (subst_eval_context E c);
   subst_eval_context (ev_lift _ E) c := comp_lift (subst_eval_context E c).
 
@@ -217,8 +217,8 @@ Equations push_eval_context {t1 t2 MR1 MR2} (r : bredex t2 MR1 + call t2 MR1)
   push_eval_context r ev_hole f c := c;
   push_eval_context r (ev_let E1 c2) f c := comp_let (push_eval_context r E1 f c) (f _ [_] c2).
 
-Definition comp_mfix_map {MR R} (xR : var R MR) (bodies : mfix_bodies [] MR R) : forall t Γ, comp t Γ MR -> comp t Γ (remove R MR xR) :=
-  fun t Γ c => comp_mfix xR (weaken_r_bodies bodies) c.
+Definition comp_mfix_map {MR R} (bodies : mfix_bodies [] (R :: MR) R) : forall t Γ, comp t Γ (R :: MR) -> comp t Γ MR :=
+  fun t Γ c => comp_mfix R (weaken_r_bodies bodies) c.
 Definition comp_lift_map {MR1 MR2} : forall t Γ, comp t Γ MR2 -> comp t Γ (MR1 ++ MR2) :=
   fun t Γ c => comp_lift c.
 Definition comp_perm_map {MR1 MR2} (Hperm : perm MR1 MR2) : forall t Γ, comp t Γ MR1 -> comp t Γ MR2 :=
@@ -238,17 +238,17 @@ Instance option_monad : Monad option :=
 Equations step_eval_context {t1 t2 MR1 MR2} b (r : bredex t2 MR2 + call t2 MR2) (E : eval_context t1 MR1 r b) :
   option (comp t1 [] MR1) :=
   step_eval_context _ (inl br) E := ret (subst_eval_context E (step_bredex br));
-  step_eval_context _ (inr ca) (ev_mfix true xR bodies E) := 
+  step_eval_context _ (inr ca) (ev_mfix true R bodies E) := 
     let '( (callv yR x v) && E' ) := normalize_eval_context ca E in
     ret (
-        match (var_eq_neq _ _ _ xR yR) with
+        match (var_eq_neq _ _ (R :: MR1) VarZ yR) with
         | inl Heq =>
-            let fx := nth_body bodies (var_eq_elim xR yR Heq x) in
+            let fx := nth_body bodies (var_eq_elim VarZ yR Heq x) in
             let c := subst_comp_cons fx v in
-            comp_mfix xR bodies (subst_eval_context E' c )
+            comp_mfix R bodies (subst_eval_context E' c )
         | inr Hneq =>
-            let yR' := remove_var _ _ _ xR yR Hneq in
-            push_eval_context (inr (callv yR x v)) E' (comp_mfix_map xR bodies)
+            let yR' := remove_var _ _ _ VarZ yR Hneq in
+            push_eval_context (inr (callv yR x v)) E' (comp_mfix_map bodies)
                               (comp_call yR' x v) 
         end
       );

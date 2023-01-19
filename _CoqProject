@@ -1,8 +1,12 @@
 -R . EnTree
 
+theories/Basics/Tactics.v
 theories/Basics/HeterogeneousRelations.v
 theories/Core/EnTreeDefinition.v
 theories/Core/SubEvent.v
+
+theories/Interp/Recursion.v
+
 theories/Eq/Eqit.v
 theories/Eq/Rutt.v
 theories/Eq/RuttFacts.v

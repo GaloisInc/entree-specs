@@ -16,11 +16,13 @@ From ExtLib Require Import
      Structures.Monad.
 
 From EnTree Require Import
+     Basics.Tactics
      Basics.HeterogeneousRelations
      Core.EnTreeDefinition
      Core.SubEvent
      Eq.Eqit
      Eq.Rutt
+     Interp.Recursion
 .
 
 Local Open Scope entree_scope.
@@ -57,7 +59,6 @@ Proof.
     * apply EqVis. auto. intros b a HAns. cbn in HAns. right.
       specialize (H0 a b HAns). apply CIH. now pclearbot.
 Qed.
-
 
 (* Progressive [Proper] instances for [rutt] and congruence with eutt. *)
 
@@ -108,6 +109,10 @@ Qed.
       ==> eq             (* t2 *)
       ==> flip impl) (@rutt E1 E2 enc1 enc2 R1 R2).
 Proof.
+might be useful to augment PostRelEq with coordinating pre relations
+would also be good to sit down and develop a convincing story of 
+what coordinating relations are
+
 *)
 #[global] Instance rutt_Proper_R2 {E1 E2 R1 R2}  `{enc1 : EncodedType E1} 
  `{enc2 : EncodedType E2}:
@@ -233,6 +238,24 @@ Proof.
     rewrite rutt_flip in *. eapply rutt_cong_eutt; eauto.
 Qed.
 
+Lemma rutt_sym {E R} `{enc : EncodedType E} (RPre : Rel E E) (RPost : PostRel E E)
+      (RR : Rel R R) :
+  Symmetric RPre ->
+  SymmetricPostRel RPost ->
+  Symmetric RR ->
+  forall t1 t2,
+    rutt RPre RPost RR t1 t2 ->
+    rutt RPre RPost RR t2 t1.
+Proof.
+  intros Hsym1 Hsym2 Hsym3 t1 t2 Ht12.
+  apply rutt_flip. rewrite <- symmetric_postrel; auto.
+  assert (H1 : eq_rel (flip RPre) RPre ). unfold flip.
+  split; repeat intro; eauto.
+  assert (H2 : eq_rel (flip RR) RR ). unfold flip.
+  split; repeat intro; eauto.
+  rewrite H1, H2. auto.
+Qed.
+
 (* Bind closure and bind lemmas. *)
 Ltac auto_ctrans :=
   intros; repeat (match goal with [H: rcompose _ _ _ _ |- _] => destruct H end); subst; eauto.
@@ -293,3 +316,240 @@ Proof.
   eapply gpaco2_uclo; [|eapply rutt_clo_bind|]; eauto with paco.
   econstructor; eauto. intros; subst. gfinal. right. apply H2. eauto.
 Qed.
+
+Section InterpMrecConstructors.
+Context (D E : Type) `{encd : EncodedType D} `{ence : EncodedType E}.
+Context (body : forall d : D, entree (D + E) (encodes d)).
+
+Lemma interp_mrec_ret (R : Type) (r : R) : interp_mrec body (Ret r) ≅ Ret r.
+Proof. pstep. constructor. auto. Qed.
+
+Lemma interp_mrec_tau (R : Type) (t : entree (D + E) R) : interp_mrec body (Tau t) ≅ Tau (interp_mrec body t).
+Proof. pstep. red. cbn. constructor. left. apply Reflexive_eqit. auto. Qed.
+
+Lemma interp_mrec_vis_inl (R : Type) (d : D) (k : encodes d -> entree (D + E) (encodes d)) :
+  interp_mrec body (Vis (inl d) k) ≅ Tau (interp_mrec body (bind (body d) k)).
+Proof.
+  pstep. red. cbn.
+  constructor. left. apply Reflexive_eqit. auto.
+Qed.
+
+Lemma interp_mrec_vis_inr (R : Type) (e : E) (k : encodes e -> entree (D + E) (encodes e)) :
+  interp_mrec body (Vis (inr e) k) ≅ Vis e (fun x => interp_mrec body (k x)).
+Proof.
+  pstep. red. cbn. constructor. left. apply Reflexive_eqit. auto.
+Qed.
+
+End InterpMrecConstructors.
+
+Section InterpMrecProper.
+Context (D E : Type) `{encd : EncodedType D} `{ence : EncodedType E}.
+Context (bodies1 bodies2 : forall d : D, entree (D + E) (encodes d)).
+Context (b1 b2 : bool).
+Context (Hbodies : forall d, eqit eq b1 b2 (bodies1 d) (bodies2 d)).
+
+Theorem interp_mrec_proper (R : Type) : forall (t1 t2 : entree (D + E) R),
+    eqit eq b1 b2 t1 t2 -> eqit eq b1 b2 (interp_mrec bodies1 t1) (interp_mrec bodies2 t2).
+Proof.
+  ginit. gcofix CIH. intros.
+  punfold H0. red in H0. unfold interp_mrec.
+  genobs t1 ot1. genobs t2 ot2.
+  hinduction H0 before r; intros.
+  - setoid_rewrite interp_mrec_ret. gstep. constructor. auto.
+  - setoid_rewrite interp_mrec_tau. gstep. constructor. gfinal. pclearbot. eauto.
+  - destruct e.
+    + gstep. red. cbn. constructor. 
+      gfinal. left. eapply CIH. pclearbot. eapply eqit_bind; eauto. intros. subst. apply REL.
+    + gstep. red. cbn. constructor. gfinal. pclearbot. left. eapply CIH. apply REL.
+  - setoid_rewrite interp_mrec_tau. inversion CHECK.
+    rewrite tau_euttge. subst. eauto.
+  - setoid_rewrite interp_mrec_tau. inversion CHECK.
+    subst. rewrite tau_euttge. eauto.
+Qed.
+
+
+End InterpMrecProper.
+
+Definition ptwise {A : Type} {B : A -> Type} : (forall (a : A), relation (B a)) -> relation (forall (a : A), B a) :=
+  fun R (f g : forall a, B a) => forall a, (R a (f a) (g a) ).
+
+#[global] Instance interp_mtree_proper_inst R D E `{EncodedType D} `{EncodedType E} (b1 b2 : bool) 
+ (bodies : forall d : D, entree (D + E) (encodes d) ) :
+  Proper (ptwise (fun i => eqit (@eq (encodes i)) b1 b2 ) ==> eqit eq b1 b2 ==> eqit (@eq R) b1 b2 ) interp_mrec.
+Proof.
+  repeat intro. eapply interp_mrec_proper; eauto.
+Qed.
+
+Section RuttMrec.
+Context (D1 D2 E1 E2 : Type).
+Context `{encd1 : EncodedType D1} `{encd2 : EncodedType D2} `{ence1 : EncodedType E1} `{ence2 : EncodedType E2}.
+Context (RPreInv : Rel D1 D2) (RPre : Rel E1 E2).
+Context (RPostInv : PostRel D1 D2) (RPost : PostRel E1 E2).
+
+Context (bodies1 : forall d1 : D1, entree (D1 + E1) (encodes d1)).
+Context (bodies2 : forall d2 : D2, entree (D2 + E2) (encodes d2)).
+
+Context (Hbodies : forall d1 d2, RPreInv d1 d2 -> 
+                            rutt (sum_rel RPreInv RPre) (SumPostRel RPostInv RPost) (RPostInv d1 d2) (bodies1 d1) (bodies2 d2)).
+
+Theorem rutt_interp_mtree R1 R2 RR : forall (t1 : entree (D1 + E1) R1) (t2 : entree (D2 + E2) R2),
+    rutt (sum_rel RPreInv RPre) (SumPostRel RPostInv RPost) RR t1 t2 ->
+    rutt RPre RPost RR (interp_mrec bodies1 t1) (interp_mrec bodies2 t2).
+Proof.
+  ginit. gcofix CIH. intros t1 t2 Ht12.
+  punfold Ht12. red in Ht12. unfold interp_mrec. genobs t1 ot1. genobs t2 ot2.
+  hinduction Ht12 before r; intros.
+  - gstep. constructor. auto.
+  - apply simpobs in Heqot1, Heqot2. setoid_rewrite interp_mrec_tau.
+    gstep. constructor. pclearbot. gfinal. eauto.
+  - inversion H; subst.
+    + gstep. red. cbn. constructor. gfinal. left. eapply CIH. 
+      eapply rutt_bind; eauto. intros.
+      assert (SumPostRel RPostInv RPost (inl a1) (inl a2) r1 r2). constructor. auto.
+      eapply H0 in H3. pclearbot. auto.
+    + gstep. red. cbn. constructor. auto. intros.
+      assert (SumPostRel RPostInv RPost (inr b1) (inr b2) a b). constructor. auto.
+      eapply H0 in H3. pclearbot. gfinal. eauto.
+  - setoid_rewrite interp_mrec_tau. rewrite tau_euttge. eauto.
+  - setoid_rewrite interp_mrec_tau. rewrite tau_euttge. eauto.
+Qed.
+
+End RuttMrec.
+
+
+Section RuttTrans.
+Context (E1 E2 E3 : Type) `{enc1 : EncodedType E1} `{enc2 : EncodedType E2} `{enc3 : EncodedType E3}.
+Context (R1 R2 R3 : Type).
+Context (RPre1 : Rel E1 E2) (RPre2 : Rel E2 E3).
+Context (RPost1 : PostRel E1 E2) (RPost2 : PostRel E2 E3).
+Context (RR1 : Rel R1 R2) (RR2 : Rel R2 R3).
+
+Theorem rutt_trans : forall t1 t2 t3,
+    rutt RPre1 RPost1 RR1 t1 t2 ->
+    rutt RPre2 RPost2 RR2 t2 t3 ->
+    rutt (rcompose RPre1 RPre2) (RComposePostRel RPre1 RPre2 RPost1 RPost2) (rcompose RR1 RR2) t1 t3.
+Proof.
+  ginit. gcofix CIH. intros t1 t2 t3 Ht12 Ht23.
+  punfold Ht12. red in Ht12. setoid_rewrite entree_eta.
+  setoid_rewrite entree_eta in Ht23.
+  hinduction Ht12 before r; intros.
+  - punfold Ht23. red in Ht23. cbn in Ht23.
+    remember (RetF r2) as x. hinduction Ht23 before r; intros; try inv Heqx; subst.
+    + gstep. constructor. econstructor. split; eauto.
+    + rewrite tau_euttge. rewrite (entree_eta t2). eauto.
+  - pclearbot. rewrite tau_euttge in Ht23.
+    punfold H. red in H. punfold Ht23. red in Ht23.
+    cbn in Ht23. genobs m1 om1.
+    genobs t3 ot3.
+    hinduction Ht23 before r; intros.
+    + rewrite tau_euttge. rewrite entree_eta. subst.
+      remember (RetF r1) as x. hinduction H0 before r; intros; inv Heqx; subst.
+      * gstep. constructor. econstructor; eauto.
+      * rewrite tau_euttge. rewrite entree_eta. eauto.
+    + gstep. constructor. pclearbot. fold_ruttF H0.
+      rewrite tau_euttge in H0. gfinal. eauto.
+    + rewrite tau_euttge. subst. rewrite entree_eta.
+      clear Heqot3. remember (VisF e1 k1) as x.
+      hinduction H1 before r; intros; inv Heqx; inj_existT; subst.
+      * gstep. constructor. econstructor; eauto.
+        intros. inv H3. inj_existT. subst.
+        specialize (H8 e0 H H1) as [c [Hc1 Hc2] ].
+        apply H0 in Hc1. apply H2 in Hc2. pclearbot.
+        gfinal. eauto.
+      * rewrite tau_euttge. rewrite entree_eta. eauto.
+    + eapply IHHt23; eauto. fold_ruttF H. rewrite tau_euttge in H.
+      subst. pstep_reverse.
+    + rewrite tau_euttge with (t := t2). rewrite entree_eta with (t := t2).
+      eauto.
+  - punfold Ht23. red in Ht23. cbn in Ht23.
+    remember (VisF e2 k2) as x. 
+    hinduction Ht23 before r; intros; inv Heqx; inj_existT; subst.
+    + gstep. constructor. econstructor; eauto.
+      intros. inv H3; inj_existT; subst.
+      specialize (H8 e3 H1 H) as [d [Hd1 Hd2]].
+      gfinal. left. eapply CIH.
+      apply H2 in Hd1. pclearbot. eapply Hd1.
+      eapply H0 in Hd2. pclearbot. eapply Hd2.
+    + rewrite tau_euttge. rewrite (entree_eta t2). eauto.
+  - rewrite tau_euttge. rewrite (entree_eta t0). eauto.
+  - rewrite tau_euttge in Ht23. rewrite (entree_eta t0) in Ht23. eauto.
+Qed.
+
+End RuttTrans.
+
+Theorem rutt_mon E1 E2 `{EncodedType E1} `{EncodedType E2} R1 R2
+        (RPre1 RPre2 : Rel E1 E2) (RPost1 RPost2 : PostRel E1 E2)
+        (RR1 RR2 : Rel R1 R2) :
+  (forall e1 e2, RPre1 e1 e2 -> RPre2 e1 e2) ->
+  (forall e1 e2 a b, RPost2 e1 e2 a b -> RPost1 e1 e2 a b) ->
+  (forall r1 r2, RR1 r1 r2 -> RR2 r1 r2) ->
+  forall t1 t2,
+    rutt RPre1 RPost1 RR1 t1 t2 ->
+    rutt RPre2 RPost2 RR2 t1 t2.
+Proof.
+  intros HPre HPost HRR. pcofix CIH.
+  intros. punfold H2. red in H2. pstep. red.
+  hinduction H2 before r; intros; pclearbot; constructor; eauto.
+  intros.
+  assert (RPost1 e1 e2 a b). auto. apply H2 in H4.
+  pclearbot. auto.
+Qed.
+
+Theorem rutt_trans' E `{EncodedType E} R (RPre : Rel E E) (RPost : PostRel E E)
+        (RR : Rel R R) :
+  Transitive RPre ->
+  TransitivePostRel RPre RPost ->
+  Transitive RR ->
+  forall t1 t2 t3,
+    rutt RPre RPost RR t1 t2 ->
+    rutt RPre RPost RR t2 t3 ->
+    rutt RPre RPost RR t1 t3.
+Proof.
+  intros Htranspre Htranspost Htransr t1 t2 t3 Ht12 Ht23.
+  assert (Ht13 :rutt (rcompose RPre RPre) (RComposePostRel RPre RPre RPost RPost) (rcompose RR RR) t1 t3).
+  eapply rutt_trans; eauto.
+  eapply rutt_mon; try apply Ht13; try (apply trans_rcompose; auto).
+  intros. apply transitive_rcompose_postrel; auto.
+Qed.
+
+Section RuttProper.
+Context (E : Type) `{enc : EncodedType E}.
+Context (R : Type).
+Context (RPre : Rel E E) (RPost : PostRel E E) (RR : Rel R R).
+(* remember we are working with a partial equivalence relaation *)
+Context (HPresym : Symmetric RPre) (HRsym : Symmetric RR).
+Context (HPostsym : SymmetricPostRel RPost).
+Context (HPretrans : Transitive RPre) (HRtrans : Transitive RR).
+Context (HPosttrans : TransitivePostRel RPre RPost).
+
+Theorem rutt_proper : Proper (rutt RPre RPost RR ==> rutt RPre RPost RR ==> flip impl) (rutt RPre RPost RR).
+Proof.
+  intros t1 t2 Ht12 t3 t4 Ht34 Ht24. 
+  assert (Ht14 : rutt RPre RPost RR t1 t4).
+  { 
+    eapply rutt_trans'; eauto.
+  }
+  clear Ht24 Ht12.
+  assert (Ht43 : rutt RPre RPost RR t4 t3).
+  { apply rutt_sym; auto. }
+  eapply rutt_trans'; eauto.
+Qed.
+
+
+End RuttProper.
+
+(* write some general rewriting principles that can apply to types equiv 
+
+RPre RPost RR
+
+Transitive RPre
+
+PostTransitive RPost
+
+Transitive RR
+
+
+Proper (rutt RPre RPost RR ==> rutt RPre RPost RR ==> flip impl) (rutt RPre RPost RR)
+
+
+*)

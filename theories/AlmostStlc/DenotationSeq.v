@@ -3,6 +3,7 @@ Require Export HeterogeneousRelations.
 Require Export EnTreeDefinition.
 Require Export Denotation.
 Require Export SyntaxSeq.
+Require Export Recursion.
 From Coq Require Import Lists.List Logic.JMeq.
 
 From Equations Require Import Equations Signature.
@@ -44,9 +45,8 @@ Equations denote_comp {t Γ MR} (c : comp t Γ MR) (hyps : denote_ctx Γ) :
       mapE lift_handler (denote_comp c hyps);
     denote_comp (comp_perm Hperm c) hyps :=
       map_perm _ _ (perm_denote Hperm) (denote_comp c hyps);
-    denote_comp (comp_mfix xR bodies c) hyps := 
-    mapE (remove_denote xR) 
-         (interp_mtree _ _ _ (denote_var xR) (denote_bodies bodies hyps) (denote_comp c hyps));
+    denote_comp (comp_mfix R bodies c) hyps := 
+      interp_mrec (denote_bodies bodies hyps) (denote_comp c hyps);
   }
 where denote_value {t Γ MR} (v : value t Γ) (hyps : denote_ctx Γ) : 
   mtree (denote_mfix_ctx MR) (denote_type t) := {
@@ -64,9 +64,9 @@ where denote_value {t Γ MR} (v : value t Γ) (hyps : denote_ctx Γ) :
       ret (fun x => denote_comp cbody (x,hyps));
     denote_value (val_var x) hyps := ret (index_ctx x hyps);
 }
-where denote_bodies {Γ MR R} (bodies : mfix_bodies Γ MR R) 
-                    (hyps : denote_ctx Γ) (arg : denote_call_frame R)  : 
-  mtree (denote_mfix_ctx MR) (encodes arg) := {
+where denote_bodies {Γ MR R1 R2} (bodies : mfix_bodies Γ (R1 :: MR) R2) 
+                    (hyps : denote_ctx Γ) (arg : denote_call_frame R2)  : 
+  mtree (denote_mfix_ctx (R1 :: MR)) (encodes arg) := {
   denote_bodies (mfix_bodies_cons body _) hyps (inl arg) :=
     denote_comp body (arg, hyps);
   denote_bodies (mfix_bodies_cons _ bodies) hyps (inr arg) :=

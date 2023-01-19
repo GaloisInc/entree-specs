@@ -17,10 +17,10 @@ Inductive covered_in {t2 MR2} (ca : call_syn t2 MR2)
   : forall t1 MR1 (b : bool) 
           (E : eval_context t1 MR1 (inr ca) b),  Prop :=
   (* need three base cases, one for each handler style context *)
-  | covered_in_mfix_base t MR1 R (xR : var R MR1) 
-                    (bodies : mfix_bodies nil MR1 R)
-                    (E : eval_context t MR1 (inr ca) true) : 
-    covered_in ca t _ _ (ev_mfix true xR bodies E)
+  | covered_in_mfix_base t MR1 R
+                    (bodies : mfix_bodies nil (R :: MR1) R)
+                    (E : eval_context t (R :: MR1) (inr ca) true) : 
+    covered_in ca t _ _ (ev_mfix true R bodies E)
 
   | covered_in_perm_base t MR1 MR2 (Hperm : perm MR1 MR2)
                     (E : eval_context t MR1 (inr ca) true) :
@@ -32,11 +32,11 @@ Inductive covered_in {t2 MR2} (ca : call_syn t2 MR2)
                    (c : comp t2 (t1 :: nil) MR1) : 
     covered_in ca t1 MR1 b E ->
     covered_in ca t2 MR1 b (ev_let E c)
-  | covered_in_mfix t MR1 R (xR : var R MR1) 
-                    (bodies : mfix_bodies nil MR1 R)
-                    (E : eval_context t MR1 (inr ca) false) : 
-    covered_in ca t MR1 false E ->
-    covered_in ca t _ false (ev_mfix false xR bodies E)
+  | covered_in_mfix t MR1 R
+                    (bodies : mfix_bodies nil (R :: MR1) R)
+                    (E : eval_context t (R :: MR1) (inr ca) false) : 
+    covered_in ca t (R :: MR1) false E ->
+    covered_in ca t _ false (ev_mfix false R bodies E)
 
   | covered_in_perm t MR1 MR2 (Hperm : perm MR1 MR2)
                     (E : eval_context t MR1 (inr ca) false) :

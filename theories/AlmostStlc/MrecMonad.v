@@ -212,7 +212,6 @@ Definition mapE {D1 D2 R} `{EncodedType D1} `{EncodedType D2} (h : handler D1 D2
            (t : entree D1 R) : entree D2 R :=
   mapE' h (observe t).
 
-(* another function that builds very slowly *)
 Equations perm_handler (MR1 MR2 : mrec_ctx) (Hperm : perm MR1 MR2)
           (d : denote_mrec_ctx MR1) : {d' : denote_mrec_ctx MR2 & encodes d' -> encodes d} :=
   perm_handler nil nil perm_nil v := match v : void with end;

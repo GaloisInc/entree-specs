@@ -78,7 +78,6 @@ CoFixpoint spin {E R} `{EncodedType E} : entree E R := Tau spin.
 
 (* are there multiple definitions of trigger ? *)
 
-
 End EnTree.
 
 Module EnTreeNotations.
@@ -115,6 +114,9 @@ End EnTreeNotations.
 
 #[global] Instance MonadIter_entree {E} `{EncodedType E} : MonadIter (entree E) :=
   fun _ _ => EnTree.iter.
+
+
+
 
 (* Import ITree basics*)
 

@@ -2,7 +2,7 @@ Require Import ExtLib.Structures.Functor.
 Require Import ExtLib.Structures.Applicative.
 Require Import ExtLib.Structures.Monad.
 Require Import Program.Tactics.
-
+Require Export Basics.Tactics.
 From Coq Require Import
   Program
   Setoid
@@ -54,3 +54,32 @@ Qed.
 
 Definition FlipPostRel {E1 E2} `{EncodedType E1} `{EncodedType E2} : PostRel E1 E2 -> PostRel E2 E1 :=
   fun RPost e2 e1 b a => RPost e1 e2 a b.
+
+Definition SymmetricPostRel {E} `{EncodedType E} (RPost : PostRel E E) : Prop :=
+  forall e1 e2 a b, RPost e1 e2 a b -> RPost e2 e1 b a.
+
+Theorem symmetric_postrel E `{enc : EncodedType E} (RPost : PostRel E E) :
+  SymmetricPostRel RPost ->
+  PostRelEq RPost (FlipPostRel RPost).
+Proof.
+  intros Hsym. split; intros.
+  - red. auto.
+  - apply Hsym. auto.
+Qed.
+
+(* need to think carefully about this definition *)
+Definition TransitivePostRel {E : Type} `{enc : EncodedType E} (RPre : Rel E E) (RPost : PostRel E E) 
+  : Prop :=
+  forall (e1 e3 : E) (a : encodes e1) (c : encodes e3),
+    (forall e2, RPre e1 e2 -> RPre e2 e3 -> exists b, RPost e1 e2 a b /\ RPost e2 e3 b c) <-> RPost e1 e3 a c.
+
+Theorem transitive_rcompose_postrel E `{enc : EncodedType E} (RPre : Rel E E) (RPost : PostRel E E) :
+  TransitivePostRel RPre RPost ->
+  PostRelEq RPost (RComposePostRel RPre RPre RPost RPost).
+Proof.
+  intro H. red in H. intros e1 e3 a c.
+  split.
+  - intros Hac. econstructor. eapply H. auto.
+  - intros. inversion H0. inj_existT. subst.
+    eapply H. eauto.
+Qed.

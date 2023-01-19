@@ -20,6 +20,8 @@ From EnTree Require Import
      Core.EnTreeDefinition
      Core.SubEvent
      Eq.Eqit
+     Eq.Rutt
+     Eq.RuttFacts
 .
 
 Require Import ExtLib.Structures.Functor.
@@ -154,3 +156,51 @@ Proof.
 Qed.
 
 End mapE_bind.
+
+
+Section mapE_rutt.
+Context (D1 D2 : Type) `{EncodedType D1} `{EncodedType D2}.
+Context (E1 E2 : Type) `{EncodedType E1} `{EncodedType E2}.
+(* maybe can further generalize *)
+(* this validiity condition*)
+Context (h1 : handler D1 D2) (Hvalid1 : valid_handler h1).
+Context (h2 : handler E1 E2) (Hvalid2 : valid_handler h2).
+Definition map_rel (R : Rel D2 E2) :  Rel D1 E1 := 
+  fun d e => R (projT1 (h1 d)) (projT1 (h2 e)).
+
+Definition map_post_rel (R : PostRel D2 E2) : PostRel D1 E1 :=
+  fun d e a b =>
+    let '(d' && f1) := h1 d in
+    let '(e' && f2) := h2 e in
+    exists a' b', 
+      f1 a' = a /\
+      f2 b' = b /\
+    R d' e' a' b'.
+
+(* first try to do this then try to generalize *)
+Theorem mapE_rutt R1 R2 RR RPre RPost: forall (t1 : entree D1 R1) (t2 : entree E1 R2),
+    rutt (map_rel RPre) (map_post_rel RPost) RR t1 t2 ->
+    rutt RPre RPost RR (mapE h1 t1) (mapE h2 t2).
+Proof.
+  ginit. gcofix CIH. intros. unfold mapE.
+  punfold H4. red in H4. genobs t1 ot1. genobs t2 ot2.
+  hinduction H4 before r; intros.
+  - gstep. constructor. auto.
+  - gstep. red. cbn. constructor. pclearbot. gfinal. eauto.
+  - setoid_rewrite mapE_vis.
+    destruct (h1 e1) as [d f1] eqn : Heq1.
+    destruct (h2 e2) as [e f2] eqn : Heq2.
+    gstep. constructor.
+    + red in H3. rewrite Heq1 in H3. rewrite Heq2 in H3. auto.
+    + intros. pclearbot.
+      enough (map_post_rel RPost e1 e2 (f1 a) (f2 b)).
+      eapply H4 in H6. pclearbot. gfinal. eauto.
+      red. rewrite Heq1, Heq2.
+      exists a. exists b. tauto.
+  - setoid_rewrite mapE_tau. rewrite tau_euttge. eauto.
+  - setoid_rewrite mapE_tau. rewrite tau_euttge. eauto.
+Qed.
+
+End mapE_rutt.
+Arguments map_rel {_ _ _ _ _ _ _ _}.
+Arguments map_post_rel {_ _ _ _ _ _ _ _}.
