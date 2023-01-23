@@ -2303,6 +2303,91 @@ Ltac wf_pre_post_IntroArg_unfold A :=
 
 Open Scope nat_scope.
 
+Polymorphic Lemma elim_eq_pair A B (a a' : A) (b b' : B) :
+  (a,b) = (a',b') -> a = a' /\ b = b'.
+Proof.
+  intro e. injection e. intros; split; trivial.
+Qed.
+
+Ltac elim_IntroArg_var n x :=
+  let tp := type of x in
+  lazymatch tp with
+  | (@eq bool _ _) => rewrite x in *
+  (* | (fun _ => _) _ => simple apply IntroArg_beta *)
+  | prod _ _ =>
+      let y := argName n in let z := argName n in
+      destruct x as [y z]; elim_IntroArg_var n y; elim_IntroArg_var n z
+  (*
+  | sigT _ => simple apply IntroArg_sigT
+  | unit => simple apply IntroArg_unit
+  | _ /\ _ => simple apply IntroArg_and
+  | True => simple apply IntroArg_true
+  | False => simple apply IntroArg_false
+   *)
+  | @eq (prod _ _) _ _  =>
+      let y := argName n in let z := argName n in
+      destruct (elim_eq_pair _ _ _ _ x) as [y z];
+      elim_IntroArg_var n y; elim_IntroArg_var n z
+  (*
+  | eq_rect _ _ _ _ _ = _ => simple apply IntroArg_eq_rect_const_l
+  | eq_dep1 _ _ _ _ _ _ => simple apply IntroArg_eq_dep1_const
+  | @pushPreRel _ _ _ _ _ _ _ _ (inl _) (inl _) =>
+    simple apply IntroArg_pushPreRel_inl
+  | @pushPreRel _ _ _ _ _ _ _ _ (inr _) (inr _) =>
+    simple apply IntroArg_pushPreRel_inr
+  | @pushPostRel _ _ _ _ _ _ _ _ (inl _) (inl _) _ _ =>
+    simple apply IntroArg_pushPostRel_inl
+  | @pushPostRel _ _ _ _ _ _ _ _ (inr _) (inr _) _ _ =>
+    simple apply IntroArg_pushPostRel_inr
+  | @pushTSPreRel _ _ _ _ _ _ _ _ _ _ (inl _) (inl _) =>
+    simple apply IntroArg_pushTSPreRel_inl
+  | @pushTSPreRel _ _ _ _ _ _ _ _ _ _ (inr _) (inr _) =>
+    simple apply IntroArg_pushTSPreRel_inr
+  | @pushTSPostRel _ _ _ _ _ _ _ _ _ _ (inl _) (inl _) _ _ =>
+    simple apply IntroArg_pushTSPostRel_inl
+  | @pushTSPostRel _ _ _ _ _ _ _ _ _ _ (inr _) (inr _) _ _ =>
+    simple apply IntroArg_pushTSPostRel_inr
+  | @pushTSRR _ _ _ _ _ _ _ _ _ =>
+    simple apply IntroArg_pushTSRR
+  | eqPostRel _ _ _ _ _ _ => apply IntroArg_eqPostRel
+  | true  = true  => IntroArg_intro_dependent_destruction n
+  | false = false => IntroArg_intro_dependent_destruction n
+  | true  = false => IntroArg_intro_dependent_destruction n
+  | false = true  => IntroArg_intro_dependent_destruction n
+    *)
+  | (?x = ?y) => try first [ is_var x; subst x | is_var y; subst y ]
+  | (encodes _) => progress encodes_unfold_in x; elim_IntroArg_var n x
+  | (FrameCallRet ?frame ?args) =>
+      let args' := eval hnf in args in
+      let A' := eval unfold FrameCallRet in (FrameCallRet frame args') in
+      progress change A' in x; elim_IntroArg_var n x
+  | (LRTOutput ?lrt ?args) =>
+      let lrt_norm := eval hnf in lrt in
+      let args_norm := eval hnf in args in
+      lazymatch lrt_norm with
+      | LRT_Fun _ ?lrt =>
+          lazymatch args_norm with
+          | (existT _ ?a ?args) =>
+              change (lrt a) in x; elim_IntroArg_var n x
+          end
+      | (LRTOutput (LRT_Ret ?R) _) =>
+          change R in x; elim_IntroArg_var n x
+      end
+  | (postOf ?H ?call1 ?call2 ?r1 ?r2) =>
+      let H' := eval unfold H, from_user in H in
+      let call1' := eval hnf in call1 in
+      let call2' := eval hnf in call2 in
+      let A' := wf_pre_post_IntroArg_unfold (postOf H' call1' call2' r1 r2) in
+      progress change A' in x; elim_IntroArg_var n x
+  | _ => idtac
+  end.
+
+
+#[global] Hint Extern 99 (IntroArg ?n ?A ?g) =>
+  let x := argName n in
+  intro x; elim_IntroArg_var n x : refines.
+
+
 Lemma test_ifs E x :
   @spec_refines E E nil nil eqPreRel eqPostRel nat nat eq
                   (if 0 <=? x then if x <? 256 then RetS 1 else RetS 0 else RetS 0)
@@ -2319,6 +2404,7 @@ Proof.
   prove_refinement.
 Qed.
 
+Set Typeclasses Debug.
 Lemma test_spins E (x : nat) :
   @spec_refines E E nil nil eqPreRel eqPostRel nat nat eq
                   (MultiFixS E nil (unary1Frame nat nat)
