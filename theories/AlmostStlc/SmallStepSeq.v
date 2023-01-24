@@ -41,8 +41,8 @@ where val_map {t : vtype} {Γ1 Γ2} (v : value t Γ1)
     val_map (val_abs cbody) f := val_abs (comp_map cbody (var_map_skip f));
     val_map (val_var x) f := val_var (f _ x);
  }
-where bodies_map {Γ1 Γ2} {MR R} (bodies : mfix_bodies Γ1 MR R)
-                 (f : forall t', var t' Γ1 -> var t' Γ2) : mfix_bodies Γ2 MR R := {
+where bodies_map {Γ1 Γ2} {MR R R'} (bodies : mfix_bodies Γ1 MR R R')
+                 (f : forall t', var t' Γ1 -> var t' Γ2) : mfix_bodies Γ2 MR R R' := {
     bodies_map mfix_bodies_nil f := mfix_bodies_nil;
     bodies_map (mfix_bodies_cons body bodies) f := mfix_bodies_cons (comp_map body (var_map_skip f)) (bodies_map bodies f);
 }
@@ -63,12 +63,12 @@ Definition weaken_l_value {t Γ2} Γ1 (v : value t Γ2) : value t (Γ1 ++ Γ2) :
 Definition weaken_l_value_single {t1 Γ2 t} (v : value t Γ2) : value t (t1 :: Γ2) :=
   weaken_l_value [t1] v.
 
-Definition weaken_l_bodies {R MR G1 G2} (bodies : mfix_bodies G2 MR R) : mfix_bodies (G1 ++ G2) MR R :=
+Definition weaken_l_bodies {R MR G1 G2} (bodies : mfix_bodies G2 MR R R) : mfix_bodies (G1 ++ G2) MR R R :=
   bodies_map bodies (fun t' e' => weaken_var_l _ _ t' e').
 
-Definition weaken_l_bodies_single {R MR G t} (bodies : mfix_bodies G MR R) : mfix_bodies (t :: G) MR R:=
+Definition weaken_l_bodies_single {R MR G t} (bodies : mfix_bodies G MR R R) : mfix_bodies (t :: G) MR R R:=
   @weaken_l_bodies _ _ [t] G bodies.
-Definition weaken_r_bodies {R MR G1 G2} (bodies : mfix_bodies G1 MR R) : mfix_bodies (G1 ++ G2) MR R :=
+Definition weaken_r_bodies {R MR G1 G2} (bodies : mfix_bodies G1 MR R R) : mfix_bodies (G1 ++ G2) MR R R :=
   bodies_map bodies (fun t' c' => weaken_var_r _ _ t' c').
 Definition weaken_r_comp MR G1 G2 t (e : comp t G1 MR ) : comp t (G1 ++ G2) MR
   := comp_map e (fun t' e' => weaken_var_r _ _ t' e').
@@ -112,8 +112,8 @@ where subst_value {t u Γ1 Γ2} (v1 : value u (Γ1 ++ [t] ++ Γ2) ) (v : value t
     subst_value (val_abs cbody) v := val_abs (subst_comp (_ ::_) (cbody) v);
     subst_value (val_var x) v := subst_var _ _ v x;
 }
-where subst_bodies {t R Γ1 Γ2 MR} (bodies : mfix_bodies (Γ1 ++ [t] ++ Γ2) MR R) (v : value t Γ2) :
-  mfix_bodies (Γ1 ++ Γ2) MR R := {
+where subst_bodies {t R R' Γ1 Γ2 MR} (bodies : mfix_bodies (Γ1 ++ [t] ++ Γ2) MR R R') (v : value t Γ2) :
+  mfix_bodies (Γ1 ++ Γ2) MR R R' := {
     subst_bodies mfix_bodies_nil _ := mfix_bodies_nil;
     subst_bodies (mfix_bodies_cons body bodies) v := 
       mfix_bodies_cons (subst_comp (_ :: _) body v) (subst_bodies bodies v);
@@ -132,7 +132,7 @@ Inductive bredex : vtype -> mfix_ctx -> Type :=
     bredex t2 MR
   | bredex_split t1 t2 t3 MR (vp : closed_value (Pair t1 t2)) (cs : comp t3 [t1; t2] MR) : 
     bredex t3 MR
-  | bredex_mfix t MR R (bodies : mfix_bodies [] (R :: MR) R) (v : closed_value t) : 
+  | bredex_mfix t MR R (bodies : mfix_bodies [] MR R R) (v : closed_value t) : 
     bredex t MR
   | bredex_perm t MR1 MR2 (Hperm : perm MR1 MR2) (v : closed_value t) :
     bredex t MR2
@@ -157,7 +157,7 @@ Inductive eval_context : vtype -> mfix_ctx -> forall t MR, bredex t MR + call t 
   | ev_let b t1 t2 t3 MR1 MR2 (r : bredex t3 MR2 + call t3 MR2) (E : eval_context t1 MR1 _ _ r b) (c : comp t2 [t1] MR1) : 
     eval_context t2 MR1 _ _ r b
   | ev_mfix b t1 t2 R MR1 MR2 (r : bredex t2 MR2 + call t2 MR2) 
-            (bodies : mfix_bodies [] (R :: MR1) R)
+            (bodies : mfix_bodies [] MR1 R R)
             (E : eval_context t1 (R :: MR1) _ _ r b) :
     eval_context t1 MR1 _ _ r false
   | ev_perm b t1 t2 MR1 MR2 MR3 (r : bredex t2 MR3 + call t2 MR3)
@@ -217,7 +217,7 @@ Equations push_eval_context {t1 t2 MR1 MR2} (r : bredex t2 MR1 + call t2 MR1)
   push_eval_context r ev_hole f c := c;
   push_eval_context r (ev_let E1 c2) f c := comp_let (push_eval_context r E1 f c) (f _ [_] c2).
 
-Definition comp_mfix_map {MR R} (bodies : mfix_bodies [] (R :: MR) R) : forall t Γ, comp t Γ (R :: MR) -> comp t Γ MR :=
+Definition comp_mfix_map {MR R} (bodies : mfix_bodies [] MR R R) : forall t Γ, comp t Γ (R :: MR) -> comp t Γ MR :=
   fun t Γ c => comp_mfix R (weaken_r_bodies bodies) c.
 Definition comp_lift_map {MR1 MR2} : forall t Γ, comp t Γ MR2 -> comp t Γ (MR1 ++ MR2) :=
   fun t Γ c => comp_lift c.

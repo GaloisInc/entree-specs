@@ -64,7 +64,7 @@ where denote_value {t Γ MR} (v : value t Γ) (hyps : denote_ctx Γ) :
       ret (fun x => denote_comp cbody (x,hyps));
     denote_value (val_var x) hyps := ret (index_ctx x hyps);
 }
-where denote_bodies {Γ MR R1 R2} (bodies : mfix_bodies Γ (R1 :: MR) R2) 
+where denote_bodies {Γ MR R1 R2} (bodies : mfix_bodies Γ MR R1 R2) 
                     (hyps : denote_ctx Γ) (arg : denote_call_frame R2)  : 
   mtree (denote_mfix_ctx (R1 :: MR)) (encodes arg) := {
   denote_bodies (mfix_bodies_cons body _) hyps (inl arg) :=

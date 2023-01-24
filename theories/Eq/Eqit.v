@@ -99,6 +99,12 @@ Proof.
   intros. pstep. constructor. auto.
 Qed.
 
+Lemma eqit_Ret_inv {E R1 R2} `{EncodedType E} b1 b2 (RR : R1 -> R2 -> Prop) r1 r2 :
+  eqit RR b1 b2 (Ret r1) (Ret r2) -> RR r1 r2.
+Proof.
+  intros. pinversion H0. subst. auto.
+Qed.
+
 Lemma eqit_Vis {E R1 R2} `{EncodedType E} b1 b2 (RR : R1 -> R2 -> Prop) (e : E) k1 k2 :
   (forall a, eqit RR b1 b2 (k1 a) (k2 a)) -> eqit RR b1 b2 (Vis e k1) (Vis e k2).
 Proof.

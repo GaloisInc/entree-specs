@@ -392,7 +392,7 @@ Context (bodies2 : forall d2 : D2, entree (D2 + E2) (encodes d2)).
 Context (Hbodies : forall d1 d2, RPreInv d1 d2 -> 
                             rutt (sum_rel RPreInv RPre) (SumPostRel RPostInv RPost) (RPostInv d1 d2) (bodies1 d1) (bodies2 d2)).
 
-Theorem rutt_interp_mtree R1 R2 RR : forall (t1 : entree (D1 + E1) R1) (t2 : entree (D2 + E2) R2),
+Theorem interp_mrec_rutt R1 R2 RR : forall (t1 : entree (D1 + E1) R1) (t2 : entree (D2 + E2) R2),
     rutt (sum_rel RPreInv RPre) (SumPostRel RPostInv RPost) RR t1 t2 ->
     rutt RPre RPost RR (interp_mrec bodies1 t1) (interp_mrec bodies2 t2).
 Proof.

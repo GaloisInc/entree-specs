@@ -25,7 +25,7 @@ with comp : vtype -> ctx -> mfix_ctx -> Type :=
     comp t2 Γ MR
   | comp_call t1 t2 Γ MR R (xR : var R MR) (x : var (t1,t2) R) (v : value t1 Γ) : 
     comp t2 Γ MR
-  | comp_mfix t Γ MR R (bodies : mfix_bodies Γ (R :: MR) R) (c : comp t Γ (R :: MR)) :
+  | comp_mfix t Γ MR R (bodies : mfix_bodies Γ MR R R) (c : comp t Γ (R :: MR)) :
     comp t Γ MR
   (*
   | comp_mfix t Γ MR R (xR : var R MR) (bodies : mfix_bodies Γ MR R) (c : comp t Γ MR) : 
@@ -34,12 +34,12 @@ with comp : vtype -> ctx -> mfix_ctx -> Type :=
   | comp_lift t Γ MR1 MR2 (c : comp t Γ MR2) : comp t Γ (MR1 ++ MR2)
   | comp_perm t Γ MR1 MR2 (Hperm : perm MR1 MR2) (e : comp t Γ MR1) :
     comp t Γ MR2
-with mfix_bodies : ctx -> mfix_ctx -> call_frame -> Type := 
-  | mfix_bodies_nil Γ MR : mfix_bodies Γ MR nil
-  | mfix_bodies_cons Γ MR t1 t2 R' (body : comp t2 (t1 :: Γ) MR) (bodies : mfix_bodies Γ MR R') :
-    mfix_bodies Γ MR ((t1,t2) :: R')
+with mfix_bodies : ctx -> mfix_ctx -> call_frame -> call_frame -> Type := 
+  | mfix_bodies_nil Γ MR R : mfix_bodies Γ MR R nil
+  | mfix_bodies_cons Γ MR t1 t2 R R' (body : comp t2 (t1 :: Γ) (R :: MR)) (bodies : mfix_bodies Γ MR R R') :
+    mfix_bodies Γ MR R ((t1,t2) :: R')
 .
-
+(*just rewrote type of mfix_bodies, will need to make many minor changes *)
 Scheme value_mind := Induction for value Sort Prop
   with comp_mind := Induction for comp Sort Prop
   with mfix_bodies_mind := Induction for mfix_bodies Sort Prop.
@@ -61,9 +61,10 @@ Arguments comp_call {_ _ _ _ _}.
 Arguments comp_mfix {_ _ _}.
 Arguments comp_lift {_ _ _ _}.
 Arguments comp_perm {_ _ _ _}.
-Arguments mfix_bodies_nil {_ _}.
-Arguments mfix_bodies_cons {_ _ _ _ _}.
-Equations nth_body {Γ MR R t1 t2} (bodies : mfix_bodies Γ MR R) (x : var (t1, t2) R) : comp t2 (t1 :: Γ) MR :=
+Arguments mfix_bodies_nil {_ _ _}.
+Arguments mfix_bodies_cons {_ _ _ _ _ _}.
+
+Equations nth_body {Γ MR R R' t1 t2} (bodies : mfix_bodies Γ MR R R') (x : var (t1, t2) R') : comp t2 (t1 :: Γ) (R :: MR) :=
   nth_body (mfix_bodies_cons e _) VarZ := e;
   nth_body (mfix_bodies_cons _ bodies) (VarS x) := nth_body bodies x.
 
