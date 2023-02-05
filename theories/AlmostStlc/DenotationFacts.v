@@ -177,6 +177,7 @@ Proof.
     + cbn. auto.
     + specialize (IHxR d). destruct (remove_denote xR d). auto.
 Qed.
+  
 
 (* need to fmap the typecast *)
 Lemma denote_mfix t1 t2 (R : call_frame) (MR : mfix_ctx) (xt : var (t1,t2) R) (xR : var R MR) (v : denote_type t1) f :

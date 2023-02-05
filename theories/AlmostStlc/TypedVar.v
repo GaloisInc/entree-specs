@@ -173,6 +173,15 @@ Arguments perm_refl {_ _ }.
 Arguments perm_skip {_ _ _ _}.
 Arguments perm_var {_ _ _ _}.
 
+Lemma perm_var_trans A (a : A) l1 l2 l3 (x : var a l1) (Hperm1 : perm l1 l2) (Hperm2 : perm l2 l3)
+      : perm_var x (perm_trans Hperm1 Hperm2) =
+          perm_var (perm_var x Hperm1) Hperm2.
+Proof.
+  dependent destruction x.
+  - destruct l3; simp perm_var; auto.
+  - destruct l3; simp perm_var; auto.
+Qed.
+
 Definition weaken_var_r {A} : forall (l1 l2 : list A) (a : A), var a l1 -> var a (l1 ++ l2) := @append_var A.
 
 Equations weaken_var_l {A} (l1 l2 : list A) (a : A) (x : var a l2) : var a (l1 ++ l2) :=

@@ -327,14 +327,14 @@ Proof. pstep. constructor. auto. Qed.
 Lemma interp_mrec_tau (R : Type) (t : entree (D + E) R) : interp_mrec body (Tau t) ≅ Tau (interp_mrec body t).
 Proof. pstep. red. cbn. constructor. left. apply Reflexive_eqit. auto. Qed.
 
-Lemma interp_mrec_vis_inl (R : Type) (d : D) (k : encodes d -> entree (D + E) (encodes d)) :
+Lemma interp_mrec_vis_inl R (d : D) (k : encodes d -> entree (D + E) R) :
   interp_mrec body (Vis (inl d) k) ≅ Tau (interp_mrec body (bind (body d) k)).
 Proof.
   pstep. red. cbn.
   constructor. left. apply Reflexive_eqit. auto.
 Qed.
 
-Lemma interp_mrec_vis_inr (R : Type) (e : E) (k : encodes e -> entree (D + E) (encodes e)) :
+Lemma interp_mrec_vis_inr R (e : E) (k : encodes e -> entree (D + E) R) :
   interp_mrec body (Vis (inr e) k) ≅ Vis e (fun x => interp_mrec body (k x)).
 Proof.
   pstep. red. cbn. constructor. left. apply Reflexive_eqit. auto.
@@ -373,12 +373,51 @@ End InterpMrecProper.
 Definition ptwise {A : Type} {B : A -> Type} : (forall (a : A), relation (B a)) -> relation (forall (a : A), B a) :=
   fun R (f g : forall a, B a) => forall a, (R a (f a) (g a) ).
 
-#[global] Instance interp_mtree_proper_inst R D E `{EncodedType D} `{EncodedType E} (b1 b2 : bool) 
- (bodies : forall d : D, entree (D + E) (encodes d) ) :
+#[global] Instance interp_mrec_proper_inst R D E `{EncodedType D} `{EncodedType E} (b1 b2 : bool)  :
   Proper (ptwise (fun i => eqit (@eq (encodes i)) b1 b2 ) ==> eqit eq b1 b2 ==> eqit (@eq R) b1 b2 ) interp_mrec.
 Proof.
   repeat intro. eapply interp_mrec_proper; eauto.
 Qed.
+
+#[global] Instance interp_mrec_proper_inst' R D E `{EncodedType D} `{EncodedType E} 
+ (bodies : forall d : D, entree (D + E) (encodes d)) :
+  Proper (eutt (@eq R) ==> eutt eq ) (interp_mrec bodies).
+Proof.
+  repeat intro.
+  eapply interp_mrec_proper; eauto. intros. reflexivity.
+Qed.
+
+#[global] Instance interp_mrec_proper_inst'' R D E `{EncodedType D} `{EncodedType E} 
+ (bodies : forall d : D, entree (D + E) (encodes d)) :
+  Proper (eq_itree (@eq R) ==> eq_itree eq ) (interp_mrec bodies).
+Proof.
+  repeat intro. eapply interp_mrec_proper; eauto. intros. reflexivity.
+Qed.
+
+Section InterpMrecBind.
+  Context (D E : Type) `{encd : EncodedType D} `{ence : EncodedType E}.
+  Context (bodies : forall d : D, entree (D + E) (encodes d)).
+
+  Theorem interp_mrec_bind (R S: Type) : forall (t : entree (D + E) R) (k : R -> entree (D + E) S),
+      interp_mrec bodies (bind t k) ≅ bind (interp_mrec bodies t) (fun x => interp_mrec bodies (k x)).
+  Proof.
+    ginit. gcofix CIH. intros.
+    destruct (observe t) eqn : Heq; symmetry in Heq; apply simpobs in Heq.
+    - setoid_rewrite <- Heq. setoid_rewrite bind_ret_l.
+      gfinal. right. eapply paco2_mon with (r := bot2); intros; try contradiction.
+      apply Reflexive_eqit. auto.
+    - setoid_rewrite <- Heq. rewrite interp_mrec_tau. setoid_rewrite bind_tau.
+      rewrite interp_mrec_tau. gstep. constructor. gfinal. left.
+      eapply CIH.
+    - setoid_rewrite <- Heq. destruct e as [d | e].
+      + setoid_rewrite bind_vis. setoid_rewrite interp_mrec_vis_inl.
+        setoid_rewrite bind_tau. gstep. constructor. setoid_rewrite <- bind_bind. 
+        gfinal. left. eapply CIH.
+      + rewrite interp_mrec_vis_inr. setoid_rewrite bind_vis. 
+        rewrite interp_mrec_vis_inr. gstep. constructor. intros. red.
+        gfinal. left. eapply CIH.
+   Qed.
+End InterpMrecBind.
 
 Section RuttMrec.
 Context (D1 D2 E1 E2 : Type).
