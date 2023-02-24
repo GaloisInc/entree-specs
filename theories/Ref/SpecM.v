@@ -27,6 +27,40 @@ Local Open Scope list_scope.
 Import Monads.
 
 
+(* Examples of higher-order functions we want to write (but without monadic types) *)
+Section HOExamples.
+
+Context M `{Monad M}.
+
+(* An inconsistent fix, used to write our examples with the least fuss *)
+Variable fixM : forall {A B}, ((A -> M B) -> A -> M B) -> A -> M B.
+Variable fixM2 : forall {A B C}, ((A -> B -> M C) -> A -> B -> M C) -> A -> B -> M C.
+
+Definition incrStream (str : nat -> M nat) n : M nat :=
+  bind (str n) (fun x => ret (x + 1)).
+
+Definition foo : (nat -> M nat) -> nat -> M nat :=
+  fixM2 (fun rec str n =>
+          match n with
+          | 0 => str 0
+          | S n' => rec (rec (incrStream str)) n'
+          end).
+
+Definition fibMap : (nat -> M nat) -> nat -> M nat :=
+  fixM2 (fun rec str n =>
+           match n with
+           | 0 => str 0
+           | S 0 => bind (rec str 0) (fun x => ret (x + 1))
+           | S (S n') =>
+               bind (rec str n')
+                 (fun x =>
+                    bind (rec str (S n'))
+                         (fun y => ret (x + y)))
+           end).
+
+End HOExamples.
+
+
 (** Helper definitions **)
 
 (* A version of nth_default that does primary recursion on the list *)
@@ -80,13 +114,6 @@ Inductive LetRecType : Type@{entree_u + 1} :=
 | LRT_Fun (A : LRTArgType) (rest : LetRecType) : LetRecType
 .
 
-(* A recursive function frame is specified by a list of LetRecTypes *)
-Definition RecFrame := list LetRecType.
-
-(* Get the nth element of a RecFrame list, or void -> void if n is too big *)
-Definition nthLRT (frame : RecFrame) n : LetRecType :=
-  nth_default' (LRT_Fun (ArgType_Const void) (LRT_Ret (ArgType_Const void))) frame n.
-
 (* Compute a dependent tuple type of all the inputs of a LetRecType, i.e.,
    return the type { x:A & { y:B & ... { z:C & unit } ...}} from a LetRecType
    that represents forall a b c..., SpecM ... (R a b c ...). The supplied type
@@ -109,6 +136,67 @@ Fixpoint LRTOutput M lrt : EncodingType (LRTInput M lrt) :=
                            LRTOutput M (rest a) args'
   | LRT_Fun A rest => fun args => LRTOutput M rest (snd args)
   end.
+
+(* Build the type forall a b c ..., F (a, (b, (c, ...))) for an arbitrary type
+   function F over an LRTInput *)
+Fixpoint lrtPi M lrt : (LRTInput M lrt -> Type) -> Type :=
+  match lrt return (LRTInput M lrt -> Type) -> Type with
+  | LRT_Ret _ => fun F => F tt
+  | LRT_FunDep A lrtF =>
+      fun F => forall a, lrtPi M (lrtF a) (fun args => F (existT _ a args))
+  | LRT_Fun A lrt' =>
+      fun F => forall a, lrtPi M lrt' (fun args => F (a, args))
+  end.
+
+(* Build an lrtPi function from a unary function on an LRTInput *)
+Fixpoint lrtLambda M lrt
+  : forall (F : LRTInput M lrt -> Type), (forall args, F args) -> lrtPi M lrt F :=
+  match lrt return forall (F : LRTInput M lrt -> Type), (forall args, F args) ->
+                                                        lrtPi M lrt F
+  with
+  | LRT_Ret _ => fun _ f => f tt
+  | LRT_FunDep A lrtF =>
+    fun F f a => lrtLambda M (lrtF a)
+                   (fun args => F (existT _ a args))
+                   (fun args => f (existT _ a args))
+  | LRT_Fun A lrt' =>
+      fun F f a => lrtLambda M lrt'
+                     (fun args => F (a, args))
+                     (fun args => f (a, args))
+  end.
+
+(* Apply an lrtPi function *)
+Fixpoint lrtApply M lrt
+  : forall F, lrtPi M lrt F -> forall args, F args :=
+  match lrt return forall F, lrtPi M lrt F -> forall args, F args with
+  | LRT_Ret _ =>
+    fun F f u => match u return F u with | tt => f end
+  | LRT_FunDep A lrtF =>
+    fun F f args =>
+      match args return F args with
+      | existT _ arg args' =>
+        lrtApply M (lrtF arg) (fun args' => F (existT _ arg args')) (f arg) args'
+      end
+  | LRT_Fun A lrt' =>
+    fun F f args =>
+      match args return F args with
+      | (arg, args') =>
+        lrtApply M lrt' (fun args' => F (arg, args')) (f arg) args'
+      end
+  end.
+
+(* NOTE: it is straightforward to prove a beta rule for lrtApply lrtLambda, but
+   that isn't really needed below *)
+
+
+(** Frames, FrameCalls, and FunStackE **)
+
+(* A recursive function frame is specified by a list of LetRecTypes *)
+Definition RecFrame := list LetRecType.
+
+(* Get the nth element of a RecFrame list, or void -> void if n is too big *)
+Definition nthLRT (frame : RecFrame) n : LetRecType :=
+  nth_default' (LRT_Fun (ArgType_Const void) (LRT_Ret (ArgType_Const void))) frame n.
 
 (* A recursive call to one of the functions in a RecFrame, specified by a
 natural number n that picks a specific index in the RecFrame along with a set of
@@ -153,39 +241,6 @@ Definition FrameCallRet (M0 : Type@{entree_u} -> Type@{entree_u}) frame
 Global Instance EncodingType_FrameCall M0 frame : EncodingType (FrameCall M0 frame) :=
   FrameCallRet M0 frame.
 
-(* Examples of higher-order functions we want to write (but without monadic types) *)
-Section HOExamples.
-
-Context M `{Monad M}.
-
-(* An inconsistent fix, used to write our examples with the least fuss *)
-Variable fixM : forall {A B}, ((A -> M B) -> A -> M B) -> A -> M B.
-Variable fixM2 : forall {A B C}, ((A -> B -> M C) -> A -> B -> M C) -> A -> B -> M C.
-
-Definition incrStream (str : nat -> M nat) n : M nat :=
-  bind (str n) (fun x => ret (x + 1)).
-
-Definition foo : (nat -> M nat) -> nat -> M nat :=
-  fixM2 (fun rec str n =>
-          match n with
-          | 0 => str 0
-          | S n' => rec (rec (incrStream str)) n'
-          end).
-
-Definition fibMap : (nat -> M nat) -> nat -> M nat :=
-  fixM2 (fun rec str n =>
-           match n with
-           | 0 => str 0
-           | S 0 => bind (rec str 0) (fun x => ret (x + 1))
-           | S (S n') =>
-               bind (rec str n')
-                 (fun x =>
-                    bind (rec str (S n'))
-                         (fun y => ret (x + y)))
-           end).
-
-End HOExamples.
-
 
 (* A FunStack is a list of RecFrame representing all of the functions bound
     by multiFixS that are currently in scope *)
@@ -203,91 +258,12 @@ Fixpoint FunStackE (E : Type) `{EncodingType E} (stack : FunStack) : EncType@{en
   match stack with
   | nil => Build_EncType (ErrorE + E) _
   | frame :: stack' =>
-      let M := fun R => { args : FunStackE E stack' | encodes args = R } in
+      let M := fun R => entree_spec (FunStackE E stack') R in
       Build_EncType (FrameCall M frame + FunStackE E stack') _
   end.
 
 
-FIXME: still updating the following...
-
-(* Build the type forall a b c ..., F (a, (b, (c, ...))) for an arbitrary type
-   function F over an LRTInput *)
-Fixpoint lrtPi lrt : (LRTInput lrt -> Type) -> Type :=
-  match lrt return (LRTInput lrt -> Type) -> Type with
-  | LRT_Ret _ => fun F => F tt
-  | LRT_Fun A lrtF =>
-    fun F => forall a, lrtPi (lrtF a) (fun args => F (existT _ a args))
-  end.
-
-(* Build an lrtPi function from a unary function on an LRTInput *)
-Fixpoint lrtLambda lrt
-  : forall (F : LRTInput lrt -> Type), (forall args, F args) -> lrtPi lrt F :=
-  match lrt return forall (F : LRTInput lrt -> Type), (forall args, F args) ->
-                                                      lrtPi lrt F
-  with
-  | LRT_Ret _ => fun _ f => f tt
-  | LRT_Fun A lrtF =>
-    fun F f x => lrtLambda (lrtF x) (fun args => F (existT _ x args))
-                           (fun args => f (existT _ x args))
-  end.
-
-(* Apply an lrtPi function *)
-Fixpoint lrtApply lrt
-  : forall F, lrtPi lrt F -> forall args, F args :=
-  match lrt return forall F, lrtPi lrt F -> forall args, F args with
-  | LRT_Ret _ =>
-    fun F f u => match u return F u with | tt => f end
-  | LRT_Fun A lrtF =>
-    fun F f args =>
-      match args return F args with
-      | existT _ arg args' =>
-        lrtApply (lrtF arg) (fun args' => F (existT _ arg args')) (f arg) args'
-      end
-  end.
-
-(* NOTE: it is straight forward to prove a beta rule for lrtApply lrtLambda, but
-   that isn't really needed below *)
-
-(* Compute the output type (R a b c ...) from a LetRecType that represents
-   forall a b c..., SpecM ... (R a b c ...) and a dependent tuple of arguments
-   to a function of that type *)
-Fixpoint LRTOutput lrt : EncodingType (LRTInput lrt) :=
-  match lrt with
-  | LRT_Ret R => fun _ : unit => R
-  | LRT_Fun A rest => fun args =>
-                        let '(existT _ a args') := args in
-                        LRTOutput (rest a) args'
-  end.
-
-Global Instance LRTOutputEncoding lrt : EncodingType (LRTInput lrt) := LRTOutput lrt.
-
-(* A recursive frame is a list of types for recursive functions all bound at the
-   same time *)
-Definition RecFrame := list LetRecType.
-
-(* A version of nth_default that does primary recursion on the list *)
-Fixpoint nth_default' {A} (d : A) (l : list A) n : A :=
-  match l with
-  | nil => d
-  | x :: l' => match n with
-               | 0 => x
-               | S n' => nth_default' d l' n'
-               end
-  end.
-
-(* Get the nth element of a RecFrame list, or void -> void if n is too big *)
-Definition nthLRT (frame : RecFrame) n : LetRecType :=
-  nth_default' (LRT_Fun void (fun _ => LRT_Ret void)) frame n.
-
-(* A recursive call to one of the functions in a RecFrame *)
-Inductive FrameCall frame : Type@{entree_u} :=
-| FrameCallOfArgs n (args : LRTInput (nthLRT frame n)).
-
-(* Get the index of a FrameCall *)
-Definition FrameCallIndex {frame} (call : FrameCall frame) : nat :=
-  match call with
-  | FrameCallOfArgs _ n _ => n
-  end.
+FIXME: update the below
 
 (* Add a function type to the frame of a FrameCall *)
 Definition consFrameCall {lrt frame} (call : FrameCall frame)
@@ -550,6 +526,8 @@ Definition MultiFixS E Γ frame
   mrec_spec (applyFrameTuple E (frame :: Γ) frame bodies) call.
 
 
+
+FIXME: old stuff below
 
 (** Stack functors and using them in MultiFixS **)
 
