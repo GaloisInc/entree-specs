@@ -27,7 +27,7 @@ Local Open Scope list_scope.
 Import Monads.
 
 
-(** A new approach to LetRecType **)
+(** Helper definitions **)
 
 (* A version of nth_default that does primary recursion on the list *)
 Fixpoint nth_default' {A} (d : A) (l : list A) n : A :=
@@ -38,6 +38,17 @@ Fixpoint nth_default' {A} (d : A) (l : list A) n : A :=
                | S n' => nth_default' d l' n'
                end
   end.
+
+(* A specialized dependent pair of a type and decoding function for it *)
+Polymorphic Record EncType@{u} : Type :=
+  { EncType_type :> Type@{u};
+    EncType_encodes : EncodingType EncType_type }.
+
+Global Instance EncodingType_EncType (ET:EncType) : EncodingType ET :=
+  EncType_encodes ET.
+
+
+(** A new approach to LetRecType **)
 
 (* An encoded argument type for a recursive function *)
 Inductive LRTArgType : Type@{entree_u + 1} :=
@@ -119,25 +130,28 @@ is one whose higher-order arguments can only contain calls to monadic functions
 of return type M0, while a level S lvl' call can contain higher-order arguments
 with frame calls at level lvl' or below. *)
 Fixpoint FrameCallLvlInOut (M0 : Type@{entree_u} -> Type@{entree_u}) frame lvl
-  : { T:Type@{entree_u} & T -> Type@{entree_u} } :=
+  : EncType@{entree_u} :=
   match lvl with
-  | 0 => existT (fun T : Type@{entree_u} => T -> Type@{entree_u}) (FrameCallH M0 frame) (FrameCallHRet M0 frame)
+  | 0 => Build_EncType (FrameCallH M0 frame) (FrameCallHRet M0 frame)
   | S lvl' =>
       let M := fun R =>
                  (M0 R +
-                    { args:projT1 (FrameCallLvlInOut M0 frame lvl')
-                    | projT2 (FrameCallLvlInOut M0 frame lvl') args = R })%type in
-      existT _ (FrameCallH M frame) (FrameCallHRet M frame)
+                    { args:FrameCallLvlInOut M0 frame lvl'
+                    | encodes args = R })%type in
+      Build_EncType (FrameCallH M frame) (FrameCallHRet M frame)
   end.
 
 (* A frame call at an arbitrary level, where M0 defines level 0 *)
 Definition FrameCall (M0 : Type@{entree_u} -> Type@{entree_u}) frame :=
-  { lvl & projT1 (FrameCallLvlInOut M0 frame lvl) }.
+  { lvl & FrameCallLvlInOut M0 frame lvl }.
 
 (* Compute the return type of a FrameCall *)
 Definition FrameCallRet (M0 : Type@{entree_u} -> Type@{entree_u}) frame
                         (call : FrameCall M0 frame) : Type@{entree_u} :=
-  projT2 (FrameCallLvlInOut M0 frame (projT1 call)) (projT2 call).
+  encodes (projT2 call).
+
+Global Instance EncodingType_FrameCall M0 frame : EncodingType (FrameCall M0 frame) :=
+  FrameCallRet M0 frame.
 
 (* Examples of higher-order functions we want to write (but without monadic types) *)
 Section HOExamples.
@@ -172,23 +186,29 @@ Definition fibMap : (nat -> M nat) -> nat -> M nat :=
 
 End HOExamples.
 
-FIXME: update the following
 
-(* An encoding of types of form forall a b c..., SpecM ... (R a b c ...). This
-   encoding is realized by LRTType below. *)
-Inductive LetRecType : Type@{entree_u + 1} :=
-  | LRT_Ret (R : Type@{entree_u}) : LetRecType
-  | LRT_Fun (A : Type@{entree_u}) (rest : A -> LetRecType) : LetRecType.
+(* A FunStack is a list of RecFrame representing all of the functions bound
+    by multiFixS that are currently in scope *)
+Definition FunStack := list RecFrame.
 
-(* Compute a dependent tuple type of all the inputs of a LetRecType, i.e.,
-   return the type { x:A & { y:B & ... { z:C & unit } ...}} from a LetRecType
-   that represents forall a b c..., SpecM ... (R a b c ...) *)
-(* might need to do a bunch of refactoring I think LRTInput' is right*)
-Fixpoint LRTInput (lrt : LetRecType) : Type@{entree_u} :=
-  match lrt with
-  | LRT_Ret R => unit
-  | LRT_Fun A rest => {a : A & LRTInput (rest a) }
+(* The error event type *)
+Inductive ErrorE : Set :=
+| mkErrorE : string -> ErrorE.
+
+Global Instance EncodingType_ErrorE : EncodingType ErrorE := fun _ => void.
+
+(* Create an event type for either an event in E or a recursive call in a stack
+   Γ of recursive functions in scope *)
+Fixpoint FunStackE (E : Type) `{EncodingType E} (stack : FunStack) : EncType@{entree_u} :=
+  match stack with
+  | nil => Build_EncType (ErrorE + E) _
+  | frame :: stack' =>
+      let M := fun R => { args : FunStackE E stack' | encodes args = R } in
+      Build_EncType (FrameCall M frame + FunStackE E stack') _
   end.
+
+
+FIXME: still updating the following...
 
 (* Build the type forall a b c ..., F (a, (b, (c, ...))) for an arbitrary type
    function F over an LRTInput *)
