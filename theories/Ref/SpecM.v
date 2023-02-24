@@ -262,6 +262,86 @@ Fixpoint FunStackE (E : Type) `{EncodingType E} (stack : FunStack) : EncType@{en
       Build_EncType (FrameCall M frame + FunStackE E stack') _
   end.
 
+(* Embed an underlying event into the FunStackE event type *)
+Fixpoint FunStackE_embed_ev (E : Type) `{EncodingType E} Γ (e : ErrorE + E) : FunStackE E Γ :=
+  match Γ return FunStackE E Γ with
+  | nil => e
+  | (_ :: Γ') => inr (FunStackE_embed_ev E Γ' e)
+  end.
+
+(* Map the output of a FunStackE event for an E to the output type of E *)
+Fixpoint FunStackE_embed_ev_unmap (E : Type) `{EncodingType E} Γ e
+  : encodes (FunStackE_embed_ev E Γ e) -> encodes e :=
+  match Γ return encodes (FunStackE_embed_ev E Γ e) -> encodes e with
+  | nil => fun o => o
+  | (_ :: Γ') => FunStackE_embed_ev_unmap E Γ' e
+  end.
+
+Global Instance ReSum_FunStackE_E (E : Type) `{EncodingType E} (Γ : FunStack) : ReSum E (FunStackE E Γ) :=
+  fun e => FunStackE_embed_ev E Γ (inr e).
+
+Global Instance ReSumRet_FunStackE_E (E : Type) `{EncodingType E} Γ :
+  ReSumRet E (FunStackE E Γ) :=
+  fun e => FunStackE_embed_ev_unmap E Γ (inr e).
+
+Global Instance ReSum_FunStackE_Error (E : Type) `{EncodingType E} (Γ : FunStack) : ReSum ErrorE (FunStackE E Γ) :=
+  fun e => FunStackE_embed_ev E Γ (inl e).
+
+Global Instance ReSumRet_FunStackE_Error (E : Type) `{EncodingType E} Γ :
+  ReSumRet ErrorE (FunStackE E Γ) :=
+  fun e => FunStackE_embed_ev_unmap E Γ (inl e).
+
+Global Instance ReSum_cons_FunStack E `{EncodingType E} (stack : FunStack) frame :
+  ReSum (SpecEvent (FunStackE E stack)) (SpecEvent (FunStackE E (frame :: stack))) :=
+  fun e => match e with
+           | Spec_vis e => Spec_vis (resum e)
+           | Spec_forall T => Spec_forall T
+           | Spec_exists T => Spec_exists T
+           end.
+
+Global Instance ReSumRet_nil_FunStack E `{EncodingType E} stack frame :
+  ReSumRet (SpecEvent (FunStackE E stack)) (SpecEvent (FunStackE E (frame :: stack))) :=
+  fun e =>
+    match e return encodes (ReSum_cons_FunStack E stack frame e) -> encodes e with
+    | Spec_vis e => fun x => resum_ret e x
+    | Spec_forall T => fun x => x
+    | Spec_exists T => fun x => x
+    end.
+
+
+(** The SpecM monad and associated operations **)
+
+(* The SpecM monad is the entree_spec monad with FunStackE as the event type *)
+Definition SpecM (E:EncType) stack A : Type@{entree_u} :=
+  entree_spec (FunStackE E stack) A.
+
+Definition RetS {E} {Γ A} (a : A) : SpecM E Γ A := ret a.
+Definition BindS {E} {Γ A B} (m : SpecM E Γ A) (k : A -> SpecM E Γ B) :=
+  bind m k.
+Definition IterS {E} {Γ A B} (body : A -> SpecM E Γ (A + B)) :
+  A -> SpecM E Γ B := EnTree.iter body.
+Definition AssumeS {E} {Γ} (P : Prop) : SpecM E Γ unit :=
+  assume_spec P.
+Definition AssertS {E} {Γ} (P : Prop) : SpecM E Γ unit :=
+  assert_spec P.
+Definition ForallS {E} {Γ} (A : Type) `{QuantType A} : SpecM E Γ A :=
+  forall_spec A.
+Definition ExistsS {E} {Γ} (A : Type) `{QuantType A} : SpecM E Γ A :=
+  exists_spec A.
+Definition TriggerS {E:EncType} {Γ} (e : E) : SpecM E Γ (encodes e) := trigger e.
+Definition ErrorS {E} {Γ} A (str : string) : SpecM E Γ A :=
+  bind (trigger (mkErrorE str)) (fun (x:void) => match x with end).
+
+Global Instance SpecM_Monad {E} Γ : Monad (SpecM E Γ) :=
+  {|
+    ret := fun A a => RetS a;
+    bind := fun A B m k => BindS m k;
+  |}.
+
+(* Cons a frame onto the stack of a SpecM computation *)
+Definition consStackS E stack frame A (t:SpecM E stack A) : SpecM E (frame :: stack) A :=
+  resumEntree t.
+
 
 FIXME: update the below
 
