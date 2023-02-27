@@ -343,6 +343,30 @@ Definition consStackS E stack frame A (t:SpecM E stack A) : SpecM E (frame :: st
   resumEntree t.
 
 
+(** Making recursive calls **)
+
+(* A FrameCall that calls into the topmost frame *)
+Definition TopFrameCall (E:EncType) stack frame :=
+  FrameCall (SpecM E stack) frame.
+
+(* The return type of a TopFrameCall *)
+Definition TopFrameCallRet (E:EncType) stack frame
+  : TopFrameCall E stack frame -> Type :=
+  FrameCallRet (SpecM E stack) frame.
+
+(* Create a recursive call to a function in the top-most frame using args *)
+Definition CallS E stack frame (args : TopFrameCall E stack frame) :
+  SpecM E (frame :: stack) (TopFrameCallRet E stack frame args) :=
+  trigger args.
+
+FIXME HERE: how to define mkTopFrameCall to take in arguments which can have recursive calls to the same top frame?
+
+(* Make a TopFrameCall from its individual arguments *)
+Definition mkTopFrameCall E stack frame n
+  : lrtPi (SpecM E stack) (nthLRT frame n) (fun args => TopFrameCall E stack frame) :=
+  lrtLambda (SpecM E stack) (nthLRT frame n) (fun _ => TopFrameCall E stack frame) (FrameCallOfArgs _ frame n).
+
+
 FIXME: update the below
 
 (* Add a function type to the frame of a FrameCall *)
