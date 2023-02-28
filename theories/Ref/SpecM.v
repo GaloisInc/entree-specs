@@ -94,6 +94,254 @@ Inductive LRTArgType : Type@{entree_u + 1} :=
 | ArgType_M (A : LRTArgType) : LRTArgType
 .
 
+(* The type of a recursive function *)
+Inductive LetRecType : Type@{entree_u + 1} :=
+| LRT_Ret (R : LRTArgType) : LetRecType
+| LRT_FunDep (A : Type@{entree_u}) (rest : A -> LetRecType) : LetRecType
+| LRT_Fun (A : LRTArgType) (rest : LetRecType) : LetRecType
+.
+
+(* Convert a LetRecType to an LRTArgType *)
+Fixpoint LRT2ArgType (lrt:LetRecType) : LRTArgType :=
+  match lrt with
+  | LRT_Ret R => ArgType_M R
+  | LRT_FunDep A rest => ArgType_Pi A (fun x => LRT2ArgType (rest x))
+  | LRT_Fun A rest => ArgType_Arrow A (LRT2ArgType rest)
+  end.
+
+(* A recursive function frame is specified by a list of LetRecTypes *)
+Definition RecFrame := list LetRecType.
+
+(* Get the nth element of a RecFrame list, or void -> void if n is too big *)
+Definition nthLRT (frame : RecFrame) n : LetRecType :=
+  nth_default' (LRT_Fun (ArgType_Const void) (LRT_Ret (ArgType_Const void))) frame n.
+
+(* A partial application of a function of a LetRecType to FunDep arguments with
+retTp as the resulting return type *)
+Fixpoint LRTPartialApp (lrt : LetRecType) (retTp : LRTArgType) : Type@{entree_u} :=
+  (LRT2ArgType lrt = retTp) +
+    match lrt with
+    | LRT_FunDep A rest => { a:A & LRTPartialApp (rest a) retTp  }
+    | LRT_Ret _ => False
+    | LRT_Fun _ _ => False
+    end.
+
+(* An element of an LRTArgType, which is either a decoding of the LRTArgType to
+an actual Coq type (using the supplied type-level function M as the monad type)
+or a recursive call of the given type in the frame *)
+Fixpoint LRTArg (M : Type@{entree_u} -> Type@{entree_u}) (frame:RecFrame)
+  (argTp : LRTArgType) : Type@{entree_u} :=
+  { n:nat & LRTPartialApp (nthLRT frame n) argTp } +
+  match argTp with
+  | ArgType_Const A => A
+  | ArgType_Prod A B => LRTArg M frame A * LRTArg M frame B
+  | ArgType_Sigma A B => { x:A & LRTArg M frame (B x) }
+  | ArgType_Arrow A B => LRTArg M frame A -> LRTArg M frame B
+  | ArgType_Pi A B => forall x:A, LRTArg M frame (B x)
+  | ArgType_M A => M (LRTArg M frame A)
+  end.
+
+(* Compute a dependent tuple type of all the inputs of a LetRecType, i.e.,
+   return the type { x:A & { y:B & ... { z:C & unit } ...}} from a LetRecType
+   that represents forall a b c..., SpecM ... (R a b c ...). The supplied type
+   function M gives the interpretation of the ArgType_M type constructor. *)
+Fixpoint LRTInput (M : Type@{entree_u} -> Type@{entree_u}) frame lrt
+  : Type@{entree_u} :=
+  match lrt with
+  | LRT_Ret _ => unit
+  | LRT_FunDep A rest => {a : A & LRTInput M frame (rest a) }
+  | LRT_Fun A rest => LRTArg M frame A * LRTInput M frame rest
+  end.
+
+(* Compute the output type (R a b c ...) from a LetRecType that represents
+   forall a b c..., SpecM ... (R a b c ...) and a dependent tuple of arguments
+   to a function of that type, using M for the ArgType_M type constructor *)
+Fixpoint LRTOutput M frame lrt : EncodingType (LRTInput M frame lrt) :=
+  match lrt with
+  | LRT_Ret R => fun _ => LRTArg M frame R
+  | LRT_FunDep A rest => fun args =>
+                           let '(existT _ a args') := args in
+                           LRTOutput M frame (rest a) args'
+  | LRT_Fun A rest => fun args => LRTOutput M frame rest (snd args)
+  end.
+
+(* Build the type forall a b c ..., F (a, (b, (c, ...))) for an arbitrary type
+   function F over an LRTInput *)
+Fixpoint lrtPi M frame lrt : (LRTInput M frame lrt -> Type) -> Type :=
+  match lrt return (LRTInput M frame lrt -> Type) -> Type with
+  | LRT_Ret _ => fun F => F tt
+  | LRT_FunDep A lrtF =>
+      fun F => forall a, lrtPi M frame (lrtF a) (fun args => F (existT _ a args))
+  | LRT_Fun A lrt' =>
+      fun F => forall a, lrtPi M frame lrt' (fun args => F (a, args))
+  end.
+
+(* Build an lrtPi function from a unary function on an LRTInput *)
+Fixpoint lrtLambda M frame lrt
+  : forall (F : LRTInput M frame lrt -> Type),
+    (forall args, F args) -> lrtPi M frame lrt F :=
+  match lrt return
+        forall (F : LRTInput M frame lrt -> Type),
+          (forall args, F args) -> lrtPi M frame lrt F
+  with
+  | LRT_Ret _ => fun _ f => f tt
+  | LRT_FunDep A lrtF =>
+    fun F f a => lrtLambda M frame (lrtF a)
+                   (fun args => F (existT _ a args))
+                   (fun args => f (existT _ a args))
+  | LRT_Fun A lrt' =>
+      fun F f a => lrtLambda M frame lrt'
+                     (fun args => F (a, args))
+                     (fun args => f (a, args))
+  end.
+
+(* Apply an lrtPi function *)
+Fixpoint lrtApply M frame lrt
+  : forall F, lrtPi M frame lrt F -> forall args, F args :=
+  match lrt return forall F, lrtPi M frame lrt F -> forall args, F args with
+  | LRT_Ret _ =>
+    fun F f u => match u return F u with | tt => f end
+  | LRT_FunDep A lrtF =>
+    fun F f args =>
+      match args return F args with
+      | existT _ arg args' =>
+        lrtApply M frame (lrtF arg) (fun args' => F (existT _ arg args')) (f arg) args'
+      end
+  | LRT_Fun A lrt' =>
+    fun F f args =>
+      match args return F args with
+      | (arg, args') =>
+        lrtApply M frame lrt' (fun args' => F (arg, args')) (f arg) args'
+      end
+  end.
+
+(* A recursive call to one of the functions in a RecFrame, specified by a
+natural number n that picks a specific index in the RecFrame along with a set of
+arguments for that recursive call, using the given type function M as the
+interpretation of the ArgType_M constructor *)
+Inductive FrameCall M frame : Type@{entree_u} :=
+| FrameCallOfArgs n (args : LRTInput M frame (nthLRT frame n)).
+
+(* The return type for a FrameCall recursive call, using a specific M *)
+Definition FrameCallRet M frame (args: FrameCall M frame) : Type@{entree_u} :=
+  match args with
+  | FrameCallOfArgs _ _ n args => LRTOutput M frame (nthLRT frame n) args
+  end.
+
+Global Instance EncodingType_FrameCall M frame : EncodingType (FrameCall M frame) :=
+  FrameCallRet M frame.
+
+(* Make a recursive call from its individual arguments *)
+Definition mkFrameCall M (frame : RecFrame) n
+  : lrtPi M frame (nthLRT frame n) (fun args => FrameCall M frame) :=
+  lrtLambda M frame (nthLRT frame n) (fun _ => FrameCall M frame) (FrameCallOfArgs M frame n).
+
+
+(* A FunStack is a list of RecFrame representing all of the functions bound
+    by multiFixS that are currently in scope *)
+Definition FunStack := list RecFrame.
+
+(* The error event type *)
+Inductive ErrorE : Set :=
+| mkErrorE : string -> ErrorE.
+
+Global Instance EncodingType_ErrorE : EncodingType ErrorE := fun _ => void.
+
+(* Create an event type for either an event in E or a recursive call in a stack
+   Γ of recursive functions in scope *)
+Fixpoint FunStackE (E : EncType@{entree_u}) (stack : FunStack) : EncType@{entree_u} :=
+  match stack with
+  | nil => Build_EncType (ErrorE + E) _
+  | frame :: stack' =>
+      let M := entree_spec (FunStackE E stack') in
+      Build_EncType (FrameCall M frame + FunStackE E stack') _
+  end.
+
+(* Embed an underlying event into the FunStackE event type *)
+Fixpoint FunStackE_embed_ev (E : EncType) Γ (e : ErrorE + E) : FunStackE E Γ :=
+  match Γ return FunStackE E Γ with
+  | nil => e
+  | (_ :: Γ') => inr (FunStackE_embed_ev E Γ' e)
+  end.
+
+(* Map the output of a FunStackE event for an E to the output type of E *)
+Fixpoint FunStackE_embed_ev_unmap (E : EncType) Γ e
+  : encodes (FunStackE_embed_ev E Γ e) -> encodes e :=
+  match Γ return encodes (FunStackE_embed_ev E Γ e) -> encodes e with
+  | nil => fun o => o
+  | (_ :: Γ') => FunStackE_embed_ev_unmap E Γ' e
+  end.
+
+Global Instance ReSum_FunStackE_E (E : EncType) (Γ : FunStack) : ReSum E (FunStackE E Γ) :=
+  fun e => FunStackE_embed_ev E Γ (inr e).
+
+Global Instance ReSumRet_FunStackE_E (E : EncType) Γ :
+  ReSumRet E (FunStackE E Γ) :=
+  fun e => FunStackE_embed_ev_unmap E Γ (inr e).
+
+Global Instance ReSum_FunStackE_Error (E : EncType) (Γ : FunStack) : ReSum ErrorE (FunStackE E Γ) :=
+  fun e => FunStackE_embed_ev E Γ (inl e).
+
+Global Instance ReSumRet_FunStackE_Error (E : EncType) Γ :
+  ReSumRet ErrorE (FunStackE E Γ) :=
+  fun e => FunStackE_embed_ev_unmap E Γ (inl e).
+
+Global Instance ReSum_cons_FunStack E (stack : FunStack) frame :
+  ReSum (SpecEvent (FunStackE E stack)) (SpecEvent (FunStackE E (frame :: stack))) :=
+  fun e => match e with
+           | Spec_vis e => Spec_vis (resum e)
+           | Spec_forall T => Spec_forall T
+           | Spec_exists T => Spec_exists T
+           end.
+
+Global Instance ReSumRet_nil_FunStack E stack frame :
+  ReSumRet (SpecEvent (FunStackE E stack)) (SpecEvent (FunStackE E (frame :: stack))) :=
+  fun e =>
+    match e return encodes (ReSum_cons_FunStack E stack frame e) -> encodes e with
+    | Spec_vis e => fun x => resum_ret e x
+    | Spec_forall T => fun x => x
+    | Spec_exists T => fun x => x
+    end.
+
+
+(** The SpecM monad and associated operations **)
+
+(* The SpecM monad is the entree_spec monad with FunStackE as the event type *)
+Definition SpecM (E:EncType) stack A : Type@{entree_u} :=
+  entree_spec (FunStackE E stack) A.
+
+Definition RetS {E} {Γ A} (a : A) : SpecM E Γ A := ret a.
+Definition BindS {E} {Γ A B} (m : SpecM E Γ A) (k : A -> SpecM E Γ B) :=
+  bind m k.
+Definition IterS {E} {Γ A B} (body : A -> SpecM E Γ (A + B)) :
+  A -> SpecM E Γ B := EnTree.iter body.
+Definition AssumeS {E} {Γ} (P : Prop) : SpecM E Γ unit :=
+  assume_spec P.
+Definition AssertS {E} {Γ} (P : Prop) : SpecM E Γ unit :=
+  assert_spec P.
+Definition ForallS {E} {Γ} (A : Type) `{QuantType A} : SpecM E Γ A :=
+  forall_spec A.
+Definition ExistsS {E} {Γ} (A : Type) `{QuantType A} : SpecM E Γ A :=
+  exists_spec A.
+Definition TriggerS {E:EncType} {Γ} (e : E) : SpecM E Γ (encodes e) := trigger e.
+Definition ErrorS {E} {Γ} A (str : string) : SpecM E Γ A :=
+  bind (trigger (mkErrorE str)) (fun (x:void) => match x with end).
+
+Global Instance SpecM_Monad {E} Γ : Monad (SpecM E Γ) :=
+  {|
+    ret := fun A a => RetS a;
+    bind := fun A B m k => BindS m k;
+  |}.
+
+(* Cons a frame onto the stack of a SpecM computation *)
+Definition consStackS E stack frame A (t:SpecM E stack A) : SpecM E (frame :: stack) A :=
+  resumEntree t.
+
+
+
+
+FIXME: old stuff below
+
 (* An element of an LRTArgType, which is either a decoding of the LRTArgType to
 an actual Coq type or a recursive call of the given type in the frame *)
 Fixpoint LRTArgTypeElem (M : Type@{entree_u} -> Type@{entree_u})
