@@ -73,6 +73,27 @@ Fixpoint nth_default' {A} (d : A) (l : list A) n : A :=
                end
   end.
 
+(* Build the right-nested tuple type of a list of types formed by mapping a
+function across a list *)
+Fixpoint mapTuple@{u v} {T:Type@{v}} (f : T -> Type@{u}) (xs : list T) : Type@{u} :=
+  match xs with
+  | nil => unit
+  | x :: xs' => f x * mapTuple f xs'
+  end.
+
+(* Project the nth element of a tupleOfTypes *)
+Fixpoint nthProjDefault@{u v} {T:Type@{v}} (f : T -> Type@{u}) (dT:T) (d:f dT) xs
+  : forall n, mapTuple f xs -> f (nth_default' dT xs n) :=
+  match xs return forall n, mapTuple f xs -> f (nth_default' dT xs n) with
+  | nil => fun _ _ => d
+  | x :: xs' =>
+      fun n =>
+        match n return mapTuple f (x::xs') -> f (nth_default' dT (x::xs') n) with
+        | 0 => fun tup => fst tup
+        | S n' => fun tup => nthProjDefault f dT d xs' n' (snd tup)
+        end
+  end.
+
 (* A specialized dependent pair of a type and decoding function for it *)
 Polymorphic Record EncType@{u} : Type :=
   { EncType_type :> Type@{u};
@@ -112,9 +133,13 @@ Fixpoint LRT2ArgType (lrt:LetRecType) : LRTArgType :=
 (* A recursive function frame is specified by a list of LetRecTypes *)
 Definition RecFrame := list LetRecType.
 
+(* A trivially inhabited "default" LetRecType *)
+Definition default_lrt : LetRecType :=
+  LRT_FunDep void (fun _ => LRT_Ret (ArgType_Const void)).
+
 (* Get the nth element of a RecFrame list, or void -> void if n is too big *)
 Definition nthLRT (frame : RecFrame) n : LetRecType :=
-  nth_default' (LRT_Fun (ArgType_Const void) (LRT_Ret (ArgType_Const void))) frame n.
+  nth_default' default_lrt frame n.
 
 (* A partial application of a function of a LetRecType to FunDep arguments with
 retTp as the resulting return type *)
@@ -337,6 +362,54 @@ Global Instance SpecM_Monad {E} Γ : Monad (SpecM E Γ) :=
 Definition consStackS E stack frame A (t:SpecM E stack A) : SpecM E (frame :: stack) A :=
   resumEntree t.
 
+(* Embed a call in the top level of the FunStack into a FunStackE *)
+Global Instance ReSum_FrameCall_FunStackE (E : EncType) (stack : FunStack) frame :
+  ReSum (FrameCall (SpecM E stack) frame) (FunStackE E (frame :: stack)) :=
+  fun args => inl args.
+
+(* Map the return value for embedding a call in the top level to a FunStackE *)
+Global Instance ReSumRet_FrameCall_FunStackE E stack frame :
+  ReSumRet (FrameCall (SpecM E stack) frame) (FunStackE E (frame :: stack)) :=
+  fun args o => o.
+
+(* Create a recursive call to a function in the top-most using args *)
+Definition CallS E stack frame (args : FrameCall (SpecM E stack) frame) :
+  SpecM E (frame :: stack) (FrameCallRet (SpecM E stack) frame args) :=
+  trigger (H2:=@SpecEventReSumRet _ _ _ _ _ _) args.
+
+
+(** Defining MultiFixS **)
+
+(* The type of a function body in a recursive function frame *)
+Definition FrameFun E stack frame lrt : Type@{entree_u} :=
+  lrtPi (SpecM E stack) frame lrt
+    (fun args => SpecM E stack (LRTOutput _ _ lrt args)).
+
+(* A right-nested tuple of a list of functions in a recursive function frame *)
+Definition FrameTuple E stack frame : Type@{entree_u} :=
+  mapTuple (FrameFun E stack frame) frame.
+
+(* Get the nth function in a FrameTuple *)
+Definition nthFrameTupleFun E stack frame n (funs : FrameTuple E stack frame) :
+  FrameFun E stack frame (nthLRT frame n) :=
+  nthProjDefault (FrameFun E stack frame) default_lrt
+    (fun (v:void) => match v with end) _ n funs.
+
+FIXME: still working out the details of MultiFixS...
+
+(* Apply a FrameTuple to a FrameCall to get a FrameCallRet *)
+Definition applyFrameTuple E stack frame (funs : FrameTuple E stack frame)
+           (call : FrameCall frame) : SpecM E stack (FrameCallRet frame call) :=
+  match call return SpecM E stack (FrameCallRet frame call) with
+  | FrameCallOfArgs _ n args =>
+    lrtApply (nthLRT frame n) _ (nthFrameTupleFun _ _ frame n funs) args
+  end.
+
+(* Create a multi-way fixed point of a sequence of functions *)
+Definition MultiFixS E stack frame
+           (bodies : FrameTuple E (frame :: stack) frame)
+           (call : FrameCall frame) : SpecM E stack (FrameCallRet frame call) :=
+  mrec_spec (applyFrameTuple E (frame :: stack) frame bodies) call.
 
 
 
