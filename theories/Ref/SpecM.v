@@ -129,6 +129,16 @@ Definition default_lrt : LetRecType :=
 Definition nthLRT (frame : FunStack) n : LetRecType :=
   nth_default' default_lrt frame n.
 
+(* A partial application of a function of a LetRecType lrt_in to some of its
+FunDep arguments, resulting in LetRecType lrt_out *)
+Fixpoint LRTDepApp (lrt_in lrt_out : LetRecType) : Type@{entree_u} :=
+  (lrt_in = lrt_out) +
+    match lrt_in with
+    | LRT_FunDep A lrt_in' => { a:A & LRTDepApp (lrt_in' a) lrt_out  }
+    | LRT_Ret _ => False
+    | LRT_Fun _ _ => False
+    end.
+
 (* An argument to a recursive function call, which is a decodeing of the
 LRTArgType to its corresponding Coq type except that functions are just natural
 numbers that choose functions in the current function stack *)
@@ -137,7 +147,7 @@ Fixpoint LRTArg (stack : FunStack) (argTp : LRTArgType) : Type@{entree_u} :=
   | ArgType_Const A => A
   | ArgType_Prod A B => LRTArg stack A * LRTArg stack B
   | ArgType_Sigma A B => { x:A & LRTArg stack (B x) }
-  | ArgType_Fun lrt => { n:nat & (nthLRT stack n) = lrt }
+  | ArgType_Fun lrt => { n:nat & LRTDepApp (nthLRT stack n) lrt }
   end.
 
 (* Compute a dependent tuple type of all the inputs of a LetRecType, i.e.,
@@ -261,6 +271,7 @@ Global Instance ReSumRet_FunStackE_Error (E : EncType) Γ :
   ReSumRet ErrorE (FunStackE E Γ) :=
   fun _ r => r.
 
+
 (* Embed a call in the top level of the FunStack into a FunStackE *)
 Global Instance ReSum_FrameCall_FunStackE (E : EncType) (stack : FunStack) :
   ReSum (FrameCall stack) (FunStackE E stack) :=
@@ -269,6 +280,18 @@ Global Instance ReSum_FrameCall_FunStackE (E : EncType) (stack : FunStack) :
 (* Map the return value for embedding a call in the top level to a FunStackE *)
 Global Instance ReSumRet_FrameCall_FunStackE E stack :
   ReSumRet (FrameCall stack) (FunStackE E stack) :=
+  fun _ r => r.
+
+Global Instance EncodingType_LRTInput stack lrt :
+  EncodingType (LRTInput stack lrt) := LRTOutput stack lrt.
+
+(* ReSum instances for embedding the nth LRTInput into a FrameCall *)
+Global Instance Resum_FunStackE_LRTInput E stack n :
+  ReSum (LRTInput stack (nthLRT stack n)) (FunStackE E stack) :=
+  fun args => resum (FrameCallOfArgs stack n args).
+
+Global Instance FrameCall_ReSumRet E stack n :
+  ReSumRet (LRTInput stack (nthLRT stack n)) (FunStackE E stack) :=
   fun _ r => r.
 
 Global Instance ReSum_Error_E_FunStack (E : EncType) (stack : FunStack) :
@@ -322,27 +345,59 @@ Definition CallS E stack (args : FrameCall stack) :
   SpecM E stack (FrameCallRet stack args) :=
   trigger (H2:=@SpecEventReSumRet _ _ _ _ _ _) args.
 
+(* Helper for applyDepApp *)
+Definition castCallFun E stack lrt1 lrt2 (e : lrt1 = lrt2)
+  (f: forall args:LRTInput stack lrt1, SpecM E stack (LRTOutput _ _ args))
+  : (forall args:LRTInput stack lrt2, SpecM E stack (LRTOutput _ _ args)) :=
+  eq_rect lrt1
+    (fun lrt => forall args:LRTInput stack lrt, SpecM E stack (LRTOutput _ _ args))
+    f lrt2 e.
+
+(* Apply an LRTDepApp to its remaining arguments *)
+Fixpoint applyDepApp E stack lrt_in lrt_out :
+  (forall args:LRTInput stack lrt_in, SpecM E stack (LRTOutput _ _ args)) ->
+  LRTDepApp lrt_in lrt_out ->
+  forall args:LRTInput stack lrt_out, SpecM E stack (LRTOutput stack lrt_out args) :=
+  match lrt_in return
+        (forall args:LRTInput stack lrt_in, SpecM E stack (LRTOutput _ _ args)) ->
+        LRTDepApp lrt_in lrt_out ->
+        forall args:LRTInput stack lrt_out,
+          SpecM E stack (LRTOutput stack lrt_out args)
+  with
+  | LRT_Ret R =>
+      fun f da args =>
+        match da with
+        | inl e => (castCallFun E stack (LRT_Ret R) lrt_out e f) args
+        | inr bot => match bot with end
+        end
+  | LRT_FunDep A lrtF =>
+      fun f da args =>
+        match da with
+        | inl e => (castCallFun E stack _ lrt_out e f) args
+        | inr da' =>
+            applyDepApp E stack (lrtF (projT1 da')) lrt_out
+                        (fun args' => f (existT _ (projT1 da') args'))
+                        (projT2 da') args
+        end
+  | LRT_Fun A lrt' =>
+      fun f da args =>
+        match da with
+        | inl e => (castCallFun E stack _ lrt_out e f) args
+        | inr bot => match bot with end
+        end
+  end.
+
+(* Apply an LRTArg of monadic type *)
+Definition CallLRTArg E stack lrt (arg:LRTArg stack (ArgType_Fun lrt)) :
+  lrtPi stack lrt (fun args => SpecM E stack (LRTOutput stack lrt args)) :=
+  lrtLambda stack lrt _
+    (fun args =>
+       applyDepApp E stack _ _
+         (trigger (H2:=@SpecEventReSumRet _ _ _ _ _ _))
+         (projT2 arg) args).
+
 
 (** Defining MultiFixS **)
-
-(* A value of an LRTArgType *)
-(* FIXME: figure out how to define MultiFixS using this LRTValueFun type... *)
-Fixpoint LRTValue (stack:FunStack) (argTp : LRTArgType) : Type@{entree_u} :=
-  match argTp with
-  | ArgType_Const A => A
-  | ArgType_Prod A B => LRTValue stack A * LRTValue stack B
-  | ArgType_Sigma A B => { x:A & LRTValue stack (B x) }
-  | ArgType_Fun lrt => LRTValueFun stack lrt
-  end
-with
-LRTValueFun (stack:FunStack) (lrt : LetRecType) : Type@{entree_u} :=
-  match lrt with
-  | LRT_Ret R => LRTValue stack R
-  | LRT_FunDep A lrtF =>
-      forall a, LRTValueFun stack (lrtF a)
-  | LRT_Fun A lrt' =>
-      LRTValue stack A -> LRTValueFun stack lrt'
-  end.
 
 (* The type of a function body in a recursive function frame *)
 Definition FrameFun E stack lrt : Type@{entree_u} :=
@@ -372,6 +427,84 @@ Definition MultiFixS E stack (bodies : FrameTuple E stack) (call : FrameCall sta
   resumEntree (mrec_spec (applyFrameTuple E stack bodies) call).
 
 
+(** Specification Definitions **)
+
+(* A stack inclusion is a mapping from the indices of one stack to those of
+another that preserves LetRecTypes. Note that this is not technically a relation
+because the mapping itself matters. *)
+Definition stackIncl (stk1 stk2 : FunStack) : Type :=
+  { f : nat -> nat | forall n, nthLRT stk1 n = nthLRT stk2 (f n) }.
+
+(* The trivially reflexive stack inclusion *)
+Program Definition reflStackIncl stk : stackIncl stk stk :=
+  fun n => n.
+
+(* FIXME: make the append stackIncl *)
+
+(* A FrameTuple that is polymorphic in its function stack *)
+Definition PolyFrameTuple E stack :=
+  forall stack', stackIncl stack stack' -> mapTuple (FrameFun E stack') stack.
+
+(* A SpecDef represents a definition of a SpecM monadic function via MultiFixsS
+as a FrameTuple plus an index into that FrameTuple *)
+Record SpecDef E (lrt : LetRecType) :=
+  { SpecDef_stack : FunStack;
+    SpecDef_bodies : PolyFrameTuple E SpecDef_stack;
+    SpecDef_call : FrameCall SpecDef_stack; }.
+
+
+FIXME HERE: maybe we don't need LRTValue and friends?
+
+(* A value of an LRTArgType *)
+(* FIXME: figure out how to define MultiFixS using this LRTValueFun type... *)
+Fixpoint LRTValue E (stack:FunStack) (argTp : LRTArgType) : Type@{entree_u} :=
+  match argTp with
+  | ArgType_Const A => A
+  | ArgType_Prod A B => LRTValue E stack A * LRTValue E stack B
+  | ArgType_Sigma A B => { x:A & LRTValue E stack (B x) }
+  | ArgType_Fun lrt => LRTValueFun E stack lrt
+  end
+with
+LRTValueFun E (stack:FunStack) (lrt : LetRecType) : Type@{entree_u} :=
+  match lrt with
+  | LRT_Ret R => SpecM E stack (LRTValue E stack R)
+  | LRT_FunDep A lrtF => forall a, LRTValueFun E stack (lrtF a)
+  | LRT_Fun A lrt' => LRTArg stack A -> LRTValueFun E stack lrt'
+  end.
+
+(* Convert an LRTArg to an LRTValue *)
+Fixpoint LRTArg2Value E stack argTp : LRTArg stack argTp -> LRTValue E stack argTp :=
+  match argTp return LRTArg stack argTp -> LRTValue E stack argTp with
+  | ArgType_Const _ => fun x => x
+  | ArgType_Prod A B => fun tup => (LRTArg2Value E stack A (fst tup),
+                                     LRTArg2Value E stack B (snd tup))
+  | ArgType_Sigma A B =>
+      fun sig => existT _ (projT1 sig) (LRTArg2Value E stack (B (projT1 sig)) (projT2 sig))
+  | ArgType_Fun lrt =>
+      fun sig =>
+        LRTArgFun2ValueFun E stack lrt
+          (fun args =>
+             CallS
+               E stack
+               (FrameCallOfArgs _ (projT1 sig)
+                  (applyDepApp stack _ _ (projT2 sig) args)))
+  end
+with
+LRTArgFun2ValueFun E stack lrt : (forall args:LRTInput stack lrt,
+                                     SpecM E stack (LRTOutput stack lrt args)) ->
+                                 LRTValueFun E stack lrt :=
+  match lrt return (forall args,
+                    SpecM E stack (LRTOutput stack lrt args)) ->
+                   LRTValueFun E stack lrt with
+  | LRT_Ret R =>
+      fun f => bind (f tt) (fun x => ret (LRTArg2Value E stack R x))
+  | LRT_FunDep A lrt' =>
+      fun f a =>
+        LRTArgFun2ValueFun E stack (lrt' a) (fun args => f (existT _ a args))
+  | LRT_Fun A lrt' =>
+      fun f a =>
+        LRTArgFun2ValueFun E stack lrt' (fun args => f (a, args))
+  end.
 
 FIXME: old stuff below
 
