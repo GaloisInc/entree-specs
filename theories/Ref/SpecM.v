@@ -63,32 +63,99 @@ End HOExamples.
 
 (** Helper definitions **)
 
-(* A version of nth_default that does primary recursion on the list *)
-Fixpoint nth_default' {A} (d : A) (l : list A) n : A :=
-  match l with
-  | nil => d
-  | x :: l' => match n with
-               | 0 => x
-               | S n' => nth_default' d l' n'
-               end
+Polymorphic Inductive plist@{u} (A : Type@{u}) :=
+| pnil : plist A
+| pcons : A -> plist A -> plist A.
+Arguments pnil {A}.
+Arguments pcons {A} _ _.
+
+Polymorphic Fixpoint plength@{u} {A : Type@{u}} (xs : plist A) : nat :=
+  match xs with
+  | pnil => 0
+  | pcons _ xs' => S (plength xs')
   end.
+
+
+Polymorphic Fixpoint pmap@{u} {A B : Type@{u}} (f : A -> B) (xs : plist A) : plist B :=
+  match xs with
+  | pnil => pnil
+  | pcons x xs' => pcons (f x) (pmap f xs')
+  end.
+
+Polymorphic Fixpoint papp@{u} {A : Type@{u}} (xs ys : plist A) : plist A :=
+  match xs with
+  | pnil => ys
+  | pcons x xs' => pcons x (papp xs' ys)
+  end.
+
+(* FIXME: doesn't work!
+Polymorphic Fixpoint pconcat@{u} {A : Type@{u}} (xss : plist (plist A)) : plist A :=
+  match xss with
+  | pnil => pnil
+  | pcons xs xss' => papp xs (pconcat xss')
+  end.
+*)
+
+Polymorphic Definition pconcat@{u} {A : Type@{u}} (xss : plist (plist A)) : plist A :=
+  plist_rect@{u u} (plist A) (fun _ => plist A) pnil
+    (fun xs _ yss => papp xs yss) xss.
+
+
+(* A version of nth_default that does primary recursion on the list *)
+Fixpoint nth_default' {A} (d : A) (l : plist A) n : A :=
+  match l with
+  | pnil => d
+  | pcons x l' => match n with
+                  | 0 => x
+                  | S n' => nth_default' d l' n'
+                  end
+  end.
+
+(* If an index n is less then the length of the first list of an append, then
+the nth element of the append is the nth element of the first list *)
+Lemma nth_default'_app_left {A} (d:A) l1 l2 n :
+  n < plength l1 -> nth_default' d (papp l1 l2) n = nth_default' d l1 n.
+Proof.
+  revert n; induction l1; intros.
+  - inversion H.
+  - destruct n; [ reflexivity | ]. simpl.
+    apply IHl1. simpl in H. apply Lt.lt_S_n. assumption.
+Qed.
+
+Lemma nth_default'_app_right {A} (d:A) l1 l2 n :
+  nth_default' d (papp l1 l2) (plength l1 + n) = nth_default' d l2 n.
+Proof.
+  revert n; induction l1; intros.
+  - reflexivity.
+  - apply IHl1.
+Qed.
+
 
 (* Build the right-nested tuple type of a list of types formed by mapping a
 function across a list *)
-Fixpoint mapTuple@{u v} {T:Type@{v}} (f : T -> Type@{u}) (xs : list T) : Type@{u} :=
+Fixpoint mapTuple@{u v} {T:Type@{v}} (f : T -> Type@{u}) (xs : plist T) : Type@{u} :=
   match xs with
-  | nil => unit
-  | x :: xs' => f x * mapTuple f xs'
+  | pnil => unit
+  | pcons x xs' => f x * mapTuple f xs'
+  end.
+
+(* Append two mapTuple tuples *)
+Fixpoint appMapTuple@{u v} {T:Type@{v}} (f : T -> Type@{u}) (xs ys : plist T) :
+  mapTuple f xs -> mapTuple f ys -> mapTuple f (papp xs ys) :=
+  match xs return mapTuple f xs -> mapTuple f ys -> mapTuple f (papp xs ys) with
+  | pnil => fun _ tup2 => tup2
+  | pcons x xs' =>
+      fun tup1 tup2 => (fst tup1, appMapTuple f xs' ys (snd tup1) tup2)
   end.
 
 (* Project the nth element of a tupleOfTypes *)
 Fixpoint nthProjDefault@{u v} {T:Type@{v}} (f : T -> Type@{u}) (dT:T) (d:f dT) xs
   : forall n, mapTuple f xs -> f (nth_default' dT xs n) :=
   match xs return forall n, mapTuple f xs -> f (nth_default' dT xs n) with
-  | nil => fun _ _ => d
-  | x :: xs' =>
+  | pnil => fun _ _ => d
+  | pcons x xs' =>
       fun n =>
-        match n return mapTuple f (x::xs') -> f (nth_default' dT (x::xs') n) with
+        match n return mapTuple f (pcons x xs') -> f (nth_default' dT (pcons x xs') n) with
         | 0 => fun tup => fst tup
         | S n' => fun tup => nthProjDefault f dT d xs' n' (snd tup)
         end
@@ -119,7 +186,7 @@ with LRTArgType : Type@{entree_u + 1} :=
 
 (* A FunStack is a list of LetRecTypes representing all of the functions bound
    by multiFixS that are currently in scope *)
-Definition FunStack := list LetRecType.
+Definition FunStack := plist LetRecType.
 
 (* A trivially inhabited "default" LetRecType *)
 Definition default_lrt : LetRecType :=
@@ -423,7 +490,7 @@ Definition applyFrameTuple E stack (funs : FrameTuple E stack)
 
 (* Create a multi-way fixed point of a sequence of functions *)
 Definition MultiFixS E stack (bodies : FrameTuple E stack) (call : FrameCall stack)
-  : SpecM E nil (FrameCallRet stack call) :=
+  : SpecM E pnil (FrameCallRet stack call) :=
   resumEntree (mrec_spec (applyFrameTuple E stack bodies) call).
 
 
@@ -439,18 +506,133 @@ Definition stackIncl (stk1 stk2 : FunStack) : Type :=
 Program Definition reflStackIncl stk : stackIncl stk stk :=
   fun n => n.
 
-(* FIXME: make the append stackIncl *)
+(* Compose two stack inclusions *)
+Program Definition compStackIncl {stk1 stk2 stk3}
+  (incl1 : stackIncl stk1 stk2) (incl2 : stackIncl stk2 stk3)
+  : stackIncl stk1 stk3 :=
+  fun n => incl2 (incl1 n).
+Next Obligation.
+Proof.
+  rewrite (proj2_sig incl1). rewrite (proj2_sig incl2). reflexivity.
+Defined.
 
-(* A FrameTuple that is polymorphic in its function stack *)
-Definition PolyFrameTuple E stack :=
-  forall stack', stackIncl stack stack' -> mapTuple (FrameFun E stack') stack.
+(* Prefix a stackIncl with a single LetRecType on the left that maps into a
+prefix of LetRecTypes on the right *)
+Program Definition consPrefixStackIncl n (pre : FunStack) (lt : n < plength pre)
+  stk1 stk2 (incl : stackIncl stk1 stk2) :
+  stackIncl (pcons (nthLRT pre n) stk1) (papp pre stk2) :=
+  fun m =>
+    match m with
+    | 0 => n
+    | S n' => plength pre + incl n'
+    end.
+Next Obligation.
+  destruct n0.
+  - unfold nthLRT. rewrite nth_default'_app_left; [ | assumption ]. reflexivity.
+  - unfold nthLRT. rewrite nth_default'_app_right.
+    apply (proj2_sig incl).
+Defined.
+
+(* Prefix a stackIncl with a single LetRecType that stays constant *)
+Program Definition consStackIncl lrt stk1 stk2 (incl : stackIncl stk1 stk2) :
+  stackIncl (pcons lrt stk1) (pcons lrt stk2) :=
+  fun n =>
+    match n with
+    | 0 => 0
+    | S n' => S (incl n')
+    end.
+Next Obligation.
+Proof.
+  destruct n; [ reflexivity | ].
+  unfold nthLRT. simpl. rewrite (proj2_sig incl). reflexivity.
+Defined.
+
+(* Prefix a stackIncl with a list of LetRecTypes that stay constant *)
+Fixpoint prefixStackIncl pre stk1 stk2 (incl: stackIncl stk1 stk2)
+  : stackIncl (papp pre stk1) (papp pre stk2) :=
+  match pre return stackIncl (papp pre stk1) (papp pre stk2) with
+  | pnil => incl
+  | pcons lrt pre' =>
+      consStackIncl lrt _ _ (prefixStackIncl pre' stk1 stk2 incl)
+  end.
+
+
+(* A FrameTuple that is polymorphic in its function stack, which defines
+functions for all the defs that can call all the calls *)
+Definition PolyFrameTuple E calls defs :=
+  forall stack', stackIncl calls stack' -> mapTuple (FrameFun E stack') defs.
+
+(* Append two PolyFrameTuples *)
+Definition appPolyFrameTuple E calls defs1 defs2
+  (pft1 : PolyFrameTuple E calls defs1)
+  (pft2 : PolyFrameTuple E calls defs2)
+  : PolyFrameTuple E calls (papp defs1 defs2) :=
+  fun stack' incl =>
+    appMapTuple _ defs1 defs2 (pft1 stack' incl) (pft2 stack' incl).
+
+(* Apply a stackIncl to the calls list of a PolyFrameTuple *)
+Definition inclPolyFrameTuple E calls1 calls2 defs
+  (incl : stackIncl calls1 calls2)
+  (pft : PolyFrameTuple E calls1 defs)
+  : PolyFrameTuple E calls2 defs :=
+  fun stack' incl' => pft stack' (compStackIncl incl incl').
 
 (* A SpecDef represents a definition of a SpecM monadic function via MultiFixsS
 as a FrameTuple plus an index into that FrameTuple *)
-Record SpecDef E (lrt : LetRecType) :=
+Record SpecDef E :=
   { SpecDef_stack : FunStack;
-    SpecDef_bodies : PolyFrameTuple E SpecDef_stack;
-    SpecDef_call : FrameCall SpecDef_stack; }.
+    SpecDef_bodies : PolyFrameTuple E SpecDef_stack SpecDef_stack;
+    SpecDef_call : nat;
+    SpecDef_callValid : SpecDef_call < plength SpecDef_stack }.
+
+(* The output type of the main definition of a SpecDef *)
+Definition SpecDefOut E (d : SpecDef E) : LetRecType :=
+  nthLRT (SpecDef_stack _ d) (SpecDef_call _ d).
+
+
+Program Fixpoint inclSpecDefCalls (ds : plist (SpecDef E)) :
+  stackIncl (pmap (SpecDefOut E) ds) (pconcat (pmap (SpecDef_stack E) ds)) :=
+  match ds return stackIncl (pmap (SpecDefOut E) ds)
+                    (pconcat (pmap (SpecDef_stack E) ds)) with
+  | pnil => reflStackIncl pnil
+  | pcons d ds' =>
+
+
+(* Complete a SpecDef to a SpecM computation *)
+Definition completeSpecDef E (d : SpecDef E)
+  (args : LRTInput (SpecDef_stack E d) (SpecDefOut E d)) :
+  SpecM E pnil (LRTOutput _ _ args) :=
+  MultiFixS E (SpecDef_stack _ d)
+    (SpecDef_bodies _ d (SpecDef_stack _ d) (reflStackIncl _))
+    (FrameCallOfArgs _ _ args).
+
+(*
+(* Call the nth recursive function in a SpecM computation *)
+Definition callNth E stack n :
+  lrtPi stack (nthLRT stack n) (fun args => SpecM E stack (LRTOutput _ _ args)) :=
+  lrtLambda
+    stack (nthLRT stack n)
+    (fun args => SpecM E stack (LRTOutput _ _ args))
+    (fun args => trigger args).
+
+Definition callNthCast E stack n lrt (e : nthLRT stack n = lrt) :
+  lrtPi stack lrt (fun args => SpecM E stack (LRTOutput _ _ args)) :=
+  eq_rect (nthLRT stack n)
+    (fun lrt' => lrtPi stack lrt' (fun args => SpecM E stack (LRTOutput _ _ args)))
+    (callNth E stack n)
+    lrt e.
+*)
+
+(* Build a SpecDef from a tuple of defs that can call into each other and into
+any of a list of sub-definitions *)
+Definition defineSpec E (subDefs : plist (SpecDef E)) (lrts : plist LetRecType)
+  (defs : PolyFrameTuple E (papp lrts (pmap (SpecDefOut E) subDefs)) lrts)
+  (n : nat) : SpecDef E :=
+  {|
+    SpecDef_stack := papp lrts (pconcat (pmap (SpecDef_stack E) subDefs));
+    SpecDef_bodies :=
+      fun stack' incl =>
+    SpecDef_call := n; |}.
 
 
 FIXME HERE: maybe we don't need LRTValue and friends?
