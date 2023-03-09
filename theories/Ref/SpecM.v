@@ -75,7 +75,6 @@ Polymorphic Fixpoint plength@{u} {A : Type@{u}} (xs : plist A) : nat :=
   | pcons _ xs' => S (plength xs')
   end.
 
-
 Polymorphic Fixpoint pmap@{u} {A B : Type@{u}} (f : A -> B) (xs : plist A) : plist B :=
   match xs with
   | pnil => pnil
@@ -87,6 +86,40 @@ Polymorphic Fixpoint papp@{u} {A : Type@{u}} (xs ys : plist A) : plist A :=
   | pnil => ys
   | pcons x xs' => pcons x (papp xs' ys)
   end.
+
+Lemma papp_nil {A} (xs : plist A) : papp xs pnil = xs.
+Proof.
+  induction xs; [ reflexivity | ].
+  simpl. rewrite IHxs. reflexivity.
+Qed.
+
+Lemma papp_assoc {A} (xs ys zs : plist A)
+  : papp (papp xs ys) zs = papp xs (papp ys zs).
+Proof.
+  revert ys zs; induction xs; intros; [ reflexivity | ].
+  simpl. rewrite IHxs. reflexivity.
+Qed.
+
+Lemma plength_papp {A} (xs ys : plist A)
+  : plength (papp xs ys) = plength xs + plength ys.
+Proof.
+  induction xs; [ reflexivity | ].
+  simpl. rewrite IHxs. reflexivity.
+Qed.
+
+Lemma plength_app_r {A} (xs ys : plist A) : plength xs <= plength (papp xs ys).
+Proof.
+  induction xs; [ apply le_0_n | ].
+  apply le_n_S. assumption.
+Qed.
+
+Polymorphic Definition pcons_r@{u} {A : Type@{u}} (xs : plist A) (x:A) : plist A :=
+  papp xs (pcons x pnil).
+
+Lemma pcons_r_app {A} xs (x:A) ys : papp (pcons_r xs x) ys = papp xs (pcons x ys).
+Proof.
+  unfold pcons_r. rewrite papp_assoc. reflexivity.
+Qed.
 
 (* FIXME: doesn't work!
 Polymorphic Fixpoint pconcat@{u} {A : Type@{u}} (xss : plist (plist A)) : plist A :=
@@ -148,7 +181,7 @@ Fixpoint appMapTuple@{u v} {T:Type@{v}} (f : T -> Type@{u}) (xs ys : plist T) :
       fun tup1 tup2 => (fst tup1, appMapTuple f xs' ys (snd tup1) tup2)
   end.
 
-(* Project the nth element of a tupleOfTypes *)
+(* Project the nth element of a mapTuple *)
 Fixpoint nthProjDefault@{u v} {T:Type@{v}} (f : T -> Type@{u}) (dT:T) (d:f dT) xs
   : forall n, mapTuple f xs -> f (nth_default' dT xs n) :=
   match xs return forall n, mapTuple f xs -> f (nth_default' dT xs n) with
@@ -494,17 +527,32 @@ Definition MultiFixS E stack (bodies : FrameTuple E stack) (call : FrameCall sta
   resumEntree (mrec_spec (applyFrameTuple E stack bodies) call).
 
 
-(** Specification Definitions **)
+(** Stack Inclusions **)
 
 (* A stack inclusion is a mapping from the indices of one stack to those of
 another that preserves LetRecTypes. Note that this is not technically a relation
 because the mapping itself matters. *)
 Definition stackIncl (stk1 stk2 : FunStack) : Type :=
-  { f : nat -> nat | forall n, nthLRT stk1 n = nthLRT stk2 (f n) }.
+  { f : nat -> nat |
+    forall n, n < plength stk1 ->
+              nthLRT stk1 n = nthLRT stk2 (f n) /\ f n < plength stk2 }.
 
 (* The trivially reflexive stack inclusion *)
 Program Definition reflStackIncl stk : stackIncl stk stk :=
   fun n => n.
+
+(* A trivially reflexive stack inclusion that uses an equality on stacks *)
+Program Definition eqReflStackIncl stk1 stk2 (e:stk1 = stk2) : stackIncl stk1 stk2 :=
+  fun n => n.
+
+(* The trivially reflexive stack inclusion, that appends nil on the left *)
+Program Definition pappNilStackIncl stk : stackIncl (papp stk pnil) stk :=
+  eqReflStackIncl _ _ (papp_nil _).
+
+(* Invert the associativity of pmap_assoc in a stack inclusion *)
+Program Definition pappUnassocStackIncl stk1 stk2 stk3 :
+  stackIncl (papp stk1 (papp stk2 stk3)) (papp (papp stk1 stk2) stk3) :=
+  eqReflStackIncl _ _ (eq_sym (papp_assoc _ _ _)).
 
 (* Compose two stack inclusions *)
 Program Definition compStackIncl {stk1 stk2 stk3}
@@ -513,7 +561,62 @@ Program Definition compStackIncl {stk1 stk2 stk3}
   fun n => incl2 (incl1 n).
 Next Obligation.
 Proof.
-  rewrite (proj2_sig incl1). rewrite (proj2_sig incl2). reflexivity.
+  destruct (proj2_sig incl1 n H) as [ eq1 lt1 ].
+  destruct (proj2_sig incl2 _ lt1) as [ eq2 lt2 ].
+  split.
+  - rewrite eq1. rewrite eq2. reflexivity.
+  - assumption.
+Defined.
+
+(* Prefix a stackIncl with a single LetRecType that stays constant *)
+Program Definition consStackIncl lrt stk1 stk2 (incl : stackIncl stk1 stk2) :
+  stackIncl (pcons lrt stk1) (pcons lrt stk2) :=
+  fun n =>
+    match n with
+    | 0 => 0
+    | S n' => S (incl n')
+    end.
+Next Obligation.
+Proof.
+  split.
+  - destruct n; [ reflexivity | ].
+    assert (n < plength stk1) as lt1; [ apply le_S_n; assumption | ].
+    unfold nthLRT. simpl. apply (proj1 (proj2_sig incl n lt1)).
+  - destruct n.
+    + apply le_n_S. apply le_0_n.
+    + apply Lt.lt_n_S.
+      assert (n < plength stk1) as lt1; [ apply le_S_n; assumption | ].
+      apply (proj2 (proj2_sig incl n lt1)).
+Defined.
+
+(* Prefix a stackIncl with a list of LetRecTypes that stay constant *)
+Fixpoint prefixStackIncl pre stk1 stk2 (incl: stackIncl stk1 stk2)
+  : stackIncl (papp pre stk1) (papp pre stk2) :=
+  match pre return stackIncl (papp pre stk1) (papp pre stk2) with
+  | pnil => incl
+  | pcons lrt pre' =>
+      consStackIncl lrt _ _ (prefixStackIncl pre' stk1 stk2 incl)
+  end.
+
+(* "Weaken" a stack by appending another stack on the left *)
+Program Definition weakenLeftStackIncl stk1 stk2 :
+  stackIncl stk2 (papp stk1 stk2) :=
+  fun n => plength stk1 + n.
+Next Obligation.
+  split.
+  - symmetry; apply nth_default'_app_right.
+  - rewrite plength_papp. apply Plus.plus_lt_compat_l. assumption.
+Defined.
+
+(* "Weaken" a stack by appending another stack on the right *)
+Program Definition weakenRightStackIncl stk1 stk2 :
+  stackIncl stk1 (papp stk1 stk2) :=
+  fun n => n.
+Next Obligation.
+  split.
+  - symmetry; apply nth_default'_app_left; assumption.
+  - rewrite plength_papp.
+    eapply Lt.lt_le_trans; [ eassumption | apply Plus.le_plus_l ].
 Defined.
 
 (* Prefix a stackIncl with a single LetRecType on the left that maps into a
@@ -527,35 +630,17 @@ Program Definition consPrefixStackIncl n (pre : FunStack) (lt : n < plength pre)
     | S n' => plength pre + incl n'
     end.
 Next Obligation.
-  destruct n0.
+  destruct n0; split.
   - unfold nthLRT. rewrite nth_default'_app_left; [ | assumption ]. reflexivity.
+  - eapply Lt.lt_le_trans; [ eassumption | ]. apply plength_app_r.
   - unfold nthLRT. rewrite nth_default'_app_right.
-    apply (proj2_sig incl).
+    apply (proj1 (proj2_sig incl n0 (le_S_n _ _ H))).
+  - rewrite plength_papp. apply Plus.plus_lt_compat_l.
+    apply (proj2 (proj2_sig incl n0 (le_S_n _ _ H))).
 Defined.
 
-(* Prefix a stackIncl with a single LetRecType that stays constant *)
-Program Definition consStackIncl lrt stk1 stk2 (incl : stackIncl stk1 stk2) :
-  stackIncl (pcons lrt stk1) (pcons lrt stk2) :=
-  fun n =>
-    match n with
-    | 0 => 0
-    | S n' => S (incl n')
-    end.
-Next Obligation.
-Proof.
-  destruct n; [ reflexivity | ].
-  unfold nthLRT. simpl. rewrite (proj2_sig incl). reflexivity.
-Defined.
 
-(* Prefix a stackIncl with a list of LetRecTypes that stay constant *)
-Fixpoint prefixStackIncl pre stk1 stk2 (incl: stackIncl stk1 stk2)
-  : stackIncl (papp pre stk1) (papp pre stk2) :=
-  match pre return stackIncl (papp pre stk1) (papp pre stk2) with
-  | pnil => incl
-  | pcons lrt pre' =>
-      consStackIncl lrt _ _ (prefixStackIncl pre' stk1 stk2 incl)
-  end.
-
+(** Stack-polymorphic function tuples **)
 
 (* A FrameTuple that is polymorphic in its function stack, which defines
 functions for all the defs that can call all the calls *)
@@ -577,34 +662,96 @@ Definition inclPolyFrameTuple E calls1 calls2 defs
   : PolyFrameTuple E calls2 defs :=
   fun stack' incl' => pft stack' (compStackIncl incl incl').
 
+
+(** Specification Definitions **)
+
+(* A "spec definition" represents a definition of a SpecM monadic function via
+MultiFixsS over a tuple of recursive function bodies and a top-level call into
+that tuple. A RelSpecDef is a spec definition relative to some stack of
+already-defined recursive functions. *)
+Record RelSpecDef E stk :=
+  { relDefStack : FunStack;
+    relDefBodies : PolyFrameTuple E (papp relDefStack stk) relDefStack;
+    relDefCall : nat;
+    relDefCallLt : relDefCall < plength relDefStack }.
+
+(* The output type of the main definition of a RelSpecDef *)
+Definition relDefOut E stk (d : RelSpecDef E stk) : LetRecType :=
+  nthLRT (relDefStack _ _ d) (relDefCall _ _ d).
+
+(* A spec definition that is not relative, i.e., has an empty stack *)
+Definition SpecDef E := RelSpecDef E pnil.
+
+(* Complete a SpecDef to a SpecM computation *)
+Definition completeSpecDef E (d : SpecDef E)
+  (args : LRTInput (relDefStack E _ d) (relDefOut E _ d)) :
+  SpecM E pnil (LRTOutput _ _ args) :=
+  MultiFixS E (relDefStack _ _ d)
+    (relDefBodies _ _ d (relDefStack _ _ d) (pappNilStackIncl _))
+    (FrameCallOfArgs _ _ args).
+
+(* Import a SpecDef into another, by allowing the latter to call the former *)
+Program Definition importSpecDef E (imp : SpecDef E) stk
+  (d : RelSpecDef E (pcons (relDefOut E pnil imp) stk)) :
+  RelSpecDef E stk :=
+  {|
+    relDefStack := papp (relDefStack _ _ d) (relDefStack _ _ imp);
+    relDefBodies :=
+      appPolyFrameTuple
+        E
+        (papp (papp (relDefStack _ _ d) (relDefStack _ _ imp)) stk)
+        _ _
+        (inclPolyFrameTuple
+           _ _ _ _
+           (compStackIncl
+              (prefixStackIncl _ _ _
+                 (consPrefixStackIncl
+                    _ _ (relDefCallLt _ _ imp) _ _ (reflStackIncl _)))
+              (pappUnassocStackIncl _ _ _))
+           (relDefBodies _ _ d))
+        (inclPolyFrameTuple
+           _ _ _ _
+           (compStackIncl
+              (pappNilStackIncl _)
+              (compStackIncl
+                 (weakenLeftStackIncl _ _)
+                 (weakenRightStackIncl _ _))
+           )
+           (relDefBodies _ _ imp));
+    relDefCall := relDefCall _ _ d;
+    relDefCallLt := _ |}.
+Next Obligation.
+  rewrite plength_papp.
+  eapply Lt.lt_le_trans; [ apply relDefCallLt | apply Plus.le_plus_l ].
+Defined.
+
+
+
+FIXME: old stuff below
+
 (* A SpecDef represents a definition of a SpecM monadic function via MultiFixsS
 as a FrameTuple plus an index into that FrameTuple *)
 Record SpecDef E :=
   { SpecDef_stack : FunStack;
     SpecDef_bodies : PolyFrameTuple E SpecDef_stack SpecDef_stack;
     SpecDef_call : nat;
-    SpecDef_callValid : SpecDef_call < plength SpecDef_stack }.
+    SpecDef_callLt : SpecDef_call < plength SpecDef_stack }.
 
 (* The output type of the main definition of a SpecDef *)
 Definition SpecDefOut E (d : SpecDef E) : LetRecType :=
   nthLRT (SpecDef_stack _ d) (SpecDef_call _ d).
 
-
-Program Fixpoint inclSpecDefCalls (ds : plist (SpecDef E)) :
+(* Build a stackIncl from  *)
+Fixpoint inclSpecDefCalls E (ds : plist (SpecDef E)) :
   stackIncl (pmap (SpecDefOut E) ds) (pconcat (pmap (SpecDef_stack E) ds)) :=
   match ds return stackIncl (pmap (SpecDefOut E) ds)
                     (pconcat (pmap (SpecDef_stack E) ds)) with
   | pnil => reflStackIncl pnil
   | pcons d ds' =>
-
-
-(* Complete a SpecDef to a SpecM computation *)
-Definition completeSpecDef E (d : SpecDef E)
-  (args : LRTInput (SpecDef_stack E d) (SpecDefOut E d)) :
-  SpecM E pnil (LRTOutput _ _ args) :=
-  MultiFixS E (SpecDef_stack _ d)
-    (SpecDef_bodies _ d (SpecDef_stack _ d) (reflStackIncl _))
-    (FrameCallOfArgs _ _ args).
+      consPrefixStackIncl
+        (SpecDef_call E d) (SpecDef_stack E d) (SpecDef_callLt E d) _ _
+        (inclSpecDefCalls E ds')
+  end.
 
 (*
 (* Call the nth recursive function in a SpecM computation *)
