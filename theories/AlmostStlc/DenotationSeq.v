@@ -45,6 +45,7 @@ Equations denote_comp {t Γ MR} (c : comp t Γ MR) (hyps : denote_ctx Γ) :
       mapE lift_handler (denote_comp c hyps);
     denote_comp (comp_perm Hperm c) hyps :=
       map_perm _ _ (perm_denote Hperm) (denote_comp c hyps);
+
     denote_comp (comp_mfix R bodies c) hyps := 
       interp_mrec (denote_bodies bodies hyps) (denote_comp c hyps);
   }

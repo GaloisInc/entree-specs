@@ -636,6 +636,59 @@ Proof.
   intros. eapply H; eauto.
 Qed.
 
+Theorem subst_value_correct t u Γ1 Γ2 MR (v0 : value u (Γ1 ++ [t] ++ Γ2)) (v : value t Γ2)
+        (hyps11 hyps12 : denote_ctx Γ1) (hyps21 hyps22 : denote_ctx Γ2) vv :
+  ctx_equiv Γ1 hyps11 hyps12 ->
+  ctx_equiv Γ2 hyps21 hyps22 ->
+  (forall MR, denote_value (MR := MR) v hyps21 ≈ ret vv) ->
+  comp_equiv_rutt (MR := MR) (denote_value (subst_value v0 v) (hyps11 +++ hyps21))
+                  (denote_value v0 (hyps12 +++ ((denote_ctx_single vv) +++ hyps22)) ).
+Proof.
+  destruct subst_correct_aux_prod as [? [? ?]].
+  intros. eauto.
+Qed.
+
+Theorem subst_value_cons_correct0 t u Γ MR (v0 : value u (t :: Γ)) (v : value t Γ) : 
+  forall (hyps1 hyps2 : denote_ctx Γ) vv,
+    ctx_equiv Γ hyps1 hyps2->
+    (forall MR, denote_value (MR := MR) v hyps1 ≈ ret vv) ->
+    comp_equiv_rutt (MR := MR)
+      (denote_value (subst_value_cons v0 v) hyps1)
+                (denote_value v0 (vv, hyps2)).
+Proof.
+  intros.
+  specialize subst_value_correct with 
+    (Γ1 := []) (Γ2 := Γ) 
+    (hyps11 := tt) (hyps12 := tt)
+    as Hsubst. 
+  setoid_rewrite hyps_app_equation_1 in Hsubst.
+  setoid_rewrite hyps_app_equation_2 in Hsubst.
+  setoid_rewrite hyps_app_equation_1 in Hsubst. 
+  eapply Hsubst; eauto. constructor.
+Qed.
+
+Theorem subst_value_cons_correct1 t u Γ MR (v0 : value u (t :: Γ)) (v : value t Γ) : 
+  forall (hyps1 hyps2 : denote_ctx Γ) vv,
+    ctx_equiv Γ hyps1 hyps2->
+    comp_equiv_rutt (denote_value (MR := MR) v hyps1) (ret vv) ->
+    comp_equiv_rutt (MR := MR)
+      (denote_value (subst_value_cons v0 v) hyps1)
+                (denote_value v0 (vv, hyps2)).
+Proof.
+  intros hyps1 hyps2 vv Hhyps Hvv. red in Hvv.
+  specialize (denote_value_terminates _ _ v hyps1) as [vv' Hvv'].
+  assert (Hvs : types_equiv t vv vv').
+  {
+    rewrite Hvv' in Hvv. apply rutt_inv_Ret in Hvv. symmetry. auto.
+  }
+  assert (Hvv'' : comp_equiv_rutt (MR := MR) (denote_value (subst_value_cons v0 v) hyps1) 
+                                  (denote_value v0 (vv', hyps2))).
+  eapply subst_value_cons_correct0; eauto.
+  rewrite Hvv''. apply types_equiv_value_refl.
+  constructor. symmetry. auto.
+  simpl. etransitivity; eauto. symmetry. eauto.
+Qed.
+
 Theorem subst_correct0 t u Γ MR (c : comp u (t :: Γ) MR) (v : value t Γ) : 
   forall (hyps1 hyps2 : denote_ctx Γ) vv,
     ctx_equiv Γ hyps1 hyps2->

@@ -37,3 +37,4 @@ theories/AlmostStlc/TypesEquiv.v
 
 theories/AlmostStlc/SemanticsFactsSeq.v
 theories/AlmostStlc/CallMrecFacts.v
+theories/AlmostStlc/SemanticsFactsSeq2.v

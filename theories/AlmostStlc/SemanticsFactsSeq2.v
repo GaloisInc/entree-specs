@@ -15,9 +15,6 @@ Local Open Scope monad_scope.
 Require Export SemanticsFactsSeq.
 Require Export CallMrecFacts.
 
-Section denote.
-Context (hole : forall A, A).
-Arguments hole {_}.
 (*
 Inductive bredex : vtype -> mfix_ctx -> Type :=
     bredex_let : forall (t1 t2 : vtype) (MR : mfix_ctx),
@@ -287,48 +284,6 @@ Proof.
     simp denote_eval_context_cont. reflexivity.
 Qed.
 
-(*
-Lemma step_eval_context_mfix_aux1:
-  forall (t1 t2 : vtype) (R : call_frame) (MR1 MR2 : mfix_ctx) (c : call_syn t2 MR2) (bodies : mfix_bodies [] MR1 R R)
-         (E : eval_context t1 (R :: MR1) (inr c) true) (t0 : vtype) (R0 : call_frame) (xR : var R0 (R :: MR1)) 
-         (x : var (t0, t2) R0) (v : closed_value t0) (E' : eval_context t1 (R :: MR1) (inr (SmallStepSeq.callv xR x v)) true)
-         (v0 : var_eq VarZ xR),
-    denote_eval_context (inr (SmallStepSeq.callv xR x v)) E'
-                        ≈ vv <- denote_call (SmallStepSeq.callv xR x v);; denote_eval_context_cont (inr (SmallStepSeq.callv xR x v)) E' vv ->
-    (forall c0 : comp t1 [] (R :: MR1),
-        step_eval_context true (inr c) E = Some c0 -> comp_equiv_rutt (denote_eval_context (inr c) E) (denote_comp c0 tt)) ->
-    rutt (HeterogeneousRelations.sum_rel (call_frame_pre_equiv R) (mfix_pre_equiv MR1))
-         (SumPostRel (call_frame_post_equiv R) (mfix_post_equiv MR1)) (types_equiv t1)
-         (vv <- denote_call (SmallStepSeq.callv xR x v);; denote_eval_context_cont (inr (SmallStepSeq.callv xR x v)) E' vv)
-         (denote_comp (subst_eval_context E' (subst_comp_cons (nth_body bodies (var_eq_elim VarZ xR v0 x)) v)) tt).
-Proof.
-  intros t1 t2 R MR1 MR2 c bodies E t0 R0 xR x v E' v0 HE1 HE2.
-  specialize denote_eval_context_subst_correct with (E := E')
-   (c := (subst_comp_cons (nth_body bodies (var_eq_elim VarZ xR v0 x)) v))
-   as Hsubst. 
-  match goal with |- rutt _ _ _ ?t1 ?t2 => enough (comp_equiv_rutt t1 t2) end.
-  eapply rutt_mon; eauto.
-  assert (Hcall : comp_equiv_rutt 
-                    (denote_bredex_call (inr (SmallStepSeq.callv xR x v)))
-             (denote_comp (subst_comp_cons 
-                             (nth_body bodies (var_eq_elim VarZ xR v0 x)) v) tt)).
-  {
-    simpl. rewrite subst_correct with (Γ := []) (hyps2 := tt).
-    2 : constructor. eapply rutt_bind.
-    apply types_equiv_value_refl. constructor. intros.
-    (* actually think this lemma is a mistake *)
-    admit.
-  }
-  specialize (Hsubst Hcall). symmetry in Hsubst.
-  rewrite Hsubst. red. rewrite exposed_eval_context.
-  eapply rutt_bind; eauto. admit.
-  admit.
-  (* maybe the next thing to do is write a lemma about subst_eval_context
-     for an exposed eval context, might allow me to get the substitution
-     computation to the front
-   *)
-Admitted.
-*)
 
 Lemma interp_mrec_call_frame MR R1 R2 t1 t2
       (bodies : mfix_bodies [] MR R1 R2) (x : var (t1,t2) R2) (v : denote_type t1) :
@@ -890,23 +845,25 @@ Proof.
 Qed.
 
 Lemma observe_inr_comp_ret t MR (c : comp t [] MR) v :
-  step c = inr v ->
+  step c = inr v <->
   c = comp_ret v.
 Proof.
-  unfold step.
-  destruct (SmallStepSeq.observe c) eqn : Heq; try destruct b; try discriminate.
-  intros. injection H. intros. subst c0.
-  dependent induction c; simp observe in Heq; 
-    try (destruct (SmallStepSeq.observe c1)); 
-    try (destruct (SmallStepSeq.observe c));
-    try destruct b; try discriminate; eauto.
-  - injection Heq. intros. subst. auto.
-  - dependent destruction vn; simp observe in Heq; try discriminate.
-    inversion x.
-  - dependent destruction vn; simp observe in Heq; try discriminate.
-    inversion x.
-  - dependent destruction vf; simp observe in Heq; try discriminate.
-    inversion x.
+  split.
+  - unfold step.
+    destruct (SmallStepSeq.observe c) eqn : Heq; try destruct b; try discriminate.
+    intros. injection H. intros. subst c0.
+    dependent induction c; simp observe in Heq; 
+      try (destruct (SmallStepSeq.observe c1)); 
+      try (destruct (SmallStepSeq.observe c));
+      try destruct b; try discriminate; eauto.
+    + injection Heq. intros. subst. auto.
+    + dependent destruction vn; simp observe in Heq; try discriminate.
+      inversion x.
+    + dependent destruction vn; simp observe in Heq; try discriminate.
+      inversion x.
+    + dependent destruction vf; simp observe in Heq; try discriminate.
+      inversion x.
+  - unfold step. intros Hc. subst. simp observe. auto.
 Qed.
 
 Lemma step_stable2 t MR (c : comp t [] MR) v :
@@ -916,4 +873,20 @@ Proof.
   intros H. apply observe_inr_comp_ret in H. subst.
   simp denote_comp.
   apply types_equiv_value_refl. constructor.
+Qed.
+
+Theorem step_stable t (c1 c2 : comp t [] []) :
+  step_rel c1 c2 -> comp_equiv_rutt (denote_comp c1 tt) (denote_comp c2 tt).
+Proof.
+  intros. inversion H. subst.
+  apply step_stable1; auto.
+Qed.
+
+Theorem eval_stable t (c : comp t [] []) (v : closed_value t) :
+  eval_rel c v -> comp_equiv_rutt (denote_comp c tt) (denote_value v tt).
+Proof.
+  intros Hcv.
+  induction Hcv.
+  eapply step_stable in H. etransitivity; eauto.
+  apply step_stable2; auto.
 Qed.

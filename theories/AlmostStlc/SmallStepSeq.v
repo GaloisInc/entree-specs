@@ -8,6 +8,7 @@ From Equations Require Import Equations Signature.
 Require Import ExtLib.Structures.Functor.
 Require Import ExtLib.Structures.Applicative.
 Require Import ExtLib.Structures.Monad.
+Require Import Coq.Program.Equality.
 Import MonadNotation.
 Local Open Scope monad_scope.
 Derive NoConfusion for vtype.
@@ -122,7 +123,11 @@ Definition subst_comp_cons {t u Γ MR} (c : comp u (t :: Γ) MR ) (v : value t �
   subst_comp [] c v.
 Arguments subst_comp {_ _ _ _ _}.
 
+Definition subst_value_cons {t u Γ} (v : value u (t :: Γ)) (v0 : value t Γ) := subst_value (Γ1 := []) v v0.
 
+Definition subst_bodies_cons {t R R' Γ MR} (bodies : mfix_bodies (t :: Γ) MR R R') (v : value t Γ) :
+  mfix_bodies Γ MR R R' :=
+  subst_bodies (Γ1 := []) bodies v.
 
 Inductive bredex : vtype -> mfix_ctx -> Type :=
   | bredex_let t1 t2 MR (v : closed_value t1) (c : comp t2 [t1] MR ) : bredex t2 MR
@@ -152,6 +157,16 @@ Arguments bredex_lift {t MR1 MR2}.
 Inductive call (t2 : vtype) (MR : mfix_ctx) : Type :=
   callv t1 R (xR : var R MR) (x : var (t1,t2) R) (v : closed_value t1).
 Arguments callv {_ _ _ _}.
+(* I think I could rewrite this definition to exclude stuck calls,
+   first step is to only associate the exposedness boolean with calls (that is already all it is used for 
+   and then add a second boolean for coveredness
+
+   and then we have two ev_hole constructors, one for bredexes that ignored coveredness
+     one for calls that 
+
+)
+
+ *)
 Inductive eval_context : vtype -> mfix_ctx -> forall t MR, bredex t MR + call t MR -> bool -> Type := 
   | ev_hole t MR (r : bredex t MR + call t MR) : eval_context t MR t MR r true
   | ev_let b t1 t2 t3 MR1 MR2 (r : bredex t3 MR2 + call t3 MR2) (E : eval_context t1 MR1 _ _ r b) (c : comp t2 [t1] MR1) : 
@@ -208,7 +223,32 @@ Equations subst_eval_context {b t1 t2 MR1 MR2} {r : bredex t2 MR2 + call t2 MR2}
   subst_eval_context (ev_perm _ Hperm E) c := comp_perm Hperm (subst_eval_context E c);
   subst_eval_context (ev_lift _ E) c := comp_lift (subst_eval_context E c).
 
+Equations subst_eval_context_ctx {b t1 t2 MR1 MR2 Γ} {r : bredex t2 MR2 + call t2 MR2} (E : eval_context t1 MR1 r b)
+          (c : comp t2 Γ MR2 ) : comp t1 Γ MR1 :=
+  subst_eval_context_ctx ev_hole c := c;
+  subst_eval_context_ctx (ev_let E1 c2) c := 
+    comp_let (subst_eval_context_ctx E1 c) (weaken_r_comp _ _ _ _ c2);
+  subst_eval_context_ctx (ev_mfix _ R bodies E) c := 
+    comp_mfix R (weaken_r_bodies bodies) (subst_eval_context_ctx E c);
+  subst_eval_context_ctx (ev_perm _ Hperm E) c := comp_perm Hperm (subst_eval_context_ctx E c);
+  subst_eval_context_ctx (ev_lift _ E) c := comp_lift (subst_eval_context_ctx E c).
 
+
+(*TODO: see if this is necessary, shouldn't be too hard but may be that I don't really need it,
+  may make more sense to just define subst_eval_context in in terms of the second function, 
+   and then redo the other metatheory? *)
+Lemma subst_eval_context_ctx_exten b t1 t2 MR1 MR2 (r : bredex t2 MR2 + call t2 MR2)
+      (E : eval_context t1 MR1 r b) :
+  forall c, subst_eval_context E c = subst_eval_context_ctx E c.
+Proof.
+  dependent induction E; intros c'; simp subst_eval_context; simp subst_eval_context_ctx; 
+    try rewrite IHE; auto.
+  - enough (weaken_r_comp MR1 [t1] [] t2 c = c). rewrite H. auto. 
+    unfold weaken_r_comp. clear IHE E r c' MR2 b t3.
+    admit.
+  - enough (weaken_r_bodies bodies = bodies). rewrite H. auto.
+    unfold weaken_r_bodies. admit.
+Abort.
 (* weird error here *)
 Equations push_eval_context {t1 t2 MR1 MR2} (r : bredex t2 MR1 + call t2 MR1)
           (E : eval_context t1 MR1 r true)
@@ -234,7 +274,9 @@ Instance option_monad : Monad option :=
   |}.
 
 
-(* will need to manually prove progress *)
+(* may need to enrich this type, replace the failure with 
+   some kind of evalutation context thing 
+ *)
 Equations step_eval_context {t1 t2 MR1 MR2} b (r : bredex t2 MR2 + call t2 MR2) (E : eval_context t1 MR1 r b) :
   option (comp t1 [] MR1) :=
   step_eval_context _ (inl br) E := ret (subst_eval_context E (step_bredex br));
@@ -308,6 +350,7 @@ Equations observe {t MR} (c : comp t [] MR) : boxed_eval_context t MR + closed_v
     inl (bec_of_bredex (bredex_split vp cs) );
   observe (comp_app (val_abs cbody) varg) :=
     inl (bec_of_bredex (bredex_app cbody varg) );
+  (* this case is the only one which can get stuck *)
   observe (comp_call xR x v) :=
     inl (bec (inr (callv xR x v) ) ev_hole );
   observe (comp_mfix xR bodies c) :=
@@ -332,3 +375,13 @@ Definition step {t MR} (c : comp t [] MR) : option (comp t [] MR) + closed_value
   | inl (bec r E) => inl (step_eval_context _ r E)
   | inr v => inr v 
   end.
+
+
+Inductive step_rel {t MR} : comp t [] MR -> comp t [] MR -> Prop :=
+  step_rel_intro c c' : step c = inl (Some c') -> step_rel c c'.
+
+(* this definition might be wrong*)
+Inductive eval_rel {t MR} : comp t [] MR -> closed_value t -> Prop :=
+  | eval_rel_step c1 c2 c3 : step_rel c1 c2 -> eval_rel c2 c3 -> eval_rel c1 c3
+  | eval_rel_val c v : step c = inr v -> eval_rel c v
+.

@@ -27,10 +27,6 @@ with comp : vtype -> ctx -> mfix_ctx -> Type :=
     comp t2 Γ MR
   | comp_mfix t Γ MR R (bodies : mfix_bodies Γ MR R R) (c : comp t Γ (R :: MR)) :
     comp t Γ MR
-  (*
-  | comp_mfix t Γ MR R (xR : var R MR) (bodies : mfix_bodies Γ MR R) (c : comp t Γ MR) : 
-    comp t Γ (remove R MR xR)
-  *)
   | comp_lift t Γ MR1 MR2 (c : comp t Γ MR2) : comp t Γ (MR1 ++ MR2)
   | comp_perm t Γ MR1 MR2 (Hperm : perm MR1 MR2) (e : comp t Γ MR1) :
     comp t Γ MR2
@@ -39,7 +35,7 @@ with mfix_bodies : ctx -> mfix_ctx -> call_frame -> call_frame -> Type :=
   | mfix_bodies_cons Γ MR t1 t2 R R' (body : comp t2 (t1 :: Γ) (R :: MR)) (bodies : mfix_bodies Γ MR R R') :
     mfix_bodies Γ MR R ((t1,t2) :: R')
 .
-(*just rewrote type of mfix_bodies, will need to make many minor changes *)
+
 Scheme value_mind := Induction for value Sort Prop
   with comp_mind := Induction for comp Sort Prop
   with mfix_bodies_mind := Induction for mfix_bodies Sort Prop.
