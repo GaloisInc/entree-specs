@@ -671,7 +671,7 @@ that tuple. A RelSpecDef is a spec definition relative to some stack of
 already-defined recursive functions. *)
 Record RelSpecDef E stk :=
   { relDefStack : FunStack;
-    relDefBodies : PolyFrameTuple E (papp relDefStack stk) relDefStack;
+    relDefBodies : PolyFrameTuple E (papp stk relDefStack) relDefStack;
     relDefCall : nat;
     relDefCallLt : relDefCall < plength relDefStack }.
 
@@ -687,43 +687,64 @@ Definition completeSpecDef E (d : SpecDef E)
   (args : LRTInput (relDefStack E _ d) (relDefOut E _ d)) :
   SpecM E pnil (LRTOutput _ _ args) :=
   MultiFixS E (relDefStack _ _ d)
-    (relDefBodies _ _ d (relDefStack _ _ d) (pappNilStackIncl _))
+    (relDefBodies _ _ d (relDefStack _ _ d) (reflStackIncl _))
     (FrameCallOfArgs _ _ args).
+
+(* Build a stack inclusion for the imported spec in importSpecDef *)
+Definition importInclImp E (imp : SpecDef E) stk stk_def :
+  stackIncl (relDefStack _ _ imp) (papp stk (papp (relDefStack _ _ imp) stk_def)) :=
+  compStackIncl
+    (weakenRightStackIncl _ _)
+    (weakenLeftStackIncl _ _).
+
+(* Build a stack inclusion for the defined spec in importSpecDef *)
+Definition importInclDef E (imp : SpecDef E) stk stk_def :
+  stackIncl
+    (papp (pcons (relDefOut _ _ imp) stk) stk_def)
+    (papp stk (papp (relDefStack _ _ imp) stk_def)).
+Admitted.
 
 (* Import a SpecDef into another, by allowing the latter to call the former *)
 Program Definition importSpecDef E (imp : SpecDef E) stk
   (d : RelSpecDef E (pcons (relDefOut E pnil imp) stk)) :
   RelSpecDef E stk :=
   {|
-    relDefStack := papp (relDefStack _ _ d) (relDefStack _ _ imp);
+    relDefStack := papp (relDefStack _ _ imp) (relDefStack _ _ d);
     relDefBodies :=
       appPolyFrameTuple
         E
-        (papp (papp (relDefStack _ _ d) (relDefStack _ _ imp)) stk)
+        (papp stk (papp (relDefStack _ _ imp) (relDefStack _ _ d)))
         _ _
         (inclPolyFrameTuple
            _ _ _ _
-           (compStackIncl
-              (prefixStackIncl _ _ _
-                 (consPrefixStackIncl
-                    _ _ (relDefCallLt _ _ imp) _ _ (reflStackIncl _)))
-              (pappUnassocStackIncl _ _ _))
-           (relDefBodies _ _ d))
+           (importInclImp E imp stk (relDefStack _ _ d))
+           (relDefBodies _ _ imp))
         (inclPolyFrameTuple
            _ _ _ _
-           (compStackIncl
-              (pappNilStackIncl _)
-              (compStackIncl
-                 (weakenLeftStackIncl _ _)
-                 (weakenRightStackIncl _ _))
-           )
-           (relDefBodies _ _ imp));
-    relDefCall := relDefCall _ _ d;
+           (importInclDef E imp stk (relDefStack _ _ d))
+           (relDefBodies _ _ d));
+    relDefCall := plength (relDefStack _ _ imp) + relDefCall _ _ d;
     relDefCallLt := _ |}.
 Next Obligation.
   rewrite plength_papp.
-  eapply Lt.lt_le_trans; [ apply relDefCallLt | apply Plus.le_plus_l ].
+  apply Plus.plus_lt_compat_l.
+  apply relDefCallLt.
 Defined.
+
+
+
+
+(* Build a SpecDef from a tuple of defs that can call into each other and into
+any of a list of sub-definitions *)
+Definition defineSpec E (imps : plist (SpecDef E)) (lrts : plist LetRecType)
+  (defs : PolyFrameTuple E (papp lrts (pmap (SpecDefOut E) subDefs)) lrts)
+  (n : nat) (lt : n < plength lrts) : SpecDef E :=
+  {|
+    SpecDef_stack := papp lrts (pconcat (pmap (SpecDef_stack E) subDefs));
+    SpecDef_bodies :=
+      fun stack' incl =>
+    SpecDef_call := n; |}.
+
 
 
 
