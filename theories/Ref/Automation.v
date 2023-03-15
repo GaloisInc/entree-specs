@@ -49,14 +49,10 @@ Ltac resum_unfold :=
          ReSum_id, ReSumRet_id,
          callESpecReSum, callESpecReSumRet,
          (* SpecM.v *)
-         FrameCall_ReSum, FrameCall_ReSumRet,
          ReSum_FunStackE_E, ReSumRet_FunStackE_E,
          ReSum_FunStackE_Error, ReSumRet_FunStackE_Error,
-         FunStackE_embed_ev, FunStackE_embed_ev_unmap,
          ReSum_LRTInput_FunStackE, ReSumRet_LRTInput_FunStackE,
-         ReSum_FrameCall_FunStackE, ReSumRet_FrameCall_FunStackE,
-         ReSum_FunStack_EvType, ReSumRet_FunStack_EvType,
-         ReSum_nil_FunStack, ReSumRet_nil_FunStack.
+         ReSum_FrameCall_FunStackE, ReSumRet_FrameCall_FunStackE.
 Ltac encodes_unfold_in H :=
   unfold (* HeterogeneousRelations.v *)
          encodes,
@@ -66,11 +62,11 @@ Ltac encodes_unfold_in H :=
          (* EnTreeSpecDefinition *)
          SpecEventEncoding,
          (* SpecM.v *)
-         LRTOutputEncoding,
-         FrameCallRetEncoding,
+         EncodingType_LRTInput,
+         EncodingType_FrameCall,
          EncodingType_ErrorE,
-         FunStackE_encodes', FunStackE_encodes,
-         EncodingType_EvType in H.
+         EncodingType_FunStackE,
+         EncodingType_EncType in H.
 
 (***
  *** Definition and basic properties of spec_refines
@@ -78,9 +74,9 @@ Ltac encodes_unfold_in H :=
 
 (** Definition of refinement for SpecM **)
 
-Definition SpecPreRel (E1 E2 : EvType) Γ1 Γ2 :=
+Definition SpecPreRel (E1 E2 : EncType) Γ1 Γ2 :=
   Rel (FunStackE E1 Γ1) (FunStackE E2 Γ2).
-Definition SpecPostRel (E1 E2 : EvType) Γ1 Γ2 :=
+Definition SpecPostRel (E1 E2 : EncType) Γ1 Γ2 :=
   PostRel (FunStackE E1 Γ1) (FunStackE E2 Γ2).
 
 (* The precondition requiring events on both sides to be equal *)
@@ -91,7 +87,7 @@ Definition eqPostRel {E Γ} : SpecPostRel E E Γ Γ :=
   fun e1 e2 a1 a2 => eq_dep1 _ _ e1 a1 e2 a2.
 
 (* Spec refinement = padded refinement *)
-Definition spec_refines {E1 E2 : EvType} {Γ1 Γ2}
+Definition spec_refines {E1 E2 : EncType} {Γ1 Γ2}
            (RPre : SpecPreRel E1 E2 Γ1 Γ2) (RPost : SpecPostRel E1 E2 Γ1 Γ2)
            {R1 R2} (RR : Rel R1 R2)
            (t1 : @SpecM E1 Γ1 R1) (t2 : @SpecM E2 Γ2 R2) :=
@@ -184,11 +180,11 @@ Qed.
 
 (** Refinement rules for the SpecM combinators **)
 
-Lemma encodes_ReSum_FunStack_EvType:
-  forall (E1 : EvType) (Γ1 : FunStack) (e1 : E1), encodes (ReSum_FunStack_EvType E1 Γ1 e1) = encodes e1.
+Lemma encodes_ReSum_FunStack_EncType:
+  forall (E1 : EncType) (Γ1 : FunStack) (e1 : E1), encodes (ReSum_FunStackE_E E1 Γ1 e1) = encodes e1.
 Proof.
   intros E1 Γ1 e1.
-  induction Γ1. auto. cbn. setoid_rewrite IHΓ1. auto.
+  induction Γ1. auto. cbn. reflexivity.
 Qed.
 
 Lemma type_eq_map_JMeq : forall (A B : Type), A = B -> exists fab : A -> B, 
@@ -201,7 +197,7 @@ Qed.
 Lemma padded_refines_bind_type_eq E1 E2 `{EncodingType E1} `{EncodingType E2} R1 R2 R1' R2' S1 S2 
       PRe RPost 
 *)
-Lemma spec_refines_trigger_bind (E1 E2 : EvType) Γ1 Γ2 R1 R2
+Lemma spec_refines_trigger_bind (E1 E2 : EncType) Γ1 Γ2 R1 R2
       (RPre : SpecPreRel E1 E2 Γ1 Γ2) (RPost : SpecPostRel E1 E2 Γ1 Γ2)
       RR (e1 : E1) (e2 : E2)
       (k1 : encodes e1 -> SpecM E1 Γ1 R1)
@@ -213,8 +209,8 @@ Lemma spec_refines_trigger_bind (E1 E2 : EvType) Γ1 Γ2 R1 R2
   spec_refines RPre RPost RR (TriggerS e1 >>= k1) (TriggerS e2 >>= k2).
 Proof.
   intros.
-  specialize (encodes_ReSum_FunStack_EvType E1 Γ1 e1) as He1. 
-  specialize (encodes_ReSum_FunStack_EvType E2 Γ2 e2) as He2.
+  specialize (encodes_ReSum_FunStack_EncType E1 Γ1 e1) as He1. 
+  specialize (encodes_ReSum_FunStack_EncType E2 Γ2 e2) as He2.
   symmetry in He1, He2.
   apply type_eq_map_JMeq in He1 as [fe1 Hfe1].
   apply type_eq_map_JMeq in He2 as [fe2 Hfe2].
@@ -238,13 +234,11 @@ Proof.
   - intros. eapply H0 in H1.
     assert (r1 = (resum_ret e1 (fe1 r1))).
     {
-      clear - Hfe1.
-      induction Γ1; eauto. cbn. symmetry. apply JMeq_eq. auto.
+      apply JMeq_eq. symmetry. apply Hfe1.
     }
     assert (r2 = (resum_ret e2 (fe2 r2))).
     {
-      clear - Hfe2.
-      induction Γ2; eauto. cbn. symmetry. apply JMeq_eq. auto.
+      apply JMeq_eq. symmetry. apply Hfe2.
     }
     rewrite H2, H3. auto.
 Qed.
@@ -479,7 +473,7 @@ Qed.
 
 (** Refinement rules for recursion **)
 
-Lemma spec_refines_call (E1 E2 : EvType) Γ1 Γ2 frame1 frame2
+Lemma spec_refines_call (E1 E2 : EncType) Γ1 Γ2 frame1 frame2
       (RPre : SpecPreRel E1 E2 (frame1 :: Γ1) (frame2 :: Γ2))
       (RPost : SpecPostRel E1 E2 (frame1 :: Γ1) (frame2 :: Γ2))
       (call1 : FrameCall frame1) (call2 : FrameCall frame2)
@@ -495,7 +489,7 @@ Qed.
 (* The bind of one recursive call refines the bind of another if the recursive
    calls are in the current RPre and, for all return values for them in RPost,
    the bind continuations refine each other *)
-Lemma spec_refines_call_bind (E1 E2 : EvType) Γ1 Γ2 frame1 frame2 R1 R2
+Lemma spec_refines_call_bind (E1 E2 : EncType) Γ1 Γ2 frame1 frame2 R1 R2
       (RPre : SpecPreRel E1 E2 (frame1 :: Γ1) (frame2 :: Γ2))
       (RPost : SpecPostRel E1 E2 (frame1 :: Γ1) (frame2 :: Γ2))
       RR (call1 : FrameCall frame1) (call2 : FrameCall frame2)
@@ -511,7 +505,7 @@ Proof.
 Qed.
 
 (* Add a bind to a RetS to a CallS on the left *)
-Lemma spec_refines_call_bind_ret_l (E1 E2 : EvType) Γ1 Γ2 frame1 frame2 R2
+Lemma spec_refines_call_bind_ret_l (E1 E2 : EncType) Γ1 Γ2 frame1 frame2 R2
       (RPre : SpecPreRel E1 E2 (frame1 :: Γ1) (frame2 :: Γ2))
       (RPost : SpecPostRel E1 E2 (frame1 :: Γ1) (frame2 :: Γ2))
       (call1 : FrameCall frame1) t2 (RR : Rel (FrameCallRet frame1 call1) R2) :
@@ -520,7 +514,7 @@ Lemma spec_refines_call_bind_ret_l (E1 E2 : EvType) Γ1 Γ2 frame1 frame2 R2
 Proof. intro; rewrite <- (bind_ret_r (CallS _ _ _ _)); eauto. Qed.
 
 (* Add a bind to a RetS to a CallS on the right *)
-Lemma spec_refines_call_bind_ret_r (E1 E2 : EvType) Γ1 Γ2 frame1 frame2
+Lemma spec_refines_call_bind_ret_r (E1 E2 : EncType) Γ1 Γ2 frame1 frame2
       (RPre : SpecPreRel E1 E2 (frame1 :: Γ1) (frame2 :: Γ2))
       (RPost : SpecPostRel E1 E2 (frame1 :: Γ1) (frame2 :: Γ2))
       R1 t1 (call2 : FrameCall frame2) (RR : Rel R1 (FrameCallRet frame2 call2)) :
@@ -529,7 +523,7 @@ Lemma spec_refines_call_bind_ret_r (E1 E2 : EvType) Γ1 Γ2 frame1 frame2
 Proof. intro H; rewrite <- (bind_ret_r (CallS _ _ _ _)); eauto. Qed.
 
 (* Add a precondition relation for a new frame on the FunStack *)
-Definition pushPreRel {E1 E2 : EvType} {Γ1 Γ2 frame1 frame2}
+Definition pushPreRel {E1 E2 : EncType} {Γ1 Γ2 frame1 frame2}
            (precond : Rel (FrameCall frame1) (FrameCall frame2))
            (RPre : SpecPreRel E1 E2 Γ1 Γ2) :
   SpecPreRel E1 E2 (frame1 :: Γ1) (frame2 :: Γ2) :=
@@ -540,7 +534,7 @@ Definition pushPreRel {E1 E2 : EvType} {Γ1 Γ2 frame1 frame2}
                end.
 
 (* Add a postcondition relation for a new frame on the FunStack *)
-Definition pushPostRel {E1 E2 : EvType} {Γ1 Γ2 frame1 frame2}
+Definition pushPostRel {E1 E2 : EncType} {Γ1 Γ2 frame1 frame2}
            (postcond : PostRel (FrameCall frame1) (FrameCall frame2))
            (RPost : SpecPostRel E1 E2 Γ1 Γ2) :
   SpecPostRel E1 E2 (frame1 :: Γ1) (frame2 :: Γ2) :=
@@ -550,7 +544,7 @@ Definition pushPostRel {E1 E2 : EvType} {Γ1 Γ2 frame1 frame2}
                | _, _ => fun _ _ => False
                end.
 
-Lemma spec_refines_multifix (E1 E2 : EvType) Γ1 Γ2 frame1 frame2 
+Lemma spec_refines_multifix (E1 E2 : EncType) Γ1 Γ2 frame1 frame2 
       (RPre : SpecPreRel E1 E2 Γ1 Γ2) (RPost : SpecPostRel E1 E2 Γ1 Γ2)
       (bodies1 : FrameTuple E1 (frame1 :: Γ1) frame1)
       (bodies2 : FrameTuple E2 (frame2 :: Γ2) frame2)
@@ -593,7 +587,7 @@ Qed.
    values that satisfy the supplied postcondition for all calls that satisfy the
    precondition; and that the bind continuations refine each other for all
    outputs in the supplied postcondition *)
-Lemma spec_refines_multifix_bind (E1 E2 : EvType) Γ1 Γ2 frame1 frame2 R1 R2
+Lemma spec_refines_multifix_bind (E1 E2 : EncType) Γ1 Γ2 frame1 frame2 R1 R2
       (RPre : SpecPreRel E1 E2 Γ1 Γ2) (RPost : SpecPostRel E1 E2 Γ1 Γ2) RR
       (bodies1 : FrameTuple E1 (frame1 :: Γ1) frame1)
       (bodies2 : FrameTuple E2 (frame2 :: Γ2) frame2)
@@ -673,7 +667,7 @@ Definition total_spec_fix {E Γ A B} `{QuantType A} `{QuantType B}
 Defined.
 
 (* Add a precondition relation for proving total_spec refinement *)
-Definition pushTSPreRel {E1 E2 : EvType} {Γ1 Γ2 frame1 A2 B2}
+Definition pushTSPreRel {E1 E2 : EncType} {Γ1 Γ2 frame1 A2 B2}
            (tsPre : A2 -> Prop)
            (precond : Rel (FrameCall frame1) (FrameCall (unary1Frame A2 B2)))
            (RPre : SpecPreRel E1 E2 Γ1 Γ2) :
@@ -686,7 +680,7 @@ Definition pushTSPreRel {E1 E2 : EvType} {Γ1 Γ2 frame1 A2 B2}
                end.
 
 (* Add a postcondition relation for proving total_spec refinement *)
-Definition pushTSPostRel {E1 E2 : EvType} {Γ1 Γ2 frame1 A2 B2}
+Definition pushTSPostRel {E1 E2 : EncType} {Γ1 Γ2 frame1 A2 B2}
            (tsPost : A2 -> B2 -> Prop)
            (postcond : PostRel (FrameCall frame1) (FrameCall (unary1Frame A2 B2)))
            (RPost : SpecPostRel E1 E2 Γ1 Γ2) :
@@ -722,7 +716,7 @@ Ltac quantl := apply padded_refines_assumel || apply padded_refines_assertl ||
                      apply interp_mrec_spec_exists_specl.
 
 Lemma total_spec_fix_refines_total_spec_aux1:
-  forall (E : EvType) (Γ : FunStack) (A B : Type) (H : QuantType A) (H0 : QuantType B)
+  forall (E : EncType) (Γ : FunStack) (A B : Type) (H : QuantType A) (H0 : QuantType B)
     (pre : A -> Prop) (post : Rel A B) (rdec : Rel A A) (a : A),
     strict_refines
      (interp_mrec_spec
@@ -838,7 +832,7 @@ Defined.
 (*with some strategic lemmas this should be doable *)
 
 Lemma spec_refines_total_spec_monot_aux1:
-  forall (E1 E2 : EvType) (Γ1 Γ2 : FunStack) (frame1 : RecFrame) (A2 B2 : Type) (RPre : SpecPreRel E1 E2 Γ1 Γ2)
+  forall (E1 E2 : EncType) (Γ1 Γ2 : FunStack) (frame1 : RecFrame) (A2 B2 : Type) (RPre : SpecPreRel E1 E2 Γ1 Γ2)
     (precond : Rel (FrameCall frame1) (FrameCall (unary1Frame A2 B2))) (tsPre : A2 -> Prop)
     (x0 : FrameCall frame1 +
             (fix FunStackE (E : Type) (Γ : FunStack) {struct Γ} : Type :=
@@ -858,7 +852,7 @@ Proof.
 Qed.
 
 Lemma spec_refines_total_spec_monot_aux2:
-  forall (E1 E2 : EvType) (Γ1 Γ2 : FunStack) (frame1 : RecFrame) (A2 B2 : Type) (RPost : SpecPostRel E1 E2 Γ1 Γ2)
+  forall (E1 E2 : EncType) (Γ1 Γ2 : FunStack) (frame1 : RecFrame) (A2 B2 : Type) (RPost : SpecPostRel E1 E2 Γ1 Γ2)
     (postcond : PostRel (FrameCall frame1) (FrameCall (unary1Frame A2 B2))) (tsPost : A2 -> B2 -> Prop)
     (e1 : FrameCall frame1 +
             (fix FunStackE (E : Type) (Γ : FunStack) {struct Γ} : Type :=
@@ -888,7 +882,7 @@ Lemma spec_refines_total_spec_post_aux {E1 Γ1 E2 Γ2 A B} `{EncodingType E1} `{
 Axiom inj_FrameCallOfArgs : forall frame n x y, FrameCallOfArgs frame n x = FrameCallOfArgs frame n y ->
                                         x = y.
 
-Lemma spec_refines_total_spec (E1 E2 : EvType) Γ1 Γ2 frame1
+Lemma spec_refines_total_spec (E1 E2 : EncType) Γ1 Γ2 frame1
       A2 B2 `{QuantType A2} `{QuantType B2}
       (RPre : SpecPreRel E1 E2 Γ1 Γ2) (RPost : SpecPostRel E1 E2 Γ1 Γ2)
       (bodies1 : FrameTuple E1 (frame1 :: Γ1) frame1)
@@ -1550,7 +1544,7 @@ Hint Extern 101 (spec_refines _ _ _ ((_ >>= _) >>= _) _) =>
 
 (* Trigger |= Trigger *)
 
-Definition spec_refines_trigger_bind_IntroArg (E1 E2 : EvType) Γ1 Γ2 R1 R2
+Definition spec_refines_trigger_bind_IntroArg (E1 E2 : EncType) Γ1 Γ2 R1 R2
       (RPre : SpecPreRel E1 E2 Γ1 Γ2) (RPost : SpecPostRel E1 E2 Γ1 Γ2)
       RR (e1 : E1) (e2 : E2)
       (k1 : encodes e1 -> SpecM E1 Γ1 R1)
@@ -1767,7 +1761,7 @@ Hint Extern 101 (spec_refines _ _ _ ((match _ with | (_,_) => _ end) >>= _) _) =
 
 (** * Rules for liftStackS  *)
 
-Lemma spec_refines_liftStackS_ret_bind_l (E1 E2 : EvType) Γ1 Γ2 R1 R2
+Lemma spec_refines_liftStackS_ret_bind_l (E1 E2 : EncType) Γ1 Γ2 R1 R2
   (RPre : SpecPreRel E1 E2 Γ1 Γ2) (RPost : SpecPostRel E1 E2 Γ1 Γ2)
   (RR : Rel R1 R2) A1 a k1 t2 :
   spec_refines RPre RPost RR (k1 a) t2 ->
@@ -1777,7 +1771,7 @@ Proof.
   auto.
 Qed.
 
-Lemma spec_refines_liftStackS_bind_bind_l (E1 E2 : EvType) Γ1 Γ2 R1 R2
+Lemma spec_refines_liftStackS_bind_bind_l (E1 E2 : EncType) Γ1 Γ2 R1 R2
   (RPre : SpecPreRel E1 E2 Γ1 Γ2) (RPost : SpecPostRel E1 E2 Γ1 Γ2)
   (RR : Rel R1 R2) A1 B1 t1 k1 k2 t2 :
   spec_refines RPre RPost RR (x <- liftStackS A1 t1 ;; liftStackS B1 (k1 x) >>= k2) t2 ->
@@ -1786,7 +1780,7 @@ Proof.
   intros. setoid_rewrite resumEntree_bind. setoid_rewrite bind_bind. eauto.
 Qed.
 
-Lemma spec_refines_liftStackS_assume_bind_l (E1 E2 : EvType) Γ1 Γ2 R1 R2
+Lemma spec_refines_liftStackS_assume_bind_l (E1 E2 : EncType) Γ1 Γ2 R1 R2
   (RPre : SpecPreRel E1 E2 Γ1 Γ2) (RPost : SpecPostRel E1 E2 Γ1 Γ2)
   (RR : Rel R1 R2) P k1 t2 :
   spec_refines RPre RPost RR (AssumeS P >>= k1) t2 ->
@@ -1801,7 +1795,7 @@ Proof.
   apply eqit_Ret. auto.
 Qed.
 
-Lemma spec_refines_liftStackS_assert_bind_l (E1 E2 : EvType) Γ1 Γ2 R1 R2
+Lemma spec_refines_liftStackS_assert_bind_l (E1 E2 : EncType) Γ1 Γ2 R1 R2
   (RPre : SpecPreRel E1 E2 Γ1 Γ2) (RPost : SpecPostRel E1 E2 Γ1 Γ2)
   (RR : Rel R1 R2) P k1 t2 :
   spec_refines RPre RPost RR (AssertS P >>= k1) t2 ->
@@ -1816,7 +1810,7 @@ Proof.
   apply eqit_Ret. auto.
 Qed.
 
-Lemma spec_refines_liftStackS_forall_bind_l (E1 E2 : EvType) Γ1 Γ2 R1 R2
+Lemma spec_refines_liftStackS_forall_bind_l (E1 E2 : EncType) Γ1 Γ2 R1 R2
   (RPre : SpecPreRel E1 E2 Γ1 Γ2) (RPost : SpecPostRel E1 E2 Γ1 Γ2)
   (RR : Rel R1 R2) A1 `{QuantType A1} k1 t2 :
   spec_refines RPre RPost RR (ForallS A1 >>= k1) t2 ->
@@ -1831,7 +1825,7 @@ Proof.
   auto.
 Qed.
 
-Lemma spec_refines_liftStackS_exists_bind_l (E1 E2 : EvType) Γ1 Γ2 R1 R2
+Lemma spec_refines_liftStackS_exists_bind_l (E1 E2 : EncType) Γ1 Γ2 R1 R2
   (RPre : SpecPreRel E1 E2 Γ1 Γ2) (RPost : SpecPostRel E1 E2 Γ1 Γ2)
   (RR : Rel R1 R2) A1 `{QuantType A1} k1 t2 :
   spec_refines RPre RPost RR (ExistsS A1 >>= k1) t2 ->
@@ -1862,7 +1856,7 @@ Qed.
 #[global] Hint Extern 101 (spec_refines _ _ _ (liftStackS _ (total_spec _ _ _) >>= _) _) =>
   apply spec_refines_liftStackS_bind_bind_l : refines.
 
-Lemma spec_refines_liftStackS_bind_ret_l (E1 E2 : EvType) Γ1 Γ2 frame1 frame2 R1 R2
+Lemma spec_refines_liftStackS_bind_ret_l (E1 E2 : EncType) Γ1 Γ2 frame1 frame2 R1 R2
       (RPre : SpecPreRel E1 E2 (frame1 :: Γ1) (frame2 :: Γ2))
       (RPost : SpecPostRel E1 E2 (frame1 :: Γ1) (frame2 :: Γ2))
       t1 t2 (RR : Rel R1 R2) :
@@ -1875,7 +1869,7 @@ Proof. intro; rewrite <- (bind_ret_r (liftStackS _ _)); eauto. Qed.
 
 
 Lemma spec_refines_liftStackS_proper:
-  forall (E1 : EvType) (Γ1 : list RecFrame) (frame1 : RecFrame) (R1 : Type) (t1 t2 : SpecM E1 nil R1),
+  forall (E1 : EncType) (Γ1 : list RecFrame) (frame1 : RecFrame) (R1 : Type) (t1 t2 : SpecM E1 nil R1),
     spec_refines eqPreRel eqPostRel eq t1 t2 ->
     spec_refines eqPreRel eqPostRel eq (@liftStackS E1 (frame1 :: Γ1) R1 t1) (liftStackS R1 t2).
 Proof.
@@ -1951,7 +1945,7 @@ Ltac Continue_unfold := simple apply Continue_unfold.
 #[global] Hint Extern 999 (PreAndPostConditions _ _) => shelve : refines prepostcond.
 #[global] Hint Extern 999 (Continue) => shelve : refines prepostcond.
 
-Lemma spec_refines_multifix_bind_IntroArg (E1 E2 : EvType) Γ1 Γ2 frame1 frame2 R1 R2
+Lemma spec_refines_multifix_bind_IntroArg (E1 E2 : EncType) Γ1 Γ2 frame1 frame2 R1 R2
       (RPre : SpecPreRel E1 E2 Γ1 Γ2) (RPost : SpecPostRel E1 E2 Γ1 Γ2) RR
       (bodies1 : FrameTuple E1 (frame1 :: Γ1) frame1)
       (bodies2 : FrameTuple E2 (frame2 :: Γ2) frame2)
@@ -1978,7 +1972,7 @@ Proof.
   unfold IntroArg in *; eapply spec_refines_multifix_bind; eauto.
 Qed.
 
-Lemma spec_refines_multifix_IntroArg (E1 E2 : EvType) Γ1 Γ2 frame1 frame2
+Lemma spec_refines_multifix_IntroArg (E1 E2 : EncType) Γ1 Γ2 frame1 frame2
       (RPre : SpecPreRel E1 E2 Γ1 Γ2) (RPost : SpecPostRel E1 E2 Γ1 Γ2)
       (bodies1 : FrameTuple E1 (frame1 :: Γ1) frame1)
       (bodies2 : FrameTuple E2 (frame2 :: Γ2) frame2)
@@ -2004,7 +1998,7 @@ Proof.
   unfold IntroArg in *; eapply spec_refines_multifix; eauto.
 Qed.
 
-Lemma spec_refines_total_spec_IntroArg (E1 E2 : EvType) Γ1 Γ2 frame1
+Lemma spec_refines_total_spec_IntroArg (E1 E2 : EncType) Γ1 Γ2 frame1
       A2 B2 `{QuantType A2} `{QuantType B2}
       (RPre : SpecPreRel E1 E2 Γ1 Γ2) (RPost : SpecPostRel E1 E2 Γ1 Γ2)
       (bodies1 : FrameTuple E1 (frame1 :: Γ1) frame1)
@@ -2065,7 +2059,7 @@ Hint Extern 101 (spec_refines ?RPre ?RPost ?RR
               RPre RPost bodies1 call1 a2 RR tsPre tsPost HWf HPrePost));
   unfold total_spec_fix_body : refines.
 
-Lemma spec_refines_call_bind_IntroArg (E1 E2 : EvType) Γ1 Γ2 frame1 frame2 R1 R2
+Lemma spec_refines_call_bind_IntroArg (E1 E2 : EncType) Γ1 Γ2 frame1 frame2 R1 R2
       (RPre : SpecPreRel E1 E2 (frame1 :: Γ1) (frame2 :: Γ2))
       (RPost : SpecPostRel E1 E2 (frame1 :: Γ1) (frame2 :: Γ2))
       RR (call1 : FrameCall frame1) (call2 : FrameCall frame2)
@@ -2078,7 +2072,7 @@ Lemma spec_refines_call_bind_IntroArg (E1 E2 : EvType) Γ1 Γ2 frame1 frame2 R1 
   spec_refines RPre RPost RR (CallS _ _ _ call1 >>= k1) (CallS _ _ _ call2 >>= k2).
 Proof. apply spec_refines_call_bind. Qed.
 
-Lemma spec_refines_call_IntroArg (E1 E2 : EvType) Γ1 Γ2 frame1 frame2
+Lemma spec_refines_call_IntroArg (E1 E2 : EncType) Γ1 Γ2 frame1 frame2
       (RPre : SpecPreRel E1 E2 (frame1 :: Γ1) (frame2 :: Γ2))
       (RPost : SpecPostRel E1 E2 (frame1 :: Γ1) (frame2 :: Γ2))
       (call1 : FrameCall frame1) (call2 : FrameCall frame2)
