@@ -403,11 +403,11 @@ Global Instance EncodingType_LRTInput stack lrt :
   EncodingType (LRTInput stack lrt) := LRTOutput stack lrt.
 
 (* ReSum instances for embedding the nth LRTInput into a FrameCall *)
-Global Instance Resum_FunStackE_LRTInput E stack n :
+Global Instance ReSum_LRTInput_FunStackE E stack n :
   ReSum (LRTInput stack (nthLRT stack n)) (FunStackE E stack) :=
   fun args => resum (FrameCallOfArgs stack n args).
 
-Global Instance FrameCall_ReSumRet E stack n :
+Global Instance ReSumRet_LRTInput_FunStackE E stack n :
   ReSumRet (LRTInput stack (nthLRT stack n)) (FunStackE E stack) :=
   fun _ r => r.
 
