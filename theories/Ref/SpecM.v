@@ -27,7 +27,7 @@ Local Open Scope list_scope.
 Import Monads.
 
 
-(* Examples of higher-order functions we want to write (but without monadic types) *)
+(* Examples of higher-order functions we want to write *)
 Section HOExamples.
 
 Context M `{Monad M}.
@@ -157,6 +157,15 @@ Fixpoint nth_default' {A} (d : A) (l : plist A) n : A :=
                   end
   end.
 
+(* If an index n is at least as long as a list, nth_default' returns the default *)
+Lemma nth_default'_default {A} (d:A) l n : plength l <= n -> nth_default' d l n = d.
+Proof.
+  revert n; induction l; intros; [ reflexivity | ].
+  simpl. destruct n.
+  - inversion H.
+  - apply IHl. apply le_S_n. assumption.
+Qed.
+
 (* If an index n is less then the length of the first list of an append, then
 the nth element of the append is the nth element of the first list *)
 Lemma nth_default'_app_left {A} (d:A) l1 l2 n :
@@ -216,7 +225,7 @@ Global Instance EncodingType_EncType (ET:EncType) : EncodingType ET :=
   EncType_encodes ET.
 
 
-(** A new approach to LetRecType **)
+(** An inductive description of recursive function types and their arguments **)
 
 (* An encoded argument type for a recursive function *)
 Inductive LetRecType : Type@{entree_u + 1} :=
@@ -350,11 +359,6 @@ Definition FrameCallRet stack (args: FrameCall stack) : Type@{entree_u} :=
 
 Global Instance EncodingType_FrameCall stack : EncodingType (FrameCall stack) :=
   FrameCallRet stack.
-
-(* Make a recursive call from its individual arguments *)
-Definition mkFrameCall stack n
-  : lrtPi stack (nthLRT stack n) (fun args => FrameCall stack) :=
-  lrtLambda stack (nthLRT stack n) (fun _ => FrameCall stack) (FrameCallOfArgs stack n).
 
 (* The error event type *)
 Inductive ErrorE : Set :=
@@ -562,6 +566,11 @@ Program Definition eqReflStackIncl stk1 stk2 (e:stk1 = stk2) : stackIncl stk1 st
 Program Definition pappNilStackIncl stk : stackIncl (papp stk pnil) stk :=
   eqReflStackIncl _ _ (papp_nil _).
 
+(* Apply the associativity of pmap_assoc in a stack inclusion *)
+Program Definition pappAssocStackIncl stk1 stk2 stk3 :
+  stackIncl (papp (papp stk1 stk2) stk3) (papp stk1 (papp stk2 stk3)) :=
+  eqReflStackIncl _ _ (papp_assoc _ _ _).
+
 (* Invert the associativity of pmap_assoc in a stack inclusion *)
 Program Definition pappUnassocStackIncl stk1 stk2 stk3 :
   stackIncl (papp stk1 (papp stk2 stk3)) (papp (papp stk1 stk2) stk3) :=
@@ -675,6 +684,18 @@ Definition inclPolyFrameTuple E calls1 calls2 defs
   : PolyFrameTuple E calls2 defs :=
   fun stack' incl' => pft stack' (compStackIncl incl incl').
 
+(* Make a FrameCall in the context of a PolyFrameTuple *)
+Program Definition mkFrameCall stk stk' (incl : stackIncl stk stk') n
+  : lrtPi stk' (nthLRT stk n) (fun args => FrameCall stk') :=
+  lrtLambda stk' (nthLRT stk n) (fun _ => FrameCall stk')
+    (FrameCallOfArgs stk' (incl n)).
+Next Obligation.
+  destruct (Compare_dec.le_lt_dec (plength stk) n).
+  - unfold nthLRT in x. rewrite nth_default'_default in x; [ | assumption ].
+    destruct (projT1 x).
+  - apply (proj1 (proj2_sig incl n l)).
+Defined.
+
 
 (** Specification Definitions **)
 
@@ -714,8 +735,13 @@ Definition importInclImp E (imp : SpecDef E) stk stk_def :
 Definition importInclDef E (imp : SpecDef E) stk stk_def :
   stackIncl
     (papp (pcons_r stk (relDefOut _ _ imp)) stk_def)
-    (papp stk (papp (relDefStack _ _ imp) stk_def)).
-Admitted.
+    (papp stk (papp (relDefStack _ _ imp) stk_def)) :=
+  compStackIncl
+    (pappAssocStackIncl stk (pcons _ pnil) stk_def)
+    (prefixStackIncl _ _ _
+       (consPrefixStackIncl
+          (relDefCall _ _ imp) _ (relDefCallLt _ _ imp)
+          _ _ (reflStackIncl _))).
 
 (* Import a SpecDef into another, by allowing the latter to call the former *)
 Program Definition importSpecDef E (imp : SpecDef E) stk
@@ -744,7 +770,7 @@ Next Obligation.
   apply relDefCallLt.
 Defined.
 
-
+(* Define a spec in a given FunStack that imports a list of spec definitions *)
 Fixpoint defineRelSpec E stk (imps : plist (SpecDef E)) :
   RelSpecDef E (papp_r stk (pmap (relDefOut _ _) imps)) -> RelSpecDef E stk :=
   match imps return RelSpecDef E (papp_r stk (pmap (relDefOut _ _) imps)) ->
@@ -755,9 +781,11 @@ Fixpoint defineRelSpec E stk (imps : plist (SpecDef E)) :
         importSpecDef E imp stk (defineRelSpec E _ imps' d)
   end.
 
+(* Cast the stack of a spec definition *)
 Program Definition castRelSpecDef E stk1 stk2 (e : stk1 = stk2)
   (d : RelSpecDef E stk1) : RelSpecDef E stk2 := d.
 
+(* Define a spec in the empty FunStack that imports a list of spec definitions *)
 Program Definition defineSpec E (imps : plist (SpecDef E))
                       (d : RelSpecDef E (pmap (relDefOut _ _) imps)) : SpecDef E :=
   defineRelSpec _ _ imps (castRelSpecDef _ _ _ _ d).
