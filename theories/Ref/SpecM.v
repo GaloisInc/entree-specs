@@ -457,10 +457,17 @@ Global Instance SpecM_Monad {E} Γ : Monad (SpecM E Γ) :=
     bind := fun A B m k => BindS m k;
   |}.
 
+(* A FrameCall with its return type *)
+Definition FrameCallWithRet stack (R : Type@{entree_u}) : Type@{entree_u} :=
+  { call:FrameCall stack | FrameCallRet stack call = R }.
+
 (* Create a recursive call to a function in the top-most using args *)
-Definition CallS E stack (args : FrameCall stack) :
-  SpecM E stack (FrameCallRet stack args) :=
-  trigger (H2:=@SpecEventReSumRet _ _ _ _ _ _) args.
+Definition CallS E stack R (args : FrameCallWithRet stack R) :
+  SpecM E stack R :=
+  eq_rect
+    _ (fun R' => SpecM E stack R')
+    (trigger (H2:=@SpecEventReSumRet _ _ _ _ _ _) (proj1_sig args))
+    R (proj2_sig args).
 
 (* Helper for applyDepApp *)
 Definition castCallFun E stack lrt1 lrt2 (e : lrt1 = lrt2)
@@ -684,16 +691,31 @@ Definition inclPolyFrameTuple E calls1 calls2 defs
   : PolyFrameTuple E calls2 defs :=
   fun stack' incl' => pft stack' (compStackIncl incl incl').
 
+(* An input for a call in a stack can only be to a call number that is in range *)
+Lemma LRTInput_in_bounds stk stk' n (args : LRTInput stk' (nthLRT stk n)) :
+  n < plength stk.
+Proof.
+  destruct (Compare_dec.le_lt_dec (plength stk) n); [ | assumption ].
+  unfold nthLRT in args; rewrite nth_default'_default in args;
+    [ destruct (projT1 args) | assumption ].
+Qed.
+
+Program Definition castLRTInput stk lrt lrt' (e : lrt = lrt')
+  (args : LRTInput stk lrt) :
+  { args': LRTInput stk lrt' | LRTOutput _ _ args' = LRTOutput _ _ args } := args.
+
 (* Make a FrameCall in the context of a PolyFrameTuple *)
 Program Definition mkFrameCall stk stk' (incl : stackIncl stk stk') n
-  : lrtPi stk' (nthLRT stk n) (fun args => FrameCall stk') :=
-  lrtLambda stk' (nthLRT stk n) (fun _ => FrameCall stk')
-    (FrameCallOfArgs stk' (incl n)).
+  : lrtPi stk' (nthLRT stk n)
+      (fun args => FrameCallWithRet stk' (LRTOutput stk' _ args)) :=
+  lrtLambda stk' (nthLRT stk n) _
+    (fun args =>
+       exist _ (FrameCallOfArgs stk' (incl n) (castLRTInput stk' _ _ _ args)) _).
 Next Obligation.
-  destruct (Compare_dec.le_lt_dec (plength stk) n).
-  - unfold nthLRT in x. rewrite nth_default'_default in x; [ | assumption ].
-    destruct (projT1 x).
-  - apply (proj1 (proj2_sig incl n l)).
+  apply (proj1 (proj2_sig incl n (LRTInput_in_bounds _ _ _ args))).
+Defined.
+Next Obligation.
+  apply (proj2_sig (castLRTInput stk' _ _ _ args)).
 Defined.
 
 
