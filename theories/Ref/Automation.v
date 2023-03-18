@@ -473,21 +473,32 @@ Qed.
 
 (** Refinement rules for recursion **)
 
+Definition callSPost {E1 E2 : EncType} {Γ1 Γ2 R1 R2}
+  (RPost : SpecPostRel E1 E2 Γ1 Γ2)
+  (call1 : FrameCallWithRet Γ1 R1) (call2 : FrameCallWithRet Γ2 R2)
+  (r1 : R1) (r2 : R2) : Prop :=
+  RPost
+    (inl (proj1_sig call1)) (inl (proj1_sig call2))
+    (eq_rect _ (fun T => T) r1 _ (eq_sym (proj2_sig call1)))
+    (eq_rect _ (fun T => T) r2 _ (eq_sym (proj2_sig call2))).
+
 Lemma spec_refines_call (E1 E2 : EncType) Γ1 Γ2 R1 R2
       (RPre : SpecPreRel E1 E2 Γ1 Γ2)
       (RPost : SpecPostRel E1 E2 Γ1 Γ2)
       (call1 : FrameCallWithRet Γ1 R1) (call2 : FrameCallWithRet Γ2 R2)
       (RR : Rel R1 R2) :
   RPre (inl (proj1_sig call1)) (inl (proj1_sig call2)) ->
-  (forall r1 r2,
-      RPost (inl (proj1_sig call1)) (inl (proj1_sig call2)) r1 r2 ->
-      RR (eq_rect _ (fun T => T) r1 R1 (proj2_sig call1))
-        (eq_rect _ (fun T => T) r2 R2 (proj2_sig call2))) ->
+  (forall r1 r2, callSPost RPost call1 call2 r1 r2 -> RR r1 r2) ->
   spec_refines RPre RPost RR (CallS _ _ _ call1) (CallS _ _ _ call2).
 Proof.
-  intros. apply padded_refines_vis. auto. intros.
-  apply padded_refines_ret. auto.
+  intros. apply padded_refines_vis; [ auto | ].
+  intros. apply padded_refines_ret. apply H0.
+  unfold callSPost.
+  rewrite rew_compose. rewrite rew_compose.
+  rewrite <- eq_rect_eq. rewrite <- eq_rect_eq. assumption.
 Qed.
+
+FIXME HERE NOW: continue updating
 
 (* The bind of one recursive call refines the bind of another if the recursive
    calls are in the current RPre and, for all return values for them in RPost,
