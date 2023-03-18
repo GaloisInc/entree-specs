@@ -457,18 +457,6 @@ Global Instance SpecM_Monad {E} Γ : Monad (SpecM E Γ) :=
     bind := fun A B m k => BindS m k;
   |}.
 
-(* A FrameCall with its return type *)
-Definition FrameCallWithRet stack (R : Type@{entree_u}) : Type@{entree_u} :=
-  { call:FrameCall stack | FrameCallRet stack call = R }.
-
-(* Create a recursive call to a function in the top-most using args *)
-Definition CallS E stack R (args : FrameCallWithRet stack R) :
-  SpecM E stack R :=
-  eq_rect
-    _ (fun R' => SpecM E stack R')
-    (trigger (H2:=@SpecEventReSumRet _ _ _ _ _ _) (proj1_sig args))
-    R (proj2_sig args).
-
 (* Helper for applyDepApp *)
 Definition castCallFun E stack lrt1 lrt2 (e : lrt1 = lrt2)
   (f: forall args:LRTInput stack lrt1, SpecM E stack (LRTOutput _ _ args))
@@ -669,6 +657,102 @@ Next Obligation.
 Defined.
 
 
+(** Defining recursive calls in a stack-polymorphic way **)
+
+(* An input for a call in a stack can only be to a call number that is in range *)
+Lemma LRTInput_in_bounds stk stk' n (args : LRTInput stk' (nthLRT stk n)) :
+  n < plength stk.
+Proof.
+  destruct (Compare_dec.le_lt_dec (plength stk) n); [ | assumption ].
+  unfold nthLRT in args; rewrite nth_default'_default in args;
+    [ destruct (projT1 args) | assumption ].
+Qed.
+
+Program Definition castLRTInput stk lrt lrt' (e : lrt = lrt')
+  (args : LRTInput stk lrt) :
+  { args': LRTInput stk lrt' | LRTOutput _ _ args' = LRTOutput _ _ args } := args.
+
+Definition FrameCallWithRet stk R :=
+  { call : FrameCall stk | FrameCallRet stk call = R }.
+
+Definition FrameCallS E stk (args : FrameCall stk)
+  : SpecM E stk (FrameCallRet stk args) :=
+  trigger (H2:=@SpecEventReSumRet _ _ _ _ _ _) args.
+
+Definition CallS E stk R (call : FrameCallWithRet stk R) : SpecM E stk R :=
+  bind (FrameCallS E stk (proj1_sig call))
+    (fun r => ret (eq_rect _ (fun T => T) r R (proj2_sig call))).
+
+Definition mkFrameCall stk stk' (incl : stackIncl stk stk') n
+  : lrtPi stk' (nthLRT stk n)
+      (fun args => FrameCallWithRet stk' (LRTOutput _ _ args)) :=
+  lrtLambda stk' (nthLRT stk n)
+    (fun args => FrameCallWithRet stk' (LRTOutput _ _ args))
+    (fun args =>
+       exist _ (FrameCallOfArgs _ (proj1_sig incl n)
+                  (proj1_sig
+                     (castLRTInput
+                        _ _ _
+                        (proj1 (proj2_sig incl n (LRTInput_in_bounds _ _ _ args)))
+                        args)))
+         (proj2_sig
+            (castLRTInput
+               _ _ _
+               (proj1 (proj2_sig incl n (LRTInput_in_bounds _ _ _ args)))
+               args))).
+
+
+(* FIXME: maybe the following is no longer needed...? *)
+(*
+(* A FrameCall where the arguments are relative to a different stack *)
+Inductive RelCall argStk stk : Type@{entree_u} :=
+| RelCallOfArgs n (args : LRTInput argStk (nthLRT stk n)).
+
+(* The return type for a FrameCall recursive call, using a specific M *)
+Definition RelCallRet argStk stk (args: RelCall argStk stk) : Type@{entree_u} :=
+  match args with
+  | RelCallOfArgs _ _ n args => LRTOutput argStk (nthLRT stk n) args
+  end.
+
+Definition inclRelCall stk stk' (incl : stackIncl stk stk')
+  (call : RelCall stk' stk) : FrameCall stk' :=
+  match call with
+  | RelCallOfArgs _ _ n args =>
+      FrameCallOfArgs _ (proj1_sig incl n)
+        (proj1_sig
+           (castLRTInput _ _ _
+              (proj1 (proj2_sig incl n (LRTInput_in_bounds _ _ _ args))) args))
+  end.
+
+Definition inclRelCallRet stk stk' incl call :
+  FrameCallRet stk' (inclRelCall stk stk' incl call) = RelCallRet stk' stk call :=
+  match call with
+  | RelCallOfArgs _ _ n args =>
+      proj2_sig
+        (castLRTInput _ _ _
+           (proj1 (proj2_sig incl n (LRTInput_in_bounds _ _ _ args))) args)
+  end.
+
+Definition FrameCallS E stk (args : FrameCall stk)
+  : SpecM E stk (FrameCallRet stk args) :=
+  trigger (H2:=@SpecEventReSumRet _ _ _ _ _ _) args.
+
+Program Definition CallS E stk stk' (incl : stackIncl stk stk')
+  (call : RelCall stk' stk) : SpecM E stk' (RelCallRet _ _ call) :=
+  eq_rect
+    _ (SpecM E stk')
+    (FrameCallS E stk' (inclRelCall stk stk' incl call))
+    _
+    (inclRelCallRet stk stk' incl call).
+
+(* Make a RelCall *)
+Definition mkRelCall stk stk' n
+  : lrtPi stk' (nthLRT stk n) (fun args => RelCall stk' stk) :=
+  lrtLambda stk' (nthLRT stk n) _ (fun args => RelCallOfArgs stk' stk n args).
+*)
+
+
+
 (** Stack-polymorphic function tuples **)
 
 (* A FrameTuple that is polymorphic in its function stack, which defines
@@ -690,33 +774,6 @@ Definition inclPolyFrameTuple E calls1 calls2 defs
   (pft : PolyFrameTuple E calls1 defs)
   : PolyFrameTuple E calls2 defs :=
   fun stack' incl' => pft stack' (compStackIncl incl incl').
-
-(* An input for a call in a stack can only be to a call number that is in range *)
-Lemma LRTInput_in_bounds stk stk' n (args : LRTInput stk' (nthLRT stk n)) :
-  n < plength stk.
-Proof.
-  destruct (Compare_dec.le_lt_dec (plength stk) n); [ | assumption ].
-  unfold nthLRT in args; rewrite nth_default'_default in args;
-    [ destruct (projT1 args) | assumption ].
-Qed.
-
-Program Definition castLRTInput stk lrt lrt' (e : lrt = lrt')
-  (args : LRTInput stk lrt) :
-  { args': LRTInput stk lrt' | LRTOutput _ _ args' = LRTOutput _ _ args } := args.
-
-(* Make a FrameCall in the context of a PolyFrameTuple *)
-Program Definition mkFrameCall stk stk' (incl : stackIncl stk stk') n
-  : lrtPi stk' (nthLRT stk n)
-      (fun args => FrameCallWithRet stk' (LRTOutput stk' _ args)) :=
-  lrtLambda stk' (nthLRT stk n) _
-    (fun args =>
-       exist _ (FrameCallOfArgs stk' (incl n) (castLRTInput stk' _ _ _ args)) _).
-Next Obligation.
-  apply (proj1 (proj2_sig incl n (LRTInput_in_bounds _ _ _ args))).
-Defined.
-Next Obligation.
-  apply (proj2_sig (castLRTInput stk' _ _ _ args)).
-Defined.
 
 
 (** Specification Definitions **)

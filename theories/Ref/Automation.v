@@ -473,13 +473,16 @@ Qed.
 
 (** Refinement rules for recursion **)
 
-Lemma spec_refines_call (E1 E2 : EncType) Γ1 Γ2 frame1 frame2
-      (RPre : SpecPreRel E1 E2 (frame1 :: Γ1) (frame2 :: Γ2))
-      (RPost : SpecPostRel E1 E2 (frame1 :: Γ1) (frame2 :: Γ2))
-      (call1 : FrameCall frame1) (call2 : FrameCall frame2)
-      (RR : Rel (encodes call1) (encodes call2)) :
-  RPre (inl call1) (inl call2) ->
-  (forall r1 r2, RPost (inl call1) (inl call2) r1 r2 -> RR r1 r2) ->
+Lemma spec_refines_call (E1 E2 : EncType) Γ1 Γ2 R1 R2
+      (RPre : SpecPreRel E1 E2 Γ1 Γ2)
+      (RPost : SpecPostRel E1 E2 Γ1 Γ2)
+      (call1 : FrameCallWithRet Γ1 R1) (call2 : FrameCallWithRet Γ2 R2)
+      (RR : Rel R1 R2) :
+  RPre (inl (proj1_sig call1)) (inl (proj1_sig call2)) ->
+  (forall r1 r2,
+      RPost (inl (proj1_sig call1)) (inl (proj1_sig call2)) r1 r2 ->
+      RR (eq_rect _ (fun T => T) r1 R1 (proj2_sig call1))
+        (eq_rect _ (fun T => T) r2 R2 (proj2_sig call2))) ->
   spec_refines RPre RPost RR (CallS _ _ _ call1) (CallS _ _ _ call2).
 Proof.
   intros. apply padded_refines_vis. auto. intros.
@@ -489,44 +492,48 @@ Qed.
 (* The bind of one recursive call refines the bind of another if the recursive
    calls are in the current RPre and, for all return values for them in RPost,
    the bind continuations refine each other *)
-Lemma spec_refines_call_bind (E1 E2 : EncType) Γ1 Γ2 frame1 frame2 R1 R2
-      (RPre : SpecPreRel E1 E2 (frame1 :: Γ1) (frame2 :: Γ2))
-      (RPost : SpecPostRel E1 E2 (frame1 :: Γ1) (frame2 :: Γ2))
-      RR (call1 : FrameCall frame1) (call2 : FrameCall frame2)
-      (k1 : FrameCallRet frame1 call1 -> SpecM E1 (frame1 :: Γ1) R1)
-      (k2 : FrameCallRet frame2 call2 -> SpecM E2 (frame2 :: Γ2) R2) :
+Lemma spec_refines_call_bind (E1 E2 : EncType) Γ1 Γ2 R1 R2
+      (RPre : SpecPreRel E1 E2 Γ1 Γ2)
+      (RPost : SpecPostRel E1 E2 Γ1 Γ2)
+      RR (call1 : FrameCall Γ1) (call2 : FrameCall Γ2)
+      (k1 : FrameCallRet Γ1 call1 -> SpecM E1 Γ1 R1)
+      (k2 : FrameCallRet Γ2 call2 -> SpecM E2 Γ2 R2) :
   RPre (inl call1) (inl call2) ->
   (forall r1 r2,
       RPost (inl call1) (inl call2) r1 r2 ->
       spec_refines RPre RPost RR (k1 (resum_ret call1 r1)) (k2 (resum_ret call2 r2))) ->
-  spec_refines RPre RPost RR (CallS _ _ _ call1 >>= k1) (CallS _ _ _ call2 >>= k2).
+  spec_refines RPre RPost RR (CallS _ _ call1 >>= k1) (CallS _ _ call2 >>= k2).
 Proof.
   intros. eapply padded_refines_bind; try eapply spec_refines_call; eauto.
 Qed.
 
 (* Add a bind to a RetS to a CallS on the left *)
-Lemma spec_refines_call_bind_ret_l (E1 E2 : EncType) Γ1 Γ2 frame1 frame2 R2
-      (RPre : SpecPreRel E1 E2 (frame1 :: Γ1) (frame2 :: Γ2))
-      (RPost : SpecPostRel E1 E2 (frame1 :: Γ1) (frame2 :: Γ2))
-      (call1 : FrameCall frame1) t2 (RR : Rel (FrameCallRet frame1 call1) R2) :
-  spec_refines RPre RPost RR (CallS _ _ _ call1 >>= RetS) t2 ->
-  spec_refines RPre RPost RR (CallS _ _ _ call1) t2.
-Proof. intro; rewrite <- (bind_ret_r (CallS _ _ _ _)); eauto. Qed.
+Lemma spec_refines_call_bind_ret_l (E1 E2 : EncType) Γ1 Γ2 R2
+      (RPre : SpecPreRel E1 E2 Γ1 Γ2)
+      (RPost : SpecPostRel E1 E2 Γ1 Γ2)
+      (call1 : FrameCall Γ1) t2 (RR : Rel (FrameCallRet Γ1 call1) R2) :
+  spec_refines RPre RPost RR (CallS _ _ call1 >>= RetS) t2 ->
+  spec_refines RPre RPost RR (CallS _ _ call1) t2.
+Proof. intro; rewrite <- (bind_ret_r (CallS _ _ _)); eauto. Qed.
 
 (* Add a bind to a RetS to a CallS on the right *)
-Lemma spec_refines_call_bind_ret_r (E1 E2 : EncType) Γ1 Γ2 frame1 frame2
-      (RPre : SpecPreRel E1 E2 (frame1 :: Γ1) (frame2 :: Γ2))
-      (RPost : SpecPostRel E1 E2 (frame1 :: Γ1) (frame2 :: Γ2))
-      R1 t1 (call2 : FrameCall frame2) (RR : Rel R1 (FrameCallRet frame2 call2)) :
-  spec_refines RPre RPost RR t1 (CallS _ _ _ call2 >>= RetS) ->
-  spec_refines RPre RPost RR t1 (CallS _ _ _ call2).
-Proof. intro H; rewrite <- (bind_ret_r (CallS _ _ _ _)); eauto. Qed.
+Lemma spec_refines_call_bind_ret_r (E1 E2 : EncType) Γ1 Γ2
+      (RPre : SpecPreRel E1 E2 Γ1 Γ2)
+      (RPost : SpecPostRel E1 E2 Γ1 Γ2)
+      R1 t1 (call2 : FrameCall Γ2) (RR : Rel R1 (FrameCallRet Γ2 call2)) :
+  spec_refines RPre RPost RR t1 (CallS _ _ call2 >>= RetS) ->
+  spec_refines RPre RPost RR t1 (CallS _ _ call2).
+Proof. intro H; rewrite <- (bind_ret_r (CallS _ _ _)); eauto. Qed.
+
+
+
+
 
 (* Add a precondition relation for a new frame on the FunStack *)
-Definition pushPreRel {E1 E2 : EncType} {Γ1 Γ2 frame1 frame2}
-           (precond : Rel (FrameCall frame1) (FrameCall frame2))
+Definition pushPreRel {E1 E2 : EncType} {Γ1 Γ2}
+           (precond : Rel (FrameCall Γ1) (FrameCall Γ2))
            (RPre : SpecPreRel E1 E2 Γ1 Γ2) :
-  SpecPreRel E1 E2 (frame1 :: Γ1) (frame2 :: Γ2) :=
+  SpecPreRel E1 E2 Γ1 Γ2 :=
   fun a1 a2 => match a1,a2 with
                | inl args1, inl args2 => precond args1 args2
                | inr ev1, inr ev2 => RPre ev1 ev2
