@@ -511,18 +511,18 @@ Definition CallLRTArg E stack lrt (arg:LRTArg stack (ArgType_Fun lrt)) :
 
 (** Defining MultiFixS **)
 
-(* The type of a function body in a recursive function frame *)
-Definition FrameFun E stack lrt : Type@{entree_u} :=
+(* A monadic function whose type is described by the encoding lrt *)
+Definition SpecFun E stack lrt : Type@{entree_u} :=
   lrtPi stack lrt (fun args => SpecM E stack (LRTOutput _ lrt args)).
 
 (* A right-nested tuple of a list of functions in a recursive function frame *)
 Definition FrameTuple E stack : Type@{entree_u} :=
-  mapTuple (FrameFun E stack) stack.
+  mapTuple (SpecFun E stack) stack.
 
 (* Get the nth function in a FrameTuple *)
 Definition nthFrameTupleFun E stack n (funs : FrameTuple E stack) :
-  FrameFun E stack (nthLRT stack n) :=
-  nthProjDefault (FrameFun E stack) default_lrt
+  SpecFun E stack (nthLRT stack n) :=
+  nthProjDefault (SpecFun E stack) default_lrt
     (fun (v:void) => match v with end) _ n funs.
 
 (* Apply a FrameTuple to a FrameCall to get a FrameCallRet *)
@@ -533,10 +533,10 @@ Definition applyFrameTuple E stack (funs : FrameTuple E stack)
     lrtApply stack (nthLRT stack n) _ (nthFrameTupleFun _ stack n funs) args
   end.
 
-(* Create a multi-way fixed point of a sequence of functions *)
-Definition MultiFixS E stack (bodies : FrameTuple E stack) (call : FrameCall stack)
-  : SpecM E pnil (FrameCallRet stack call) :=
-  resumEntree (mrec_spec (applyFrameTuple E stack bodies) call).
+(* Create a multi-way letrec that binds 0 or more co-recursive functions *)
+Definition LetRecS E R stack (funs : FrameTuple E stack) (body : SpecM E stack R)
+  : SpecM E pnil R :=
+  resumEntree (interp_mrec_spec (applyFrameTuple E stack funs) body).
 
 
 (** Stack Inclusions **)
@@ -755,10 +755,19 @@ Definition mkRelCall stk stk' n
 
 (** Stack-polymorphic function tuples **)
 
+(* A monadic function that is polymorphic in its function stack *)
+Definition PolySpecFun E stack lrt :=
+  forall stack', stackIncl stack stack' -> SpecFun E stack' lrt.
+
+(* Apply a stackIncl to a PolySpecFun *)
+Definition inclPolySpecFun E stk stk' lrt (incl : stackIncl stk stk')
+  (f : PolySpecFun E stk lrt) : PolySpecFun E stk' lrt :=
+  fun stk'' incl' => f stk'' (compStackIncl incl incl').
+
 (* A FrameTuple that is polymorphic in its function stack, which defines
 functions for all the defs that can call all the calls *)
 Definition PolyFrameTuple E calls defs :=
-  forall stack', stackIncl calls stack' -> mapTuple (FrameFun E stack') defs.
+  forall stack', stackIncl calls stack' -> mapTuple (SpecFun E stack') defs.
 
 (* Append two PolyFrameTuples *)
 Definition appPolyFrameTuple E calls defs1 defs2
@@ -779,99 +788,85 @@ Definition inclPolyFrameTuple E calls1 calls2 defs
 (** Specification Definitions **)
 
 (* A "spec definition" represents a definition of a SpecM monadic function via
-MultiFixsS over a tuple of recursive function bodies and a top-level call into
-that tuple. A RelSpecDef is a spec definition relative to some stack of
-already-defined recursive functions. *)
-Record RelSpecDef E stk :=
-  { relDefStack : FunStack;
-    relDefBodies : PolyFrameTuple E (papp stk relDefStack) relDefStack;
-    relDefCall : nat;
-    relDefCallLt : relDefCall < plength relDefStack }.
-
-(* The output type of the main definition of a RelSpecDef *)
-Definition relDefOut E stk (d : RelSpecDef E stk) : LetRecType :=
-  nthLRT (relDefStack _ _ d) (relDefCall _ _ d).
-
-(* A spec definition that is not relative, i.e., has an empty stack *)
-Definition SpecDef E := RelSpecDef E pnil.
+LetRecS over a tuple of recursive function bodies *)
+Record SpecDef E :=
+  { defStack : FunStack;
+    defFuns : PolyFrameTuple E defStack defStack;
+    defLRT : LetRecType;
+    defBody : PolySpecFun E defStack defLRT }.
 
 (* Complete a SpecDef to a SpecM computation *)
 Definition completeSpecDef E (d : SpecDef E)
-  (args : LRTInput (relDefStack E _ d) (relDefOut E _ d)) :
+  (args : LRTInput (defStack E d) (defLRT E d)) :
   SpecM E pnil (LRTOutput _ _ args) :=
-  MultiFixS E (relDefStack _ _ d)
-    (relDefBodies _ _ d (relDefStack _ _ d) (reflStackIncl _))
-    (FrameCallOfArgs _ _ args).
+  LetRecS E _ (defStack _ d)
+    (defFuns _ d (defStack _ d) (reflStackIncl _))
+    (lrtApply _ _ _ (defBody _ d (defStack _ d) (reflStackIncl _)) args).
 
-(* Build a stack inclusion for the imported spec in importSpecDef *)
-Definition importInclImp E (imp : SpecDef E) stk stk_def :
-  stackIncl (relDefStack _ _ imp) (papp stk (papp (relDefStack _ _ imp) stk_def)) :=
-  compStackIncl
-    (weakenRightStackIncl _ _)
-    (weakenLeftStackIncl _ _).
+(* Build the concatenated FunStack for a list of imported spec defs *)
+Definition impsStack E (imps : plist (SpecDef E)) : FunStack :=
+  pconcat (pmap (defStack _) imps).
 
-(* Build a stack inclusion for the defined spec in importSpecDef *)
-Definition importInclDef E (imp : SpecDef E) stk stk_def :
-  stackIncl
-    (papp (pcons_r stk (relDefOut _ _ imp)) stk_def)
-    (papp stk (papp (relDefStack _ _ imp) stk_def)) :=
-  compStackIncl
-    (pappAssocStackIncl stk (pcons _ pnil) stk_def)
-    (prefixStackIncl _ _ _
-       (consPrefixStackIncl
-          (relDefCall _ _ imp) _ (relDefCallLt _ _ imp)
-          _ _ (reflStackIncl _))).
+(* Buuild the list of LetRecTypes implemented by a list of imported spec defs *)
+Definition impsLRTs E (imps : plist (SpecDef E)) : FunStack :=
+  pmap (defLRT _) imps.
 
-(* Import a SpecDef into another, by allowing the latter to call the former *)
-Program Definition importSpecDef E (imp : SpecDef E) stk
-  (d : RelSpecDef E (pcons_r stk (relDefOut E pnil imp))) :
-  RelSpecDef E stk :=
-  {|
-    relDefStack := papp (relDefStack _ _ imp) (relDefStack _ _ d);
-    relDefBodies :=
-      appPolyFrameTuple
-        E
-        (papp stk (papp (relDefStack _ _ imp) (relDefStack _ _ d)))
-        _ _
-        (inclPolyFrameTuple
-           _ _ _ _
-           (importInclImp E imp stk (relDefStack _ _ d))
-           (relDefBodies _ _ imp))
-        (inclPolyFrameTuple
-           _ _ _ _
-           (importInclDef E imp stk (relDefStack _ _ d))
-           (relDefBodies _ _ d));
-    relDefCall := plength (relDefStack _ _ imp) + relDefCall _ _ d;
-    relDefCallLt := _ |}.
-Next Obligation.
-  rewrite plength_papp.
-  apply Plus.plus_lt_compat_l.
-  apply relDefCallLt.
-Defined.
-
-(* Define a spec in a given FunStack that imports a list of spec definitions *)
-Fixpoint defineRelSpec E stk (imps : plist (SpecDef E)) :
-  RelSpecDef E (papp_r stk (pmap (relDefOut _ _) imps)) -> RelSpecDef E stk :=
-  match imps return RelSpecDef E (papp_r stk (pmap (relDefOut _ _) imps)) ->
-                    RelSpecDef E stk with
-  | pnil => fun d => d
-  | pcons imp imps' =>
-      fun d =>
-        importSpecDef E imp stk (defineRelSpec E _ imps' d)
+(* Build the list of recursive functions for a list of imported spec defs *)
+Fixpoint impsFuns E (imps : plist (SpecDef E)) :
+  PolyFrameTuple E (impsStack E imps) (impsStack E imps) :=
+  match imps return PolyFrameTuple E (impsStack E imps) (impsStack E imps) with
+  | pnil => fun _ _ => tt
+  | pcons d imps' =>
+      appPolyFrameTuple _ _ _ _
+        (inclPolyFrameTuple _ _ _ _
+           (weakenRightStackIncl _ _)
+           (defFuns _ d))
+        (inclPolyFrameTuple _ _ _ _
+           (weakenLeftStackIncl _ _)
+           (impsFuns E imps'))
   end.
 
-(* Cast the stack of a spec definition *)
-Program Definition castRelSpecDef E stk1 stk2 (e : stk1 = stk2)
-  (d : RelSpecDef E stk1) : RelSpecDef E stk2 := d.
+(* The combined function stack for defineSpec *)
+Definition defineSpecStack E stk (imps : plist (SpecDef E)) :=
+  papp stk (impsStack E imps).
 
-(* Define a spec in the empty FunStack that imports a list of spec definitions *)
-Program Definition defineSpec E (imps : plist (SpecDef E))
-                      (d : RelSpecDef E (pmap (relDefOut _ _) imps)) : SpecDef E :=
-  defineRelSpec _ _ imps (castRelSpecDef _ _ _ _ d).
-Next Obligation.
-  rewrite papp_r_papp. reflexivity.
-Defined.
+(* Define a spec from: a list of imported spec definitions; a tuple of
+recursively-defined functions; and a body that can call into either *)
+Definition defineSpec E stk lrt (imps : plist (SpecDef E))
+  (recs : PolyFrameTuple E (defineSpecStack E stk imps) stk)
+  (body : PolySpecFun E (defineSpecStack E stk imps) lrt) : SpecDef E :=
+  {|
+    defStack := defineSpecStack E stk imps;
+    defFuns :=
+      appPolyFrameTuple _ _ _ _
+        recs (inclPolyFrameTuple _ _ _ _
+                (weakenLeftStackIncl _ _) (impsFuns E imps));
+    defLRT := lrt;
+    defBody := body
+  |}.
 
+(* Get the body of the nth import in a list of imports *)
+Fixpoint nthImportBody E imps n :
+  PolySpecFun E (impsStack E imps) (nthLRT (impsLRTs E imps) n) :=
+  match imps return PolySpecFun E (impsStack E imps) (nthLRT (impsLRTs E imps) n)
+  with
+  | pnil => fun _ _ bot => match bot with end
+  | pcons imp imps' =>
+      match n return PolySpecFun E (impsStack E (pcons imp imps'))
+                       (nthLRT (impsLRTs E (pcons imp imps')) n) with
+      | 0 =>
+          inclPolySpecFun _ _ _ _ (weakenRightStackIncl _ _) (defBody E imp)
+      | S n' =>
+          inclPolySpecFun _ _ _ _ (weakenLeftStackIncl _ _)
+            (nthImportBody E imps' n')
+      end
+  end.
+
+(* Call the nth imported spec *)
+Definition CallImportS E stk imps n stk'
+  (incl : stackIncl (defineSpecStack E stk imps) stk') :
+  SpecFun E stk' (nthLRT (impsLRTs E imps) n) :=
+  (nthImportBody E imps n) stk' (compStackIncl (weakenLeftStackIncl _ _) incl).
 
 (* FIXME: just keeping LRTValue in case it is useful in the future...
 (* A value of an LRTArgType *)
