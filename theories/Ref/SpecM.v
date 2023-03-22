@@ -185,6 +185,16 @@ Proof.
   - apply IHl1.
 Qed.
 
+(* Proof that an object equals the nth element of a list *)
+Fixpoint isNth@{u} {A : Type@{u}} (xs : plist A) n (y : A) : Prop :=
+  match xs with
+  | pnil => False
+  | pcons x xs' => match n with
+                   | 0 => x = y
+                   | S n' => isNth xs' n' y
+                   end
+  end.
+
 
 (* Build the right-nested tuple type of a list of types formed by mapping a
 function across a list *)
@@ -549,6 +559,13 @@ Definition stackIncl (stk1 stk2 : FunStack) : Type :=
     forall n, n < plength stk1 ->
               nthLRT stk1 n = nthLRT stk2 (f n) /\ f n < plength stk2 }.
 
+(* The trivial stack inclusion from the empty stack *)
+Program Definition nilStackIncl stk : stackIncl pnil stk :=
+  fun n => n.
+Next Obligation.
+  inversion H.
+Defined.
+
 (* The trivially reflexive stack inclusion *)
 Program Definition reflStackIncl stk : stackIncl stk stk :=
   fun n => n.
@@ -845,6 +862,7 @@ Definition defineSpec E stk lrt (imps : plist (SpecDef E))
     defBody := body
   |}.
 
+(*
 (* Get the body of the nth import in a list of imports *)
 Fixpoint nthImportBody E imps n :
   PolySpecFun E (impsStack E imps) (nthLRT (impsLRTs E imps) n) :=
@@ -861,12 +879,38 @@ Fixpoint nthImportBody E imps n :
             (nthImportBody E imps' n')
       end
   end.
+*)
 
-(* Call the nth imported spec *)
-Definition CallImportS E stk imps n stk'
-  (incl : stackIncl (defineSpecStack E stk imps) stk') :
-  SpecFun E stk' (nthLRT (impsLRTs E imps) n) :=
-  (nthImportBody E imps n) stk' (compStackIncl (weakenLeftStackIncl _ _) incl).
+(* A trivial spec definition *)
+Definition defaultSpecDef E : SpecDef E :=
+  {|
+    defStack := pnil;
+    defFuns := fun _ _ => tt;
+    defLRT := default_lrt;
+    defBody := fun _ _ bot => match bot with end;
+  |}.
+
+(* Get the nth spec definition from a list, defaulting to the trivial one *)
+Definition nthSpecDef {E} (defs : plist (SpecDef E)) n :=
+  nth_default' (defaultSpecDef E) defs n.
+
+(* Build a stackIncl from the FunStack of an spec def to that of a list of defs *)
+Fixpoint nthSpecIncl E imps n :
+  stackIncl (defStack E (nthSpecDef imps n)) (impsStack E imps) :=
+  match imps return stackIncl (defStack E (nthSpecDef imps n)) (impsStack E imps) with
+  | pnil => nilStackIncl _
+  | pcons imp imps' =>
+      match n return stackIncl (defStack E (nthSpecDef (pcons imp imps') n))
+                       (impsStack E (pcons imp imps')) with
+      | 0 => weakenRightStackIncl _ _
+      | S n' => compStackIncl (nthSpecIncl E imps' n') (weakenLeftStackIncl _ _)
+      end
+  end.
+
+(* Build a stackIncl from an imported def to a defineSpec *)
+Definition importIncl E stk imps n :
+  stackIncl (defStack E (nthSpecDef imps n)) (defineSpecStack E stk imps) :=
+  compStackIncl (nthSpecIncl E imps n) (weakenLeftStackIncl _ _).
 
 (* FIXME: just keeping LRTValue in case it is useful in the future...
 (* A value of an LRTArgType *)
