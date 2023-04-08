@@ -301,7 +301,7 @@ Proof.
 Qed.
 
 
-(* We can discharge a local assumption about calls if it holds for the calls *)
+(* Discharge a local pre/postconditions about calls *)
 Lemma lr_refines_discharge RPre RPost precond postcond t1 t2 :
   (forall call1 call2,
       (precond call1 call2 : Prop) ->
@@ -339,6 +339,34 @@ Proof.
   - eapply lr_refinesF_existsR. apply IHlr_refinesF.
   - eapply lr_refinesF_forallL. apply IHlr_refinesF.
   - apply lr_refinesF_existsL. intros. apply H0.
+  - apply lr_refinesF_unfoldL. apply IHlr_refinesF.
+  - apply lr_refinesF_unfoldR. apply IHlr_refinesF.
+Qed.
+
+(* Push a pre/postcondition onto those of a refinement *)
+Lemma lr_refines_push_prepost RPre RPost precond postcond t1 t2 :
+  lr_refines funs1 funs2 (liftNilRel RPre) (liftNilPostRel RPost) RR t1 t2 ->
+  lr_refines funs1 funs2 (addCallPreRel precond RPre)
+    (addCallPostRel postcond RPost) RR t1 t2.
+Proof.
+  revert t1 t2; pcofix CIH; intros.
+  punfold H0. red in H0. pstep. red.
+  remember (observe t1) as ot1.
+  remember (observe t2) as ot2.
+  clear t1 Heqot1 t2 Heqot2.
+  hinduction H0 before ot1; intros; pclearbot.
+  - apply lr_refinesF_Ret. assumption.
+  - apply lr_refinesF_Tau. right. apply CIH. assumption.
+  - destruct e1 as [ call1 | ]; destruct e2 as [ call2 | ];
+      [ destruct H | destruct H | destruct H | ].
+    apply lr_refinesF_Vis; [ assumption | ]. intros.
+    right. apply CIH. destruct (H0 a b H1) as [ H2 | [] ]. assumption.
+  - apply lr_refinesF_TauL. apply IHlr_refinesF.
+  - apply lr_refinesF_TauR. apply IHlr_refinesF.
+  - apply lr_refinesF_forallR. intros. apply (H0 a).
+  - eapply lr_refinesF_existsR. apply IHlr_refinesF.
+  - eapply lr_refinesF_forallL. apply IHlr_refinesF.
+  - apply lr_refinesF_existsL. intros. apply (H0 a).
   - apply lr_refinesF_unfoldL. apply IHlr_refinesF.
   - apply lr_refinesF_unfoldR. apply IHlr_refinesF.
 Qed.
