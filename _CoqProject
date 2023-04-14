@@ -12,6 +12,7 @@ theories/Ref/EnTreeSpecFacts.v
 theories/Ref/EnTreeSpecCombinatorFacts.v
 theories/Ref/SpecM.v
 theories/Ref/SpecMFacts.v
+theories/Ref/LetRecRefines.v
 theories/Ref/Automation.v
 theories/Ref/RecSpecFix.v
 theories/Ref/RecFixSpecTotal.v
