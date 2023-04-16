@@ -220,8 +220,8 @@ Proof.
 Qed.
 
 Lemma elim_RComposePostRel {E1 E2 E3} `{EncodingType E1} `{EncodingType E2}
-  `{EncodingType E3} (R1 : Rel E1 E2) (R2 : Rel E2 E3) RPost1 RPost2
-  a b c x z :
+  `{EncodingType E3} {R1 : Rel E1 E2} {R2 : Rel E2 E3}
+  {RPost1 RPost2 a b c x z} :
   R1 a b -> R2 b c ->
   RComposePostRel R1 R2 RPost1 RPost2 a c x z ->
   exists y, RPost1 a b x y /\ RPost2 b c y z.
@@ -230,15 +230,15 @@ Proof.
 Qed.
 
 (* Destruct the composition of two liftNilPostRel proofs *)
-Lemma liftNilPostRel_compose_elim {E1 E2 E3 stk1 stk2 stk3} R12 R23 RPost12 RPost23
-  (e1 : FunStackE E1 stk1) (e2 : FunStackE E2 stk2) (e3 : FunStackE E3 stk3) x z :
+Lemma liftNilPostRel_compose_elim {E1 E2 E3 stk1 stk2 stk3 R12 R23 RPost12 RPost23}
+  {e1 : FunStackE E1 stk1} {e2 : FunStackE E2 stk2} {e3 : FunStackE E3 stk3} {x z} :
   liftNilRel R12 e1 e2 -> liftNilRel R23 e2 e3 ->
   liftNilPostRel (RComposePostRel R12 R23 RPost12 RPost23) e1 e3 x z ->
   exists y:encodes e2,
     liftNilPostRel RPost12 e1 e2 x y /\ liftNilPostRel RPost23 e2 e3 y z.
 Proof.
   intros. destruct e1; destruct e2; destruct e3; cbn in *; try contradiction.
-  destruct (elim_RComposePostRel _ _ _ _ _ _ _ _ _ H H0 H1). destruct H2.
+  destruct (elim_RComposePostRel H H0 H1). destruct H2.
   eexists; split; eassumption.
 Qed.
 
@@ -450,6 +450,26 @@ Proof.
   - apply lr_refinesF_unfoldR. apply IHref12. assumption.
 Qed.
 
+Lemma lr_refines_callR_inv pre post t1 call2 k2 :
+  lr_refines funs1 funs2 (liftNilRel pre) (liftNilPostRel post) RR
+    t1 (Vis (Spec_vis (inl call2)) k2) ->
+  lr_refines funs1 funs2 (liftNilRel pre) (liftNilPostRel post) RR
+    t1 (Tau (applyFrameTuple E2 stk2 funs2 call2 >>= k2)).
+Proof.
+  intros ref12. punfold ref12. red in ref12. cbn in ref12. pstep. red.
+  remember (observe t1) as ot1; clear t1 Heqot1.
+  remember (VisF (Spec_vis (inl call2)) k2) as ot2.
+  induction ref12; try discriminate.
+  - inversion Heqot2. rewrite H2 in H. destruct e1; destruct H.
+  - apply lr_refinesF_TauL. apply IHref12. assumption.
+  - eapply lr_refinesF_forallL. apply IHref12. assumption.
+  - apply lr_refinesF_existsL; intros. apply H0. assumption.
+  - apply lr_refinesF_unfoldL. apply IHref12. assumption.
+  - inversion Heqot2. revert k0 Heqot2 ref12 IHref12. rewrite H0. intros.
+    remember (injection_VisF_eq Heqot2) as e. clear Heqe. inj_existT.
+    rewrite <- e. apply ref12.
+Qed.
+
 
 End lr_refines_inv.
 
@@ -502,7 +522,7 @@ Proof.
     + apply lr_refinesF_Tau. right. pclearbot. eapply CIH; [ | eassumption ].
       apply lr_refines_TauR_inv. pstep. apply H0.
     + apply lr_refinesF_TauL.
-      (* Proof tht  t1 |= Vis e2 k2 |= Vis e3 k3  implies t1 |= Vis e3 k3 *)
+      (* Proof that  t1 |= Vis e2 k2 |= Vis e3 k3  implies t1 |= Vis e3 k3 *)
       remember (observe t1) as ot1; clear t1 Heqot1.
       remember (VisF (Spec_vis e1) k1) as ot0.
       induction H1; try discriminate Heqot0.
@@ -510,7 +530,7 @@ Proof.
         revert k3 Heqot0 H1 H2 e; rewrite H4; intros. clear e3 H4. inj_existT.
         apply lr_refinesF_Vis; [ eapply liftNilRel_compose; eassumption | ].
         intros.
-        destruct (liftNilPostRel_compose_elim _ _ _ _ _ _ _ _ _ H1 H H3)
+        destruct (liftNilPostRel_compose_elim H1 H H3)
           as [ c [ PR_ac PR_cb ]].
         remember (H2 a c PR_ac) as ref_k0_k3. clear Heqref_k0_k3.
         rewrite <- e in H0.
@@ -549,10 +569,28 @@ Proof.
         apply IHref_exR.
       * apply lr_refinesF_TauL. apply lr_refinesF_unfoldL.
         rewrite <- entree_eta in IHref_exR. apply IHref_exR.
-    + apply IHref23'.
-      admit. (* t1 |= Vis call k1  implies t1 |= Tau (unfold call >>= k1) *)
+    + apply IHref23'. observe_tau. pstep_reverse.
+      apply lr_refines_callR_inv. pstep. assumption.
     + apply lr_refinesF_unfoldR. apply IHref23'. assumption.
-  - admit. (* Vis e1 k1 |= Vis e2 k2 |= t3  implies Vis e1 k1 |= t3 *)
+  - (* Vis e1 k1 |= Vis e2 k2 |= t3  implies Vis e1 k1 |= t3 *)
+    remember (observe t3) as ot3; clear t3 Heqot3.
+    remember (VisF (Spec_vis e2) k2) as ot2.
+    induction ref23; try discriminate Heqot2.
+    + inversion Heqot2. revert k0 Heqot2 H1 H2; rewrite H4; intros.
+      remember (injection_VisF_eq Heqot2) as e. clear Heqe. inj_existT.
+      subst k0. apply lr_refinesF_Vis.
+      * eapply liftNilRel_compose; eassumption.
+      * intros. destruct (liftNilPostRel_compose_elim H H1 H3) as [ c [ Rac Rcb ] ].
+        remember (H0 a c Rac) as ref_k1_k2; clear Heqref_k1_k2.
+        remember (H2 c b Rcb) as ref_k2_k3; clear Heqref_k2_k3.
+        pclearbot.
+        right. eapply CIH; eassumption.
+    + apply lr_refinesF_TauR. apply IHref23. assumption.
+    + apply lr_refinesF_forallR; intros. apply H2. assumption.
+    + eapply lr_refinesF_existsR. apply IHref23. assumption.
+    + inversion Heqot2. rewrite <- H2 in H.
+      destruct e1; destruct H.
+    + apply lr_refinesF_unfoldR. apply IHref23. assumption.
   - apply lr_refinesF_TauL. apply IHref12. assumption.
   - apply IHref12. pstep_reverse. apply lr_refines_TauL_inv. pstep. assumption.
   - assert (forallLRRefinesF funs2 funs3
@@ -577,7 +615,7 @@ Proof.
   - apply lr_refinesF_unfoldL. apply IHref12. assumption.
   - apply IHref12. observe_tau. pstep_reverse.
     apply lr_refines_callL_inv. pstep. assumption.
-Admitted.
+Qed.
 
 
 (*** Proving other properties ***)
