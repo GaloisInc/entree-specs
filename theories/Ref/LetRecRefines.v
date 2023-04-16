@@ -57,6 +57,19 @@ Ltac observe_tau :=
    | |- context F [TauF ?e] => replace (TauF e) with (observe (Tau e)); [ | reflexivity ]
    end).
 
+Lemma entree_eta {E} `{EncodingType E} {R} (e : entree E R) :
+  e = go _ _ (observe e).
+Proof.
+  destruct e. reflexivity.
+Qed.
+
+Lemma entree_beta {E} `{EncodingType E} {R} (e : entree' E R) :
+  e = observe (go _ _ e).
+Proof.
+  reflexivity.
+Qed.
+
+
 Section lr_refines.
 
 Context {E1 E2 : EncType} {stk1 stk2 : FunStack} {R1 R2 : Type}.
@@ -372,32 +385,49 @@ Inductive existsLRRefinesF (sim : SpecM E1 stk1 R1 -> SpecM E2 stk2 R2 -> Prop)
     lr_refinesF funs1 funs2 RPre RPost RR sim t (TauF (k2 a)) ->
     existsLRRefinesF sim k2 t
   | existsLRRefines_forallL B k1 (b : encodes B) :
-    existsLRRefinesF sim k2 (TauF (k1 b)) ->
+    existsLRRefinesF sim k2 (observe (k1 b)) ->
     existsLRRefinesF sim k2 (VisF (Spec_forall B : SpecEvent (FunStackE _ _)) k1)
   | existsLRRefines_existsL (B : QuantEnc) k1 :
-    (forall b, existsLRRefinesF sim k2 (TauF (k1 b))) ->
+    (forall b, existsLRRefinesF sim k2 (observe (k1 b))) ->
     existsLRRefinesF sim k2 (VisF (Spec_exists B) k1)
   | existsLRRefines_TauL t1 :
     existsLRRefinesF sim k2 (observe t1) ->
     existsLRRefinesF sim k2 (TauF t1)
   | existsLRRefines_unfoldL call1 k1 :
-    existsLRRefinesF sim k2 (TauF (applyFrameTuple E1 stk1 funs1 call1 >>= k1)) ->
+    existsLRRefinesF sim k2 (observe (applyFrameTuple E1 stk1 funs1 call1 >>= k1)) ->
     existsLRRefinesF sim k2 (VisF (Spec_vis (inl call1)) k1)
 .
 
-Lemma lr_refinesF_existsR_inv sim A t1 k2 :
-  lr_refinesF funs1 funs2 RPre RPost RR sim
+Lemma existsLRRefinesF_TauL_inv A k2 t1 :
+  @existsLRRefinesF (upaco2 (lr_refines_ funs1 funs2 RPre RPost RR) bot2)
+    A k2 (TauF t1) ->
+  @existsLRRefinesF (upaco2 (lr_refines_ funs1 funs2 RPre RPost RR) bot2)
+    A k2 (observe t1).
+Proof.
+  intro H. remember (TauF t1) as tau_t1.
+  revert t1 Heqtau_t1; induction H; intros; try discriminate.
+  - subst t. eapply existsLRRefines_existsR. observe_tau. pstep_reverse.
+    apply lr_refines_TauL_inv. pstep. apply H.
+  - inversion Heqtau_t1. rewrite <- H1. assumption.
+Qed.
+
+Lemma lr_refinesF_existsR_inv A t1 k2 :
+  lr_refinesF funs1 funs2 RPre RPost RR
+    (upaco2 (lr_refines_ funs1 funs2 RPre RPost RR) bot2)
     t1 (VisF (@Spec_exists (FunStackE E2 stk2) A) k2) ->
-  existsLRRefinesF sim k2 t1.
+  existsLRRefinesF (upaco2 (lr_refines_ funs1 funs2 RPre RPost RR) bot2) k2 t1.
 Proof.
   intros. remember (VisF (Spec_exists A) k2) as ot2.
   induction H; try discriminate.
   - apply existsLRRefines_TauL; apply IHlr_refinesF; assumption.
   - inversion Heqot2. revert k Heqot2 a H IHlr_refinesF H2; rewrite H1; intros.
     inj_existT. rewrite H2 in H. eapply existsLRRefines_existsR. apply H.
-  - eapply existsLRRefines_forallL. apply IHlr_refinesF. assumption.
-  - apply existsLRRefines_existsL. intros. apply H0. assumption.
-  - apply existsLRRefines_unfoldL. apply IHlr_refinesF. assumption.
+  - eapply existsLRRefines_forallL. apply existsLRRefinesF_TauL_inv.
+    apply IHlr_refinesF. assumption.
+  - apply existsLRRefines_existsL. intros. apply existsLRRefinesF_TauL_inv.
+    apply H0. assumption.
+  - apply existsLRRefines_unfoldL. apply existsLRRefinesF_TauL_inv.
+    apply IHlr_refinesF. assumption.
 Qed.
 
 Lemma lr_refines_callL_inv pre post call1 k1 t2 :
@@ -507,13 +537,18 @@ Proof.
                 k (observe t1))
         as ref_exR;
         [ apply lr_refinesF_existsR_inv; assumption | ].
-      clear H1. remember (observe t1) as ot1.
-      assert (t1 = go _ _ ot1); [ destruct t1; rewrite Heqot1; reflexivity | ].
-      subst t1. clear Heqot1.
-      induction ref_exR; intros.
+      clear H1.
+      destruct t1 as [ ot1 ]. simpl in ref_exR.
+      induction ref_exR.
       * apply (H0 a). assumption.
-      * 
-admit. (* Need inversion lemma on t1 |= exists k *)
+      * apply lr_refinesF_TauL. eapply lr_refinesF_forallL.
+        rewrite <- (entree_eta (k1 b)) in IHref_exR. apply IHref_exR.
+      * apply lr_refinesF_TauL. eapply lr_refinesF_existsL. intros.
+        rewrite (entree_eta (k1 a)). apply H2.
+      * apply lr_refinesF_TauL. simpl. rewrite (entree_eta t1).
+        apply IHref_exR.
+      * apply lr_refinesF_TauL. apply lr_refinesF_unfoldL.
+        rewrite <- entree_eta in IHref_exR. apply IHref_exR.
     + apply IHref23'.
       admit. (* t1 |= Vis call k1  implies t1 |= Tau (unfold call >>= k1) *)
     + apply lr_refinesF_unfoldR. apply IHref23'. assumption.
