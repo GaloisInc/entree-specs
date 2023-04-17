@@ -6,20 +6,25 @@ Require Import Program.Tactics.
 Require Import ITree.Basics.Basics.
 Require Import HeterogeneousRelations.
 
+
+(*** The definition of entrees ***)
 Section entree.
 
 Context (E : Type@{entree_u}) `{EncodingType E} (R : Type@{entree_u}).
 
+(* The functor defining a single constructor of an entree *)
 Variant entreeF (F : Type@{entree_u} ) : Type@{entree_u} :=
   | RetF (r : R)
   | TauF (t : F)
   | VisF (e : E) (k : encodes e -> F ).
 
+(* "Tying the knot" by defining entrees as the greatest fixed-point of entreeF *)
 CoInductive entree : Type@{entree_u} :=
   go { _observe : entreeF entree }.
 
 End entree.
 
+(* Implicit arguments and helpful notations for entrees *)
 Arguments entree _ {_} _.
 Arguments entreeF _ {_} _ _ .
 Arguments RetF {_ _ _ _} _.
@@ -30,6 +35,7 @@ Notation Tau t := {| _observe := TauF t |}.
 Notation Ret r := {| _observe := RetF r |}.
 Notation Vis e k := {| _observe := VisF e k |}.
 
+(* "Observe" the top-most constructor of an entree by unwrapping it one step *)
 Definition observe {E R} `{EncodingType E} (t : entree E R) : entree' E R :=
   _observe _ _ t.
 
@@ -41,8 +47,13 @@ Local Open Scope entree_scope.
 Create HintDb itree.
 
 
+(*** The basic operations on entrees ***)
+
 Module EnTree.
 
+(* This defines the bind operation by coinduction on the left-hand side of the
+   bind; can also be seen as "substituting" an observed computation tree ot for
+   the return value of a continuation k *)
 Definition subst' {E : Type@{entree_u}} `{EncodingType E} {R S : Type@{entree_u}}
            (k : R -> entree E S) : entree' E R -> entree E S  :=
   cofix _subst (ot : entree' E R) :=
@@ -52,14 +63,17 @@ Definition subst' {E : Type@{entree_u}} `{EncodingType E} {R S : Type@{entree_u}
     | VisF e k => Vis e (fun x => _subst (observe (k x)))
     end.
 
+(* Wrap up subst' so it operates on an entree instead of an entree' *)
 Definition subst {E : Type@{entree_u}} `{EncodingType E} {R S : Type@{entree_u}}
            (k : R -> entree E S) : entree E R -> entree E S :=
   fun t => subst' k (observe t).
 
+(* Monadic bind for entrees is just subst *)
 Definition bind {E} `{EncodingType E} {R S : Type@{entree_u}} 
            (t : entree E R) (k : R -> entree E S) :=
   subst k t.
 
+(* Iterate a body on successive inputs of type I until it returns an R *)
 Definition iter {E} `{EncodingType E} {I R : Type@{entree_u}}
            (body : I -> entree E (I + R) ) : I -> entree E R :=
   cofix _iter i :=
@@ -68,19 +82,21 @@ Definition iter {E} `{EncodingType E} {I R : Type@{entree_u}}
                           | inr r => Ret r
                           end).
 
+(* Map a pure function over the return value(s) of an entree *)
 Definition map {E} `{EncodingType E} {R S} (f : R -> S) (t : entree E R) :=
   bind t (fun r => Ret (f r)).
 
+(* Build a computation tree that performs a single event / effect in E *)
 Definition trigger {E} `{EncodingType E} (e : E) : entree E (encodes e) :=
   Vis e (fun x => Ret x).
 
+(* The nonterminating computation that spins forever and never does anything *)
 CoFixpoint spin {E R} `{EncodingType E} : entree E R := Tau spin.
-
-(* are there multiple definitions of trigger ? *)
-
 
 End EnTree.
 
+
+(*** Notations for monadic computations ***)
 Module EnTreeNotations.
 
 Notation "t1 >>= k2" := (EnTree.bind t1 k2)
@@ -95,6 +111,9 @@ Notation "' p <- t1 ;; t2" :=
 
 
 End EnTreeNotations.
+
+
+(*** Instances to show that entrees form a monad ***)
 
 #[global] Instance Functor_entree {E} `{EncodingType E} : Functor (entree E) :=
   { fmap := @EnTree.map E _ }.
@@ -116,8 +135,42 @@ End EnTreeNotations.
 #[global] Instance MonadIter_entree {E} `{EncodingType E} : MonadIter (entree E) :=
   fun _ _ => EnTree.iter.
 
-(* Import ITree basics*)
 
+(*** Useful properties of entrees ***)
+
+(* Extensionality rule for entrees *)
+Lemma entree_eta {E} `{EncodingType E} {R} (e : entree E R) :
+  e = go _ _ (observe e).
+Proof.
+  destruct e. reflexivity.
+Qed.
+
+(* Destructing the fixed-point constructor is the identity *)
+Lemma entree_beta {E} `{EncodingType E} {R} (e : entree' E R) :
+  e = observe (go _ _ e).
+Proof.
+  reflexivity.
+Qed.
+
+(* Destruct an equality on VisF constructors into a dependent equality *)
+Lemma injection_VisF_eq {E} `{EncodingType E} {R F} {e1 e2 : E}
+  {k1 : encodes e1 -> F} {k2 : encodes e2 -> F} :
+  VisF (R:=R) e1 k1 = VisF e2 k2 ->
+  existT (fun e => encodes e -> F) e1 k1 = existT _ e2 k2.
+Proof.
+  intro e. inversion e. reflexivity.
+Qed.
+
+
+(*** Helper tactics ***)
+
+(* Replace a TauF in the goal with observe Tau *)
+Ltac observe_tau :=
+  (lazymatch goal with
+   | |- context F [TauF ?e] => replace (TauF e) with (observe (Tau e)); [ | reflexivity ]
+   end).
+
+(* A version of induction that lets the user specify what to induct over *)
 Tactic Notation "hinduction" hyp(IND) "before" hyp(H)
   := move IND before H; revert_until IND; induction IND.
 

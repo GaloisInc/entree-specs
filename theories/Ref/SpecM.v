@@ -441,9 +441,15 @@ Global Instance ReSumRet_Error_E_FunStack (E : EncType) (stack : FunStack) :
 
 (** Defining the SpecM monad **)
 
+(* The SpecM monad is an entree spec over FunStackE events *)
 Definition SpecM (E:EncType) stack A : Type :=
   entree_spec (FunStackE E stack) A.
 
+(* The observation / unfolding of a SpecM computation tree *)
+Definition SpecM' (E:EncType) stack A : Type :=
+  entree_spec' (FunStackE E stack) A.
+
+(* The monadic operations on SpecM *)
 Definition RetS {E} {Γ A} (a : A) : SpecM E Γ A := ret a.
 Definition BindS {E} {Γ A B} (m : SpecM E Γ A) (k : A -> SpecM E Γ B) :=
   bind m k.
