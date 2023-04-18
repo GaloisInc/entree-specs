@@ -535,6 +535,9 @@ Definition SpecFun E stack lrt : Type@{entree_u} :=
 Definition FrameTuple E stack : Type@{entree_u} :=
   mapTuple (SpecFun E stack) stack.
 
+(* The FrameTuple of 0 functions *)
+Definition emptyFrameTuple E : FrameTuple E pnil := tt.
+
 (* Get the nth function in a FrameTuple *)
 Definition nthFrameTupleFun E stack n (funs : FrameTuple E stack) :
   SpecFun E stack (nthLRT stack n) :=

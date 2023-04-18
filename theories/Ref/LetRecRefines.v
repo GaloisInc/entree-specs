@@ -794,13 +794,47 @@ Qed.
 End lr_refines_bind.
 
 
+(*** LetRec Lemma ***)
+Section lr_refines_letrec.
+Context {E1 E2 : EncType} {stk1 stk2 : FunStack} {R1 R2 : Type}.
+Context (funs1 : FrameTuple E1 stk1) (funs2 : FrameTuple E2 stk2).
+Context (RPre : Rel (FunStackE E1 pnil) (FunStackE E2 pnil))
+  (RPost : PostRel (FunStackE E1 pnil) (FunStackE E2 pnil))
+  (RR : Rel R1 R2).
+
+Lemma lr_refines_letrec t1 t2 :
+  lr_refines funs1 funs2 (liftNilRel RPre) (liftNilPostRel RPost) RR t1 t2 ->
+  lr_refines (emptyFrameTuple E1) (emptyFrameTuple E2) RPre RPost RR
+    (LetRecS _ R1 _ funs1 t1) (LetRecS _ R2 _ funs2 t2).
+Proof.
+  revert t1 t2; pcofix CIH; intros t1 t2 ref12.
+  punfold ref12; red in ref12. destruct t1 as [ ot1 ]. destruct t2 as [ ot2 ].
+  pstep. red.
+  simpl in ref12. induction ref12.
+  - apply lr_refinesF_Ret. assumption.
+  - apply lr_refinesF_Tau. right. apply CIH. pclearbot. assumption.
+  - destruct e1; destruct e2; try destruct H.
+    apply lr_refinesF_Vis; [ apply H | ]. right.
+    apply CIH. destruct (H0 _ _ H1); [ | destruct H2 ]. apply H2.
+  - apply lr_refinesF_TauL. assumption.
+  - apply lr_refinesF_TauR. assumption.
+  - apply lr_refinesF_forallR; intros; apply H0.
+  - eapply lr_refinesF_existsR; apply IHref12.
+  - eapply lr_refinesF_forallL; apply IHref12.
+  - apply lr_refinesF_existsL; intros; apply H0.
+  - apply IHref12.
+  - apply IHref12.
+Qed.
+
+End lr_refines_letrec.
+
 
 (*** Discharge and Push lemmas ***)
 Section lr_refines_discharge_push.
 Context {E1 E2 : EncType} {stk1 stk2 : FunStack} {R1 R2 : Type} {RR : Rel R1 R2}.
 Context (funs1 : FrameTuple E1 stk1) (funs2 : FrameTuple E2 stk2).
 
-(* Discharge a local pre/postconditions about calls *)
+(* Discharge a local pre/postcondition about calls *)
 Lemma lr_refines_discharge RPre RPost precond postcond t1 t2 :
   (forall call1 call2,
       (precond call1 call2 : Prop) ->
