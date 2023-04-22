@@ -309,96 +309,118 @@ Qed.
 
 
 (* The result of inverting a refinement with a forall on the left, which could
-take 0 or more right-hand side steps before the forallL rule *)
-Inductive forallLRRefinesF (sim : SpecM E1 stk1 R1 -> SpecM E2 stk2 R2 -> Prop)
+take 0 or more right-hand side steps before the forallL rule. Note that the Taus
+in the quantifier rules are removed in this definition, because this is needed
+in the transitivity proof. *)
+Inductive forallL_LRRefinesF (sim : SpecM E1 stk1 R1 -> SpecM E2 stk2 R2 -> Prop)
   {A : QuantEnc} (k1 : encodes A -> SpecM E1 stk1 R1) : SpecM' E2 stk2 R2 -> Prop :=
-  | forallLRRefines_forallR (B : QuantEnc) k2 :
-    (forall b, forallLRRefinesF sim k1 (TauF (k2 b))) ->
-    forallLRRefinesF sim k1 (VisF (Spec_forall B) k2)
-  | forallLRRefines_forallL t (a : encodes A) :
+  | forallL_LRRefinesF_forallL t (a : encodes A) :
     lr_refinesF funs1 funs2 RPre RPost RR sim (TauF (k1 a)) t ->
-    forallLRRefinesF sim k1 t
-  | forallLRRefines_existsR B k2 (b : encodes B) :
-    forallLRRefinesF sim k1 (TauF (k2 b)) ->
-    forallLRRefinesF sim k1 (VisF (Spec_exists B : SpecEvent (FunStackE _ _)) k2)
-  | forallLRRefines_TauR t2 :
-    forallLRRefinesF sim k1 (observe t2) ->
-    forallLRRefinesF sim k1 (TauF t2)
-  | forallLRRefines_unfoldR call2 k2 :
-    forallLRRefinesF sim k1 (TauF (applyFrameTuple E2 stk2 funs2 call2 >>= k2)) ->
-    forallLRRefinesF sim k1 (VisF (Spec_vis (inl call2)) k2)
+    forallL_LRRefinesF sim k1 t
+  | forallL_LRRefinesF_forallR (B : QuantEnc) k2 :
+    (forall b, forallL_LRRefinesF sim k1 (observe (k2 b))) ->
+    forallL_LRRefinesF sim k1 (VisF (Spec_forall B) k2)
+  | forallL_LRRefinesF_existsR B k2 (b : encodes B) :
+    forallL_LRRefinesF sim k1 (observe (k2 b)) ->
+    forallL_LRRefinesF sim k1 (VisF (Spec_exists B : SpecEvent (FunStackE _ _)) k2)
+  | forallL_LRRefinesF_TauR t2 :
+    forallL_LRRefinesF sim k1 (observe t2) ->
+    forallL_LRRefinesF sim k1 (TauF t2)
+  | forallL_LRRefinesF_unfoldR call2 k2 :
+    forallL_LRRefinesF sim k1 (observe (applyFrameTuple E2 stk2 funs2 call2 >>= k2)) ->
+    forallL_LRRefinesF sim k1 (VisF (Spec_vis (inl call2)) k2)
 .
 
-(* Invert a refinement of a forall on the left to a forallLRRefinesF *)
-Lemma lr_refinesF_forallL_inv sim A k1 t2 :
-  lr_refinesF funs1 funs2 RPre RPost RR sim
+(* Helper lemma to invert a Tau in a forallL_LRRefinesF *)
+Lemma forallL_LRRefinesF_TauL_inv A k1 t2 :
+  @forallL_LRRefinesF (upaco2 (lr_refines_ funs1 funs2 RPre RPost RR) bot2)
+    A k1 (TauF t2) ->
+  @forallL_LRRefinesF (upaco2 (lr_refines_ funs1 funs2 RPre RPost RR) bot2)
+    A k1 (observe t2).
+Proof.
+  intro H. remember (TauF t2) as tau_t2.
+  revert t2 Heqtau_t2; induction H; intros; try discriminate.
+  - subst t. eapply forallL_LRRefinesF_forallL. observe_tau. pstep_reverse.
+    apply lr_refines_TauR_inv. pstep. apply H.
+  - inversion Heqtau_t2. subst t0. assumption.
+Qed.
+
+(* Invert a refinement of a forall on the left to a forallL_LRRefinesF *)
+Lemma lr_refinesF_forallL_inv A k1 t2 :
+  lr_refinesF funs1 funs2 RPre RPost RR
+    (upaco2 (lr_refines_ funs1 funs2 RPre RPost RR) bot2)
     (VisF (@Spec_forall (FunStackE E1 stk1) A) k1) t2 ->
-  forallLRRefinesF sim k1 t2.
+  forallL_LRRefinesF (upaco2 (lr_refines_ funs1 funs2 RPre RPost RR) bot2) k1 t2.
 Proof.
   intros. remember (VisF (Spec_forall A) k1) as ot1.
   induction H; try discriminate.
-  - apply forallLRRefines_TauR; apply IHlr_refinesF; assumption.
-  - apply forallLRRefines_forallR; intros. apply H0. assumption.
-  - eapply forallLRRefines_existsR. apply IHlr_refinesF. assumption.
-  - inversion Heqot1. revert k Heqot1 a H IHlr_refinesF H2. rewrite H1. intros.
-    inj_existT. rewrite H2 in H. eapply forallLRRefines_forallL. apply H.
-  - apply forallLRRefines_unfoldR. apply IHlr_refinesF. assumption.
+  - apply forallL_LRRefinesF_TauR; apply IHlr_refinesF; assumption.
+  - apply forallL_LRRefinesF_forallR; intros.
+    apply forallL_LRRefinesF_TauL_inv. apply H0. assumption.
+  - eapply forallL_LRRefinesF_existsR.
+    apply forallL_LRRefinesF_TauL_inv.
+    apply IHlr_refinesF. assumption.
+  - inversion Heqot1. subst A0. inj_existT. subst k.
+    eapply forallL_LRRefinesF_forallL. apply H.
+  - apply forallL_LRRefinesF_unfoldR. apply forallL_LRRefinesF_TauL_inv.
+    apply IHlr_refinesF. assumption.
 Qed.
+
 
 (* The result of inverting a refinement with an exists on the right, which could
 take 0 or more left-hand side steps before the existsR rule. Note that the Taus
-in the quantifier rules are removed in this definition (unlike
-forallLRRefinesF), because this is needed in the transitivity proof. *)
-Inductive existsLRRefinesF (sim : SpecM E1 stk1 R1 -> SpecM E2 stk2 R2 -> Prop)
+in the quantifier rules are removed in this definition, because this is needed
+in the transitivity proof. *)
+Inductive existsR_LRRefinesF (sim : SpecM E1 stk1 R1 -> SpecM E2 stk2 R2 -> Prop)
   {A : QuantEnc} (k2 : encodes A -> SpecM E2 stk2 R2) : SpecM' E1 stk1 R1 -> Prop :=
-  | existsLRRefines_existsR t (a : encodes A) :
+  | existsR_LRRefinesF_existsR t (a : encodes A) :
     lr_refinesF funs1 funs2 RPre RPost RR sim t (TauF (k2 a)) ->
-    existsLRRefinesF sim k2 t
-  | existsLRRefines_forallL B k1 (b : encodes B) :
-    existsLRRefinesF sim k2 (observe (k1 b)) ->
-    existsLRRefinesF sim k2 (VisF (Spec_forall B : SpecEvent (FunStackE _ _)) k1)
-  | existsLRRefines_existsL (B : QuantEnc) k1 :
-    (forall b, existsLRRefinesF sim k2 (observe (k1 b))) ->
-    existsLRRefinesF sim k2 (VisF (Spec_exists B) k1)
-  | existsLRRefines_TauL t1 :
-    existsLRRefinesF sim k2 (observe t1) ->
-    existsLRRefinesF sim k2 (TauF t1)
-  | existsLRRefines_unfoldL call1 k1 :
-    existsLRRefinesF sim k2 (observe (applyFrameTuple E1 stk1 funs1 call1 >>= k1)) ->
-    existsLRRefinesF sim k2 (VisF (Spec_vis (inl call1)) k1)
+    existsR_LRRefinesF sim k2 t
+  | existsR_LRRefinesF_forallL B k1 (b : encodes B) :
+    existsR_LRRefinesF sim k2 (observe (k1 b)) ->
+    existsR_LRRefinesF sim k2 (VisF (Spec_forall B : SpecEvent (FunStackE _ _)) k1)
+  | existsR_LRRefinesF_existsL (B : QuantEnc) k1 :
+    (forall b, existsR_LRRefinesF sim k2 (observe (k1 b))) ->
+    existsR_LRRefinesF sim k2 (VisF (Spec_exists B) k1)
+  | existsR_LRRefinesF_TauL t1 :
+    existsR_LRRefinesF sim k2 (observe t1) ->
+    existsR_LRRefinesF sim k2 (TauF t1)
+  | existsR_LRRefinesF_unfoldL call1 k1 :
+    existsR_LRRefinesF sim k2 (observe (applyFrameTuple E1 stk1 funs1 call1 >>= k1)) ->
+    existsR_LRRefinesF sim k2 (VisF (Spec_vis (inl call1)) k1)
 .
 
-(* Helper lemma to invert a Tau in an existsLRRefinesF *)
-Lemma existsLRRefinesF_TauL_inv A k2 t1 :
-  @existsLRRefinesF (upaco2 (lr_refines_ funs1 funs2 RPre RPost RR) bot2)
+(* Helper lemma to invert a Tau in an existsR_LRRefinesF *)
+Lemma existsR_LRRefinesF_TauL_inv A k2 t1 :
+  @existsR_LRRefinesF (upaco2 (lr_refines_ funs1 funs2 RPre RPost RR) bot2)
     A k2 (TauF t1) ->
-  @existsLRRefinesF (upaco2 (lr_refines_ funs1 funs2 RPre RPost RR) bot2)
+  @existsR_LRRefinesF (upaco2 (lr_refines_ funs1 funs2 RPre RPost RR) bot2)
     A k2 (observe t1).
 Proof.
   intro H. remember (TauF t1) as tau_t1.
   revert t1 Heqtau_t1; induction H; intros; try discriminate.
-  - subst t. eapply existsLRRefines_existsR. observe_tau. pstep_reverse.
+  - subst t. eapply existsR_LRRefinesF_existsR. observe_tau. pstep_reverse.
     apply lr_refines_TauL_inv. pstep. apply H.
   - inversion Heqtau_t1. rewrite <- H1. assumption.
 Qed.
 
-(* Invert a refinement of an exists on the right to an existsLRRefinesF *)
+(* Invert a refinement of an exists on the right to an existsR_LRRefinesF *)
 Lemma lr_refinesF_existsR_inv A t1 k2 :
   lr_refinesF funs1 funs2 RPre RPost RR
     (upaco2 (lr_refines_ funs1 funs2 RPre RPost RR) bot2)
     t1 (VisF (@Spec_exists (FunStackE E2 stk2) A) k2) ->
-  existsLRRefinesF (upaco2 (lr_refines_ funs1 funs2 RPre RPost RR) bot2) k2 t1.
+  existsR_LRRefinesF (upaco2 (lr_refines_ funs1 funs2 RPre RPost RR) bot2) k2 t1.
 Proof.
   intros. remember (VisF (Spec_exists A) k2) as ot2.
   induction H; try discriminate.
-  - apply existsLRRefines_TauL; apply IHlr_refinesF; assumption.
+  - apply existsR_LRRefinesF_TauL; apply IHlr_refinesF; assumption.
   - inversion Heqot2. revert k Heqot2 a H IHlr_refinesF H2; rewrite H1; intros.
-    inj_existT. rewrite H2 in H. eapply existsLRRefines_existsR. apply H.
-  - eapply existsLRRefines_forallL. apply existsLRRefinesF_TauL_inv.
+    inj_existT. rewrite H2 in H. eapply existsR_LRRefinesF_existsR. apply H.
+  - eapply existsR_LRRefinesF_forallL. apply existsR_LRRefinesF_TauL_inv.
     apply IHlr_refinesF. assumption.
-  - apply existsLRRefines_existsL. intros. apply existsLRRefinesF_TauL_inv.
+  - apply existsR_LRRefinesF_existsL. intros. apply existsR_LRRefinesF_TauL_inv.
     apply H0. assumption.
-  - apply existsLRRefines_unfoldL. apply existsLRRefinesF_TauL_inv.
+  - apply existsR_LRRefinesF_unfoldL. apply existsR_LRRefinesF_TauL_inv.
     apply IHlr_refinesF. assumption.
 Qed.
 
@@ -621,7 +643,7 @@ Proof.
         -- apply lr_refines_forallR_inv. pstep. apply H.
         -- pstep. apply EqTauL; [ reflexivity | ].
            destruct (REL a) as [ e | []]. pstep_reverse.
-      * assert (existsLRRefinesF funs1 funs2 RPre RPost RR
+      * assert (existsR_LRRefinesF funs1 funs2 RPre RPost RR
                 (upaco2 (lr_refines_ funs1 funs2 RPre RPost RR) bot2)
                 k1 (observe t1))
         as ref_exR;
@@ -682,6 +704,8 @@ Proof.
       rewrite H. destruct (REL u2); [ | destruct H0 ]. assumption.
     + apply lr_refinesF_TauR. apply IHe. assumption.
 Qed.
+
+End lr_refines_proper.
 
 (* FIXME: these rely on the bisimulation_is_eq axiom, but should be provable
 without it! *)
@@ -803,7 +827,7 @@ Proof.
     + eapply lr_refinesF_existsR. apply IHref23'. assumption.
     + apply IHref23'. observe_tau. pstep_reverse.
       apply lr_refines_forallR_inv. pstep. apply H.
-    + assert (existsLRRefinesF funs1 funs2
+    + assert (existsR_LRRefinesF funs1 funs2
                 (liftNilRel RPre1) (liftNilPostRel RPost1) RR1
                 (upaco2 (lr_refines_ funs1 funs2
                            (liftNilRel RPre1) (liftNilPostRel RPost1) RR1) bot2)
@@ -846,7 +870,7 @@ Proof.
     + apply lr_refinesF_unfoldR. apply IHref23. assumption.
   - apply lr_refinesF_TauL. apply IHref12. assumption.
   - apply IHref12. pstep_reverse. apply lr_refines_TauL_inv. pstep. assumption.
-  - assert (forallLRRefinesF funs2 funs3
+  - assert (forallL_LRRefinesF funs2 funs3
               (liftNilRel RPre2) (liftNilPostRel RPost2) RR2
               (upaco2 (lr_refines_ funs2 funs3
                          (liftNilRel RPre2) (liftNilPostRel RPost2) RR2) bot2)
@@ -856,11 +880,11 @@ Proof.
       [ apply lr_refinesF_forallL_inv; assumption | ].
     clear ref23. remember (observe t3) as ot3; clear t3 Heqot3.
     induction ref_allL.
-    + apply lr_refinesF_forallR; intros. apply H2.
     + apply (H0 a (go _ _ t)). apply H1.
-    + eapply lr_refinesF_existsR. apply IHref_allL.
+    + apply lr_refinesF_forallR; intros. apply lr_refinesF_TauR. apply H2.
+    + eapply lr_refinesF_existsR. apply lr_refinesF_TauR. apply IHref_allL.
     + apply lr_refinesF_TauR. apply IHref_allL.
-    + apply lr_refinesF_unfoldR. apply IHref_allL.
+    + apply lr_refinesF_unfoldR. apply lr_refinesF_TauR. apply IHref_allL.
   - apply IHref12. observe_tau.
     pstep_reverse. apply lr_refines_existsL_inv. pstep. apply ref23.
   - eapply lr_refinesF_forallL. apply IHref12. assumption.
