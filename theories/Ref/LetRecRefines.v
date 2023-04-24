@@ -674,7 +674,7 @@ Proof.
       * apply lr_refinesF_unfoldL. apply IHlr_refinesF. assumption.
     + apply lr_refinesF_Tau. right. pclearbot. eapply CIH; [ | eassumption ].
       apply lr_refines_TauR_inv. pstep. assumption.
-    + destruct e; [ | | ].
+    + destruct e.
       * remember (lr_refinesF_VisR_inv _ _ _ _ _ _ _ _ H) as visRef.
         clear H HeqvisRef.
         destruct t1 as [ ot1 ]; simpl in visRef.
@@ -761,6 +761,125 @@ Proof.
       rewrite H. destruct (REL u2); [ | destruct H0 ]. assumption.
     + apply lr_refinesF_TauR. apply IHe. assumption.
 Qed.
+
+
+(* lr_refines is Proper wrt eutt on the left *)
+Lemma lr_refines_euttL t1 t1' t2 :
+  eutt eq t1' t1 -> lr_refines funs1 funs2 RPre RPost RR t1 t2 ->
+  lr_refines funs1 funs2 RPre RPost RR t1' t2.
+Proof.
+  revert t1 t1' t2; pcofix CIH; intros t1 t1' t2 e ref12.
+  destruct t1 as [ ot1 ]. destruct t2 as [ ot2 ].
+  punfold ref12. red in ref12. simpl in ref12.
+  revert t1' e; induction ref12; intros.
+  - destruct t1' as [ ot1' ]; punfold e; red in e. simpl in e.
+    remember (RetF r1) as ret_r1. induction e; inversion Heqret_r1.
+    + subst r3; subst r0. pstep. apply lr_refinesF_Ret; assumption.
+    + pstep. apply lr_refinesF_TauL. pstep_reverse. rewrite <- entree_eta in IHe.
+      apply IHe. assumption.
+  - pclearbot.
+    assert (eutt eq t1' t1); [ apply eqit_inv_Tau_r; assumption | ]. clear e.
+    punfold H0. red in H0. punfold H. red in H.
+    destruct t1 as [ ot1 ]. destruct t1' as [ ot1' ].
+    simpl in H. simpl in H0. pstep. red. simpl. revert t2 H; induction H0; intros.
+    + apply lr_refinesF_TauR. simpl.
+      remember (observe t2) as ot2; clear t2 Heqot2.
+      remember (RetF r2) as ret_r2.
+      induction H; inversion Heqret_r2.
+      * apply lr_refinesF_Ret. rewrite REL. rewrite <- H1. assumption.
+      * apply lr_refinesF_TauR. apply IHlr_refinesF. assumption.
+      * apply lr_refinesF_forallR; intros. apply H0. assumption.
+      * eapply lr_refinesF_existsR. apply IHlr_refinesF. assumption.
+      * apply lr_refinesF_unfoldR. apply IHlr_refinesF. assumption.
+    + apply lr_refinesF_Tau. right. pclearbot. eapply CIH; [ eassumption | ].
+      apply lr_refines_TauL_inv. pstep. assumption.
+    + destruct e.
+      * remember (lr_refinesF_VisL_inv _ _ _ _ _ _ _ _ H) as visRef.
+        clear H HeqvisRef.
+        destruct t2 as [ ot2 ]; simpl in visRef.
+        induction visRef.
+        -- apply lr_refinesF_TauR.
+           apply lr_refinesF_Vis; [ assumption | ]. intros.
+           right. pclearbot. eapply CIH; [ apply REL | ].
+           pstep; apply H0; assumption.
+        -- apply lr_refinesF_unfoldL. apply lr_refinesF_Tau. right.
+           pclearbot. eapply CIH; [ | pstep; apply H ].
+           eapply (eqit_bind _ (UU:=eq));
+             [ | intros u1 u2 eq_u; rewrite eq_u; apply REL ].
+           reflexivity.
+        -- apply lr_refinesF_TauR. apply lr_refinesF_forallR; intros.
+           rewrite (entree_eta (k2 a)). apply H0. intros. apply REL.
+        -- apply lr_refinesF_TauR.
+           apply (lr_refinesF_existsR _ _ _ _ _ _ _ _ _ b).
+           rewrite (entree_eta (k2 b)). apply IHvisRef. intros. apply REL.
+        -- apply lr_refinesF_TauR. rewrite (entree_eta t2).
+           apply IHvisRef. intros; apply REL.
+        -- apply lr_refinesF_TauR. rewrite <- entree_eta in IHvisRef.
+           apply lr_refinesF_unfoldR. apply IHvisRef. intros; apply REL.
+      * assert (forallL_LRRefinesF funs1 funs2 RPre RPost RR k2 (observe t2))
+          as ref_allL;
+          [ apply lr_refinesF_forallL_inv; apply H | ]. clear H.
+        destruct t2 as [ ot2 ]. simpl in ref_allL. induction ref_allL.
+        -- eapply lr_refinesF_forallL. apply lr_refinesF_Tau. right.
+           pclearbot. eapply CIH; [ apply REL | ].
+           apply lr_refines_TauL_inv. pstep. apply H.
+        -- apply lr_refinesF_TauR. apply lr_refinesF_forallR. intros.
+           rewrite (entree_eta (k0 a)). apply H0.
+        -- apply lr_refinesF_TauR. eapply lr_refinesF_existsR.
+           rewrite <- entree_eta in IHref_allL. apply IHref_allL.
+        -- apply lr_refinesF_TauR. rewrite <- entree_eta in IHref_allL.
+           apply IHref_allL.
+        -- apply lr_refinesF_TauR. apply lr_refinesF_unfoldR.
+           rewrite <- entree_eta in IHref_allL. apply IHref_allL.
+      * apply lr_refinesF_existsL. intros. apply lr_refinesF_Tau.
+        right. eapply CIH; [ | apply lr_refines_existsL_inv; pstep; apply H ].
+        destruct (REL a) as [ e | []]. pstep. apply EqTauR; [ reflexivity | ].
+        pstep_reverse.
+    + apply lr_refinesF_Tau. right. rewrite (entree_beta ot2) in H0.
+      eapply CIH; pstep; [ apply H0 | eassumption ].
+    + apply IHeqitF. apply lr_refinesF_TauL_inv. assumption.
+  - punfold e; red in e. pstep; red.
+    remember (observe t1') as ot1'; clear t1' Heqot1'.
+    remember (observe (Vis (Spec_vis e1) k1)) as ot1.
+    induction e; inversion Heqot1.
+    + subst e. inj_existT. subst k3. apply lr_refinesF_Vis; [ assumption | ].
+      intros. destruct (H0 a b H1); [ | destruct H2 ].
+      destruct (REL a); [ | destruct H3 ].
+      right. eapply CIH; eassumption.
+    + apply lr_refinesF_TauL. apply IHe. assumption.
+  - apply IHref12. apply eqit_inv_Tau_r. rewrite <- entree_eta. assumption.
+  - pstep. apply lr_refinesF_TauR. pstep_reverse.
+    rewrite <- entree_eta in IHref12. apply IHref12. assumption.
+  - pstep. apply lr_refinesF_forallR; intros. observe_tau. pstep_reverse.
+  - pstep. eapply lr_refinesF_existsR. observe_tau. pstep_reverse.
+  - punfold e; red in e. pstep; red. simpl.
+    remember (observe t1') as ot1'; clear t1' Heqot1'.
+    remember (observe (Vis (Spec_forall A) k)) as ot1.
+    induction e; inversion Heqot1.
+    + subst e. inj_existT. subst k2. eapply lr_refinesF_forallL.
+      observe_tau. rewrite (entree_beta ot2). pstep_reverse. apply IHref12.
+      pstep. constructor. left. destruct (REL a); [ eassumption | destruct H ].
+    + apply lr_refinesF_TauL. apply IHe. assumption.
+  - punfold e; red in e. pstep; red. simpl.
+    remember (observe t1') as ot1'; clear t1' Heqot1'.
+    remember (observe (Vis (Spec_exists A) k)) as ot1.
+    induction e; inversion Heqot1.
+    + subst e. inj_existT. subst k2. apply lr_refinesF_existsL. intros.
+      observe_tau. rewrite (entree_beta ot2). pstep_reverse. eapply H0.
+      pstep. constructor. left. destruct (REL a); [ eassumption | destruct H1 ].
+    + apply lr_refinesF_TauL. apply IHe. assumption.
+  - punfold e; red in e. pstep; red. simpl.
+    remember (observe t1') as ot1'; clear t1' Heqot1'. simpl in e.
+    remember (VisF (Spec_vis (inl call1)) k1) as ot1.
+    induction e; inversion Heqot1.
+    + subst e. inj_existT. subst k2. apply lr_refinesF_unfoldL.
+      observe_tau. rewrite (entree_beta ot2). pstep_reverse. apply IHref12.
+      pstep. constructor. left. eapply eqit_bind; [ reflexivity | ]. intros.
+      rewrite H. destruct (REL u2); [ | destruct H0 ]. assumption.
+    + apply lr_refinesF_TauL. apply IHe. assumption.
+  - pstep. apply lr_refinesF_unfoldR. observe_tau. pstep_reverse.
+Qed.
+
 
 End lr_refines_proper.
 
