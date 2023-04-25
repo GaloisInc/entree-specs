@@ -161,6 +161,25 @@ Proof.
   intro e. inversion e. reflexivity.
 Qed.
 
+(* Bind of a Tau equals Tau of a bind *)
+Lemma bind_Tau_eq {E} `{EncodingType E} {R S} (m : entree E R) (k : R -> entree E S) :
+  EnTree.bind (Tau m) k = Tau (EnTree.bind m k).
+Proof.
+  rewrite (entree_eta ( EnTree.bind (Tau m) k)).
+  rewrite (entree_eta (Tau (EnTree.bind m k))).
+  reflexivity.
+Qed.
+
+(* Bind of a Vis equals Vis of a bind *)
+Lemma bind_Vis_eq {E} `{EncodingType E} {R S} (e:E)
+  (k1 : encodes e -> entree E R) (k2 : R -> entree E S) :
+  EnTree.bind (Vis e k1) k2 = Vis e (fun x => EnTree.bind (k1 x) k2).
+Proof.
+  rewrite (entree_eta (EnTree.bind (Vis e k1) k2)).
+  rewrite (entree_eta (Vis e (fun x => EnTree.bind (k1 x) k2))).
+  reflexivity.
+Qed.
+
 
 (*** Helper tactics ***)
 

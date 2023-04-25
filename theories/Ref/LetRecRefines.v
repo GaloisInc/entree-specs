@@ -880,36 +880,23 @@ Proof.
   - pstep. apply lr_refinesF_unfoldR. observe_tau. pstep_reverse.
 Qed.
 
-
 End lr_refines_proper.
 
-(* FIXME: these rely on the bisimulation_is_eq axiom, but should be provable
-without it! *)
 
-(* Refinement is proper wrt eq_itree *)
-Global Instance eq_itree_lr_refines_Proper1 {E1 E2 : EncType} {stk1 stk2} {R1 R2}
-  funs1 funs2 RPre RPost RR r :
-  Proper (eq_itree eq ==> eq_itree eq ==> flip impl)
-    (@lr_refines_ E1 E2 stk1 stk2 R1 R2 funs1 funs2 RPre RPost RR (upaco2 (lr_refines_ funs1 funs2 RPre RPost RR) r)).
+(* Refinement is proper wrt eutt *)
+Global Instance Proper_eutt_lr_refines {E1 E2 : EncType} {stk1 stk2} {R1 R2}
+  funs1 funs2 RPre RPost RR :
+  Proper (eutt eq ==> eutt eq ==> flip impl)
+    (@lr_refines E1 E2 stk1 stk2 R1 R2 funs1 funs2 RPre RPost RR).
 Proof.
-  repeat intro. apply bisimulation_is_eq in H. apply bisimulation_is_eq in H0.
-  subst. auto.
+  repeat intro. eapply lr_refines_euttL; [ eassumption | ].
+  eapply lr_refines_euttR; [ | symmetry ]; eassumption.
 Qed.
-
-(* Refinement is proper wrt eq_itree *)
-Global Instance eq_itree_lr_refines_Proper2 {E1 E2 : EncType} {stk1 stk2} {R1 R2}
-  funs1 funs2 RPre RPost RR r :
-  Proper (eq_itree eq ==> eq_itree eq ==> flip impl)
-    (paco2 (@lr_refines_ E1 E2 stk1 stk2 R1 R2 funs1 funs2 RPre RPost RR) r).
-Proof.
-  repeat intro. apply bisimulation_is_eq in H. apply bisimulation_is_eq in H0.
-  subst. auto.
-Qed.
-
 
 
 (*** Reflexivity and Transitivity of refinemenet ***)
 
+(* Reflexivity *)
 Lemma lr_refines_refl {E stk R funs1 funs2}
   (RPre : Rel (FunStackE E stk) (FunStackE E stk))
   (RPost : PostRel (FunStackE E stk) (FunStackE E stk))
@@ -930,6 +917,7 @@ Proof.
       apply lr_refinesF_Tau. right. apply CIH.
 Qed.
 
+(* Transitivity *)
 Lemma lr_refines_trans {E1 E2 E3} {stk1 stk2 stk3} {R1 R2 R3}
   RPre1 RPre2 RPost1 RPost2
   (RR1 : R1 -> R2 -> Prop) (RR2 : R2 -> R3 -> Prop)
@@ -1146,6 +1134,52 @@ Proof.
   reflexivity.
 Qed.
 
+Lemma BindS_Ret_l_eq {E stk R S} (r : R) (k : R -> SpecM E stk S) :
+  Ret r >>= k = k r.
+Proof.
+  rewrite (entree_eta (Ret r >>= k)). rewrite (entree_eta (k r)).
+  reflexivity.
+Qed.
+
+Lemma BindS_Tau_eq {E stk R S} (m : SpecM E stk R) (k : R -> SpecM E stk S) :
+  Tau m >>= k = Tau (m >>= k).
+Proof.
+  rewrite (entree_eta (Tau m >>= k)). rewrite (entree_eta (Tau (m >>= k))).
+  reflexivity.
+Qed.
+
+
+Lemma eq_itree_TauR_inv {E stk R} (t1 t2 : SpecM E stk R) :
+  eq_itree eq t1 (Tau t2) ->
+  exists t1', t1 = Tau t1' /\ eq_itree eq t1' t2.
+Proof.
+  intro e. punfold e. inversion e; try discriminate.
+  exists m1. rewrite (entree_eta t1). rewrite <- H0. pclearbot.
+  split; [ reflexivity | assumption ].
+Qed.
+
+Lemma BindS_Vis_eq {E:EncType} {stk R S} (e : SpecEvent (FunStackE E stk))
+  (k1 : encodes e -> SpecM E stk R) (k2 : R -> SpecM E stk S) :
+  Vis e k1 >>= k2 = Vis e (fun x => k1 x >>= k2).
+Proof.
+  rewrite (entree_eta (Vis e k1 >>= k2)).
+  rewrite (entree_eta (Vis e (fun x => k1 x >>= k2))).
+  reflexivity.
+Qed.
+
+Lemma eq_itree_VisR_inv {E stk R} (t : SpecM E stk R) e k :
+  eq_itree eq t (Vis e k) ->
+  exists k', t = Vis e k' /\ (forall x, eq_itree eq (k' x) (k x)).
+Proof.
+  intro H. punfold H.
+  destruct t as [ ot ]; destruct ot;
+    [ inversion H | inversion H; discriminate | ].
+  assert (e0 = e); [ inversion H; reflexivity | ]. subst e0.
+  exists k0; split; [ reflexivity | ].
+  apply eqit_Vis_inv. pstep. assumption.
+Qed.
+
+
 (* Refinement commutes with bind *)
 Lemma lr_refines_bind {RPre RPost S1 S2} {RS : Rel S1 S2} m1 m2 k1 k2 :
   lr_refines funs1 funs2 RPre RPost RS m1 m2 ->
@@ -1153,68 +1187,82 @@ Lemma lr_refines_bind {RPre RPost S1 S2} {RS : Rel S1 S2} m1 m2 k1 k2 :
                  lr_refines funs1 funs2 RPre RPost RR (k1 x1) (k2 x2)) ->
   lr_refines funs1 funs2 RPre RPost RR (m1 >>= k1) (m2 >>= k2).
 Proof.
-  intros mref kref; revert m1 m2 mref; pcofix CIH; intros.
+  intros mref kref; revert m1 m2 mref.
+  assert (forall t1 t2 m1 m2,
+             eq_itree eq t1 (m1 >>= k1) -> eq_itree eq t2 (m2 >>= k2) ->
+             lr_refines funs1 funs2 RPre RPost RS m1 m2 ->
+             lr_refines funs1 funs2 RPre RPost RR t1 t2) as H;
+    [ | intros; apply (H (m1 >>= k1) (m2 >>= k2) m1 m2);
+        try reflexivity; assumption ].
+  pcofix CIH; intros t1 t2 m1 m2 e1 e2 mref.
   punfold mref; red in mref.
-  rewrite (observing_BindS E1). rewrite (observing_BindS E2).
-  unfold EncodingType_FrameCall, encodes.
+  rewrite observing_BindS in e1. rewrite observing_BindS in e2.
   remember (observe m1) as om1. remember (observe m2) as om2.
   clear m1 m2 Heqom1 Heqom2.
-  hinduction mref before om1; intros; pclearbot.
-  - eapply paco2_mon.
-    + setoid_rewrite bind_ret_l. apply kref; assumption.
+  revert t1 t2 e1 e2; induction mref; intros; pclearbot.
+  - rewrite BindS_Ret_l_eq in e1. rewrite BindS_Ret_l_eq in e2.
+    eapply paco2_mon.
+    + eapply lr_refines_euttL; [ apply eq_sub_eutt; apply e1 | ].
+      eapply lr_refines_euttR; [ | apply eq_sub_eutt; symmetry; apply e2 ].
+      apply kref; assumption.
     + intros. destruct PR.
-  - pstep. apply lr_refinesF_Tau. right. apply CIH. assumption.
-  - pstep. apply lr_refinesF_Vis; [ assumption | ].
-    intros. right. apply CIH. remember (H0 a b H1).
-    destruct u; [ assumption | destruct b0 ].
-  - pstep. apply lr_refinesF_TauL. pstep_reverse.
-  - pstep. apply lr_refinesF_TauR. pstep_reverse.
-  - pstep. apply lr_refinesF_forallR. intros.
-    change
-      (lr_refinesF funs1 funs2 RPre RPost RR
-         (upaco2 (lr_refines_ funs1 funs2 RPre RPost RR) r)
-         (observe (x <- go _ _ ot1;; k1 x))
-         (observe ((x <- Tau (k a);; k2 x)))).
-    pstep_reverse.
-  - pstep. apply (lr_refinesF_existsR _ _ _ _ _ _ _ _ _ a).
-    change
-      (lr_refinesF funs1 funs2 RPre RPost RR
-         (upaco2 (lr_refines_ funs1 funs2 RPre RPost RR) r)
-         (observe (x <- go _ _ ot1;; k1 x))
-         (observe ((x <- Tau (k a);; k2 x)))).
-    pstep_reverse.
-  - pstep. apply (lr_refinesF_forallL _ _ _ _ _ _ _ _ _ a).
-    change
-      (lr_refinesF funs1 funs2 RPre RPost RR
-         (upaco2 (lr_refines_ funs1 funs2 RPre RPost RR) r)
-         (observe ((x <- Tau (k a);; k1 x)))
-         (observe (x <- go _ _ ot2;; k2 x))).
-    pstep_reverse.
-  - pstep. apply lr_refinesF_existsL. intros.
-    change
-      (lr_refinesF funs1 funs2 RPre RPost RR
-         (upaco2 (lr_refines_ funs1 funs2 RPre RPost RR) r)
-         (observe ((x <- Tau (k a);; k1 x)))
-         (observe (x <- go _ _ ot2;; k2 x))).
-    pstep_reverse.
-  - pstep. setoid_rewrite bind_vis. apply lr_refinesF_unfoldL.
-    change
-      (lr_refinesF funs1 funs2 RPre RPost RR
-         (upaco2 (lr_refines_ funs1 funs2 RPre RPost RR) r)
-         (observe (Tau (x <- applyFrameTuple E1 stk1 funs1 call1;; EnTree.bind (k0 x) k1)))
-         (observe (x <- {| _observe := ot2 |};; k2 x))).
-    pstep_reverse.
-    setoid_rewrite <- bind_tau. setoid_rewrite <- bind_bind.
-    apply IHmref.
-  - pstep. setoid_rewrite bind_vis. apply lr_refinesF_unfoldR.
-    change
-      (lr_refinesF funs1 funs2 RPre RPost RR
-         (upaco2 (lr_refines_ funs1 funs2 RPre RPost RR) r)
-         (observe (x <- {| _observe := ot1 |};; k1 x))
-         (observe (Tau (x <- applyFrameTuple E2 stk2 funs2 call2;; EnTree.bind (k0 x) k2)))).
-    pstep_reverse.
-    setoid_rewrite <- bind_tau. setoid_rewrite <- bind_bind.
-    apply IHmref.
+  - pstep. rewrite BindS_Tau_eq in e1. rewrite BindS_Tau_eq in e2.
+    destruct (eq_itree_TauR_inv _ _ e1) as [ t0' [ e_t0 e_t0' ]]; subst t0.
+    destruct (eq_itree_TauR_inv _ _ e2) as [ t3' [ e_t3 e_t3' ]]; subst t3.
+    apply lr_refinesF_Tau. right. eapply CIH; eassumption.
+  - pstep. rewrite BindS_Vis_eq in e0. rewrite BindS_Vis_eq in e3.
+    destruct (eq_itree_VisR_inv _ _ _ e0) as [ k1' [ e_k1 e_k1' ]]; subst t1.
+    destruct (eq_itree_VisR_inv _ _ _ e3) as [ k2' [ e_k2 e_k2' ]]; subst t2.
+    apply lr_refinesF_Vis; [ assumption | ].
+    intros. right. eapply CIH; [ apply e_k1' | apply e_k2' | ].
+    destruct (H0 a b H1) as [ H2 | []]. assumption.
+  - cbn in e1; rewrite bind_Tau_eq in e1.
+    destruct (eq_itree_TauR_inv _ _ e1) as [ t0' [ e_t0 e_t0' ]]; subst t0.
+    pstep. apply lr_refinesF_TauL. pstep_reverse.
+  - cbn in e2; rewrite bind_Tau_eq in e2.
+    destruct (eq_itree_TauR_inv _ _ e2) as [ t0' [ e_t0 e_t0' ]]; subst t0.
+    pstep. apply lr_refinesF_TauR. pstep_reverse.
+  - cbn in e2; rewrite bind_Vis_eq in e2.
+    destruct (eq_itree_VisR_inv _ _ _ e2) as [ k2' [ e_k2 e_k2' ]]; subst t2.
+    pstep. apply lr_refinesF_forallR. intros.
+    observe_tau. pstep_reverse.
+    eapply H0; [ eassumption | ].
+    transitivity (Tau (BindS (k a) k2));
+      [ | rewrite <- BindS_Tau_eq; reflexivity ].
+    apply eqit_Tau. apply e_k2'.
+  - cbn in e2; rewrite bind_Vis_eq in e2.
+    destruct (eq_itree_VisR_inv _ _ _ e2) as [ k2' [ e_k2 e_k2' ]]; subst t2.
+    pstep. apply (lr_refinesF_existsR _ _ _ _ _ _ _ _ _ a).
+    observe_tau. pstep_reverse. apply IHmref; [ assumption | ].
+    transitivity (Tau (BindS (k a) k2));
+      [ | rewrite <- BindS_Tau_eq; reflexivity ].
+    apply eqit_Tau. apply e_k2'.
+  - cbn in e1; rewrite bind_Vis_eq in e1.
+    destruct (eq_itree_VisR_inv _ _ _ e1) as [ k1' [ e_k1 e_k1' ]]; subst t1.
+    pstep. apply (lr_refinesF_forallL _ _ _ _ _ _ _ _ _ a).
+    observe_tau. pstep_reverse. apply IHmref; [ | assumption ].
+    transitivity (Tau (BindS (k a) k1));
+      [ | rewrite <- BindS_Tau_eq; reflexivity ].
+    apply eqit_Tau. apply e_k1'.
+  - cbn in e1; rewrite bind_Vis_eq in e1.
+    destruct (eq_itree_VisR_inv _ _ _ e1) as [ k1' [ e_k1 e_k1' ]]; subst t1.
+    pstep. apply lr_refinesF_existsL. intros.
+    observe_tau. pstep_reverse. apply (H0 a); [ | assumption ].
+    transitivity (Tau (BindS (k a) k1));
+      [ | rewrite <- BindS_Tau_eq; reflexivity ].
+    apply eqit_Tau. apply e_k1'.
+  - cbn in e1. unfold SpecM, entree_spec in e1. rewrite bind_Vis_eq in e1.
+    destruct (eq_itree_VisR_inv _ _ _ e1) as [ k1' [ e_k1 e_k1' ]]; subst t1.
+    pstep. apply lr_refinesF_unfoldL. observe_tau. pstep_reverse.
+    apply IHmref; [ | assumption ].
+    rewrite BindS_Tau_eq. apply eqit_Tau. cbn. rewrite bind_bind.
+    eapply eqit_bind; [ reflexivity | ]. intros. subst u2. apply e_k1'.
+  - cbn in e2. unfold SpecM, entree_spec in e2. rewrite bind_Vis_eq in e2.
+    destruct (eq_itree_VisR_inv _ _ _ e2) as [ k2' [ e_k2 e_k2' ]]; subst t2.
+    pstep. apply lr_refinesF_unfoldR. observe_tau. pstep_reverse.
+    apply IHmref; [ assumption | ].
+    rewrite BindS_Tau_eq. apply eqit_Tau. cbn. rewrite bind_bind.
+    eapply eqit_bind; [ reflexivity | ]. intros. subst u2. apply e_k2'.
 Qed.
 
 
