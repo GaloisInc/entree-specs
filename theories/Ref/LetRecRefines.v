@@ -20,7 +20,6 @@ From EnTree Require Import
      Basics.QuantType
      Core.EnTreeDefinition
      Core.SubEvent
-     Ref.Padded
      Ref.EnTreeSpecDefinition
      Ref.EnTreeSpecFacts
      Ref.EnTreeSpecCombinatorFacts
@@ -28,7 +27,6 @@ From EnTree Require Import
      Ref.SpecM
      Eq.Eqit
      Ref.MRecSpec
-     Ref.SpecMFacts
 .
 
 From Paco Require Import paco.
@@ -42,7 +40,7 @@ Local Open Scope entree_scope.
 Section lr_refines.
 
 Context {E1 E2 : EncType} {stk1 stk2 : FunStack} {R1 R2 : Type}.
-Context (funs1 : FrameTuple E1 stk1) (funs2 : FrameTuple E2 stk2).
+Context (funs1 : StackTuple E1 stk1) (funs2 : StackTuple E2 stk2).
 
 Context (RPre : Rel (FunStackE E1 stk1) (FunStackE E2 stk2))
   (RPost : PostRel (FunStackE E1 stk1) (FunStackE E2 stk2))
@@ -88,12 +86,12 @@ Inductive lr_refinesF (sim : SpecM E1 stk1 R1 -> SpecM E2 stk2 R2 -> Prop) : Spe
 
 (* apply funs1 call1 >>= k1 |= t2 => CallS call1 >>= k1 |= t2 *)
 | lr_refinesF_unfoldL call1 k1 ot2 :
-    lr_refinesF sim (TauF (applyFrameTuple E1 stk1 funs1 call1 >>= k1)) ot2 ->
+    lr_refinesF sim (TauF (applyStackTuple E1 stk1 funs1 call1 >>= k1)) ot2 ->
     lr_refinesF sim (VisF (Spec_vis (inl call1)) k1) ot2
 
 (* t1 |= apply funs2 call2 >>= k2 => t1 |= CallS call2 >>= k2 *)
 | lr_refinesF_unfoldR ot1 call2 k2 :
-    lr_refinesF sim ot1 (TauF (applyFrameTuple E2 stk2 funs2 call2 >>= k2)) ->
+    lr_refinesF sim ot1 (TauF (applyStackTuple E2 stk2 funs2 call2 >>= k2)) ->
     lr_refinesF sim ot1 (VisF (Spec_vis (inl call2)) k2)
 .
 
@@ -181,7 +179,7 @@ Qed.
 
 (* Add a precondition for recursive calls *)
 Definition addCallPreRel {E1 E2 : EncType} {stk1 stk2}
-           (precond : Rel (FrameCall stk1) (FrameCall stk2))
+           (precond : Rel (StackCall stk1) (StackCall stk2))
            (RPre : Rel (FunStackE E1 pnil) (FunStackE E2 pnil)) :
   Rel (FunStackE E1 stk1) (FunStackE E2 stk2) :=
   fun a1 a2 => match a1,a2 with
@@ -192,7 +190,7 @@ Definition addCallPreRel {E1 E2 : EncType} {stk1 stk2}
 
 (* Add a postcondition for recursive calls *)
 Definition addCallPostRel {E1 E2 : EncType} {stk1 stk2}
-           (postcond : PostRel (FrameCall stk1) (FrameCall stk2))
+           (postcond : PostRel (StackCall stk1) (StackCall stk2))
            (RPost : PostRel (FunStackE E1 pnil) (FunStackE E2 pnil)) :
   PostRel (FunStackE E1 stk1) (FunStackE E2 stk2) :=
   fun a1 a2 => match a1,a2 with
@@ -205,7 +203,7 @@ Definition addCallPostRel {E1 E2 : EncType} {stk1 stk2}
 (*** Inversion lemmas about refinement ***)
 Section lr_refines_inv.
 Context {E1 E2 : EncType} {stk1 stk2 : FunStack} {R1 R2 : Type}.
-Context (funs1 : FrameTuple E1 stk1) (funs2 : FrameTuple E2 stk2).
+Context (funs1 : StackTuple E1 stk1) (funs2 : StackTuple E2 stk2).
 
 Context (RPre : Rel (FunStackE E1 stk1) (FunStackE E2 stk2))
   (RPost : PostRel (FunStackE E1 stk1) (FunStackE E2 stk2))
@@ -327,7 +325,7 @@ Inductive forallL_LRRefinesF {A : QuantEnc} (k1 : encodes A -> SpecM E1 stk1 R1)
     forallL_LRRefinesF k1 (observe t2) ->
     forallL_LRRefinesF k1 (TauF t2)
   | forallL_LRRefinesF_unfoldR call2 k2 :
-    forallL_LRRefinesF k1 (observe (applyFrameTuple E2 stk2 funs2 call2 >>= k2)) ->
+    forallL_LRRefinesF k1 (observe (applyStackTuple E2 stk2 funs2 call2 >>= k2)) ->
     forallL_LRRefinesF k1 (VisF (Spec_vis (inl call2)) k2)
 .
 
@@ -383,7 +381,7 @@ Inductive existsR_LRRefinesF {A : QuantEnc} (k2 : encodes A -> SpecM E2 stk2 R2)
     existsR_LRRefinesF k2 (observe t1) ->
     existsR_LRRefinesF k2 (TauF t1)
   | existsR_LRRefinesF_unfoldL call1 k1 :
-    existsR_LRRefinesF k2 (observe (applyFrameTuple E1 stk1 funs1 call1 >>= k1)) ->
+    existsR_LRRefinesF k2 (observe (applyStackTuple E1 stk1 funs1 call1 >>= k1)) ->
     existsR_LRRefinesF k2 (VisF (Spec_vis (inl call1)) k1)
 .
 
@@ -423,7 +421,7 @@ Lemma lr_refines_callL_inv pre post call1 k1 t2 :
   lr_refines funs1 funs2 (liftNilRel pre) (liftNilPostRel post) RR
     (Vis (Spec_vis (inl call1)) k1) t2 ->
   lr_refines funs1 funs2 (liftNilRel pre) (liftNilPostRel post) RR
-    (Tau (applyFrameTuple E1 stk1 funs1 call1 >>= k1)) t2.
+    (Tau (applyStackTuple E1 stk1 funs1 call1 >>= k1)) t2.
 Proof.
   intros ref12. punfold ref12. red in ref12. cbn in ref12. pstep. red.
   remember (observe t2) as ot2; clear t2 Heqot2.
@@ -444,7 +442,7 @@ Lemma lr_refines_callR_inv pre post t1 call2 k2 :
   lr_refines funs1 funs2 (liftNilRel pre) (liftNilPostRel post) RR
     t1 (Vis (Spec_vis (inl call2)) k2) ->
   lr_refines funs1 funs2 (liftNilRel pre) (liftNilPostRel post) RR
-    t1 (Tau (applyFrameTuple E2 stk2 funs2 call2 >>= k2)).
+    t1 (Tau (applyStackTuple E2 stk2 funs2 call2 >>= k2)).
 Proof.
   intros ref12. punfold ref12. red in ref12. cbn in ref12. pstep. red.
   remember (observe t1) as ot1; clear t1 Heqot1.
@@ -474,7 +472,7 @@ Inductive visR_LRRefinesF :
     visR_LRRefinesF (VisF (Spec_vis e1) k1) e2 k2
   | visR_LRRefinesF_unfoldR ot1 call2 k2 :
     lr_refinesF_u funs1 funs2 RPre RPost RR
-      ot1 (observe (applyFrameTuple E2 stk2 funs2 call2 >>= k2)) ->
+      ot1 (observe (applyStackTuple E2 stk2 funs2 call2 >>= k2)) ->
     visR_LRRefinesF ot1 (inl call2) k2
   | visR_LRRefinesF_forallL B k1 (b : encodes B) e2 k2 :
     visR_LRRefinesF (observe (k1 b)) e2 k2 ->
@@ -486,7 +484,7 @@ Inductive visR_LRRefinesF :
     visR_LRRefinesF (observe t1) e2 k2 ->
     visR_LRRefinesF (TauF t1) e2 k2
   | visR_LRRefinesF_unfoldL call1 k1 e2 k2 :
-    visR_LRRefinesF (observe (applyFrameTuple E1 stk1 funs1 call1 >>= k1)) e2 k2 ->
+    visR_LRRefinesF (observe (applyStackTuple E1 stk1 funs1 call1 >>= k1)) e2 k2 ->
     visR_LRRefinesF (VisF (Spec_vis (inl call1)) k1) e2 k2
 .
 
@@ -541,7 +539,7 @@ Inductive visL_LRRefinesF :
     visL_LRRefinesF e1 k1 (VisF (Spec_vis e2) k2)
   | visL_LRRefinesF_unfoldL call1 k1 ot2 :
     lr_refinesF_u funs1 funs2 RPre RPost RR
-      (observe (applyFrameTuple E1 stk1 funs1 call1 >>= k1)) ot2 ->
+      (observe (applyStackTuple E1 stk1 funs1 call1 >>= k1)) ot2 ->
     visL_LRRefinesF (inl call1) k1 ot2
   | visL_LRRefinesF_forallR e1 k1 (B : QuantEnc) k2 :
     (forall b, visL_LRRefinesF e1 k1 (observe (k2 b))) ->
@@ -553,7 +551,7 @@ Inductive visL_LRRefinesF :
     visL_LRRefinesF e1 k1 (observe t2) ->
     visL_LRRefinesF e1 k1 (TauF t2)
   | visL_LRRefinesF_unfoldR e1 k1 call2 k2 :
-    visL_LRRefinesF e1 k1 (observe (applyFrameTuple E2 stk2 funs2 call2 >>= k2)) ->
+    visL_LRRefinesF e1 k1 (observe (applyStackTuple E2 stk2 funs2 call2 >>= k2)) ->
     visL_LRRefinesF e1 k1 (VisF (Spec_vis (inl call2)) k2)
 .
 
@@ -602,47 +600,12 @@ End lr_refines_inv.
 Section lr_refines_proper.
 
 Context {E1 E2 : EncType} {stk1 stk2 : FunStack} {R1 R2 : Type}.
-Context (funs1 : FrameTuple E1 stk1) (funs2 : FrameTuple E2 stk2).
+Context (funs1 : StackTuple E1 stk1) (funs2 : StackTuple E2 stk2).
 
 Context (RPre : Rel (FunStackE E1 stk1) (FunStackE E2 stk2))
   (RPost : PostRel (FunStackE E1 stk1) (FunStackE E2 stk2))
   (RR : Rel R1 R2).
 
-(* FIXME: prove this with the eutt lemma and eq_itree -> eutt *)
-(*
-Lemma lr_refines_eq_itreeR t1 t2 t2' :
-  lr_refines funs1 funs2 RPre RPost RR t1 t2 -> eq_itree eq t2 t2' ->
-  lr_refines funs1 funs2 RPre RPost RR t1 t2'.
-Proof.
-  revert t1 t2 t2'; pcofix CIH; intros t1 t2 t2' ref12 e.
-  destruct t1 as [ ot1 ]. destruct t2 as [ ot2 ].
-  punfold ref12. red in ref12. simpl in ref12.
-  revert t2' e; induction ref12; intros; pstep; red.
-  - destruct t2' as [ ot2' ]; punfold e; red in e. simpl in e.
-    remember (RetF r2) as ret_r2. induction e; inversion Heqret_r2.
-    + rewrite <- REL; rewrite H1. apply lr_refinesF_Ret; assumption.
-    + simpl in IHe. apply lr_refinesF_TauR. apply IHe. assumption.
-  - destruct t2' as [ ot2' ]; punfold e; red in e. simpl in e.
-    simpl. inversion e; try discriminate.
-    subst ot2'. apply lr_refinesF_Tau. pclearbot. right.
-    eapply CIH; eassumption.
-  - destruct t2' as [ ot2' ]; punfold e; red in e. simpl in e. simpl.
-    inversion e; try discriminate. inj_existT. subst k3.
-    apply lr_refinesF_Vis; [ assumption | ]. intros. pclearbot.
-    right. eapply CIH; [ | apply REL ].
-    destruct (H0 a b H3) as [ ref_k1_k2 | []]. assumption.
-  - apply lr_refinesF_TauL. pstep_reverse. rewrite <- entree_eta in IHref12.
-    apply IHref12. assumption.
-  - destruct t2' as [ ot2' ]; punfold e; red in e. simpl in e.
-    inversion e; try discriminate. apply lr_refinesF_TauR. pstep_reverse.
-    apply IHref12. rewrite <- entree_eta. pclearbot. apply REL.
-  - destruct t2' as [ ot2' ]. punfold e; red in e; simpl in e.
-    inversion e; try discriminate. inj_existT. subst k0.
-    apply lr_refinesF_forallR. intros. observe_tau. pstep_reverse.
-    eapply H0. pstep. constructor. apply REL.
-  - 
-Admitted.
-*)
 
 (* lr_refines is Proper wrt eutt on the right *)
 Lemma lr_refines_euttR t1 t2 t2' :
@@ -921,8 +884,8 @@ Qed.
 Lemma lr_refines_trans {E1 E2 E3} {stk1 stk2 stk3} {R1 R2 R3}
   RPre1 RPre2 RPost1 RPost2
   (RR1 : R1 -> R2 -> Prop) (RR2 : R2 -> R3 -> Prop)
-  (funs1 : FrameTuple E1 stk1) (funs2 : FrameTuple E2 stk2)
-  (funs3 : FrameTuple E3 stk3)
+  (funs1 : StackTuple E1 stk1) (funs2 : StackTuple E2 stk2)
+  (funs3 : StackTuple E3 stk3)
   (t1 : SpecM E1 stk1 R1) (t2 : SpecM E2 stk2 R2) (t3 : SpecM E3 stk3 R3) :
   lr_refines funs1 funs2 (liftNilRel RPre1) (liftNilPostRel RPost1) RR1 t1 t2 ->
   lr_refines funs2 funs3 (liftNilRel RPre2) (liftNilPostRel RPost2) RR2 t2 t3 ->
@@ -1053,79 +1016,10 @@ Proof.
 Qed.
 
 
-(*** Soundness and Completeness relative to standard refinement ***)
-(*
-Section lr_refines_sound_complete.
-
-Context {E1 E2 : EncType} {stk1 stk2 : FunStack} {R1 R2 : Type} {RR : Rel R1 R2}.
-Context (funs1 : FrameTuple E1 stk1) (funs2 : FrameTuple E2 stk2).
-
-
-Lemma observing_LetRecS E R stk funs body :
-  LetRecS E R stk funs body = LetRecS E R stk funs (go _ _ (observe body)).
-Proof.
-  reflexivity.
-Qed.
-
-
-(* lr_refines is sound, meaning that it implies two letrecs refine each other *)
-Lemma lr_refines_soundness RPre RPost t1 t2 :
-  lr_refines funs1 funs2 (liftNilRel RPre) (liftNilPostRel RPost) RR t1 t2 ->
-  refines RPre RPost RR (LetRecS _ R1 _ funs1 t1) (LetRecS _ R2 _ funs2 t2).
-Proof.
-  revert t1 t2; pcofix CIH; intros.
-  rewrite observing_LetRecS. rewrite (observing_LetRecS E2).
-  punfold H0. red in H0. pstep. red.
-  unfold SpecM, FunStackE, EncodingType_FunStackE in * |- *.
-  remember (observe t1) as ot1.
-  remember (observe t2) as ot2.
-  clear t1 Heqot1 t2 Heqot2.
-  hinduction H0 before r; intros; pclearbot; eauto.
-  - constructor; assumption.
-  - apply refinesF_Tau. right. apply CIH. apply H.
-  - unfold liftNilRel in H.
-    destruct e1; [ contradiction | ]. destruct e2; [ contradiction | ].
-    cbn. eapply refinesF_Vis; [ apply H | ].
-    intros. right. apply CIH.
-    destruct (H0 a b H1); [ | destruct H2 ]. apply H2.
-  - cbn. apply refinesF_TauL. apply IHlr_refinesF. intros. apply CIH. assumption.
-  - cbn. apply refinesF_TauR. apply IHlr_refinesF. intros. apply CIH. assumption.
-  - cbn. apply refinesF_forallR. intros.
-    apply H0. intros. apply CIH. assumption.
-  - cbn. eapply refinesF_existsR. apply IHlr_refinesF.
-    intros. apply CIH. assumption.
-  - cbn. eapply refinesF_forallL. apply IHlr_refinesF.
-    intros. apply CIH. assumption.
-  - cbn. apply refinesF_existsL. intros. apply H0. intros. apply CIH. assumption.
-Qed.
-
-(* lr_refines is complete, meaning that it holds whenever two letrecs refine
-each other *)
-Lemma lr_refines_completeness RPre RPost t1 t2 t1' t2' :
-  observe t1' = observe (LetRecS _ R1 _ funs1 t1) ->
-  observe t2' = observe (LetRecS _ R2 _ funs2 t2) ->
-  refines RPre RPost RR t1' t2' ->
-  lr_refines funs1 funs2 (liftNilRel RPre) (liftNilPostRel RPost) RR t1 t2.
-Proof.
-  revert t1 t2 t1' t2'; pcofix CIH; intros.
-  punfold H2. red in H2. pstep. red.
-  remember (observe t1') as ot1'. remember (observe t2') as ot2'.
-  clear t1' Heqot1' t2' Heqot2'.
-  hinduction H2 before r; intros; pclearbot.
-  - destruct t1 as [[]]; destruct t2 as [[]]; try discriminate.
-    + injection H0; intros; injection H1; intros. constructor.
-      subst r1. subst r2. assumption.
-    + admit.
-Admitted.
-
-End Section lr_refines_sound_complete.
-*)
-
-
 (*** Laws about refinement of bind ***)
 Section lr_refines_bind.
 Context {E1 E2 : EncType} {stk1 stk2 : FunStack} {R1 R2 : Type} {RR : Rel R1 R2}.
-Context {funs1 : FrameTuple E1 stk1} {funs2 : FrameTuple E2 stk2}.
+Context {funs1 : StackTuple E1 stk1} {funs2 : StackTuple E2 stk2}.
 
 (* Helper lemma to apply entree_beta to the lhs of a bind *)
 Lemma observing_BindS E stk A B m (k : A -> SpecM E stk B) :
@@ -1272,14 +1166,14 @@ End lr_refines_bind.
 (*** LetRec Lemma ***)
 Section lr_refines_letrec.
 Context {E1 E2 : EncType} {stk1 stk2 : FunStack} {R1 R2 : Type}.
-Context (funs1 : FrameTuple E1 stk1) (funs2 : FrameTuple E2 stk2).
+Context (funs1 : StackTuple E1 stk1) (funs2 : StackTuple E2 stk2).
 Context (RPre : Rel (FunStackE E1 pnil) (FunStackE E2 pnil))
   (RPost : PostRel (FunStackE E1 pnil) (FunStackE E2 pnil))
   (RR : Rel R1 R2).
 
 Lemma lr_refines_letrec t1 t2 :
   lr_refines funs1 funs2 (liftNilRel RPre) (liftNilPostRel RPost) RR t1 t2 ->
-  lr_refines (emptyFrameTuple E1) (emptyFrameTuple E2) RPre RPost RR
+  lr_refines (emptyStackTuple E1) (emptyStackTuple E2) RPre RPost RR
     (LetRecS _ R1 _ funs1 t1) (LetRecS _ R2 _ funs2 t2).
 Proof.
   revert t1 t2; pcofix CIH; intros t1 t2 ref12.
@@ -1307,7 +1201,7 @@ End lr_refines_letrec.
 (*** Discharge and Push lemmas ***)
 Section lr_refines_discharge_push.
 Context {E1 E2 : EncType} {stk1 stk2 : FunStack} {R1 R2 : Type} {RR : Rel R1 R2}.
-Context (funs1 : FrameTuple E1 stk1) (funs2 : FrameTuple E2 stk2).
+Context (funs1 : StackTuple E1 stk1) (funs2 : StackTuple E2 stk2).
 
 (* Discharge a local pre/postcondition about calls *)
 Lemma lr_refines_discharge RPre RPost precond postcond t1 t2 :
@@ -1315,8 +1209,8 @@ Lemma lr_refines_discharge RPre RPost precond postcond t1 t2 :
       (precond call1 call2 : Prop) ->
       lr_refines funs1 funs2 (addCallPreRel precond RPre)
         (addCallPostRel postcond RPost) (postcond call1 call2)
-        (applyFrameTuple _ _ funs1 call1)
-        (applyFrameTuple _ _ funs2 call2)) ->
+        (applyStackTuple _ _ funs1 call1)
+        (applyStackTuple _ _ funs2 call2)) ->
   lr_refines funs1 funs2 (addCallPreRel precond RPre)
     (addCallPostRel postcond RPost) RR t1 t2 ->
   lr_refines funs1 funs2 (liftNilRel RPre) (liftNilPostRel RPost) RR t1 t2.
@@ -1380,3 +1274,9 @@ Proof.
 Qed.
 
 End lr_refines_discharge_push.
+
+
+(*** Definition Refinement ***)
+
+Definition def_refines {E1 E2} (d1 : SpecDef E1) (d2 : SpecDef E2) : Prop :=
+  forall stk1 incl1 stk2 incl2
