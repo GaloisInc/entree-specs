@@ -226,6 +226,43 @@ Fixpoint nthProjDefault@{u v} {T:Type@{v}} (f : T -> Type@{u}) (dT:T) (d:f dT) x
         end
   end.
 
+(* Project the dependent pair of the nth element of a mapTuple with its index *)
+Definition nthProjDefaultSig@{u v} {T:Type@{v}} (f : T -> Type@{u})
+  (d : { x : T & f x }) xs n (tup : mapTuple f xs) : { x : T & f x } :=
+  existT f
+    (nth_default' (projT1 d) xs n)
+    (nthProjDefault f (projT1 d) (projT2 d) xs n tup).
+
+(* Projecting at a position less than the length of the first mapTuple of an
+append will give you a projection at the same position in the first tuple *)
+Lemma nthProjDefaultSig_app_l@{u v} {T:Type@{v}} (f : T -> Type@{u}) d
+  xs (tup1 : mapTuple f xs) ys (tup2 : mapTuple f ys) n :
+  n < plength xs ->
+  nthProjDefaultSig f d (papp xs ys) n (appMapTuple f xs ys tup1 tup2) =
+    nthProjDefaultSig f d xs n tup1.
+Proof.
+  revert tup1 ys tup2 n; induction xs; intros.
+  - inversion H.
+  - destruct n.
+    + reflexivity.
+    + apply IHxs. apply le_S_n. assumption.
+Qed.
+
+(* Projecting at a position greater than or equal to the length of the first
+mapTuple of an append will give you a projection in the second tuple *)
+Lemma nthProjDefaultSig_app_r@{u v} {T:Type@{v}} (f : T -> Type@{u}) d
+  xs (tup1 : mapTuple f xs) ys (tup2 : mapTuple f ys) n :
+  plength xs <= n ->
+  nthProjDefaultSig f d (papp xs ys) n (appMapTuple f xs ys tup1 tup2) =
+    nthProjDefaultSig f d ys (n - plength xs) tup2.
+Proof.
+  revert tup1 ys tup2 n; induction xs; intros.
+  - simpl. rewrite <- Minus.minus_n_O. reflexivity.
+  - destruct n.
+    + inversion H.
+    + apply IHxs. apply le_S_n. assumption.
+Qed.
+
 (* A specialized dependent pair of a type and decoding function for it *)
 Polymorphic Record EncType@{u} : Type :=
   { EncType_type :> Type@{u};
@@ -530,6 +567,18 @@ Definition CallLRTArg E stack lrt (arg:LRTArg stack (ArgType_Fun lrt)) :
 Definition SpecFun E stack lrt : Type@{entree_u} :=
   lrtPi stack lrt (fun args => SpecM E stack (LRTOutput _ lrt args)).
 
+(* A trivially inhabited "default" SpecFun of type default_lrt *)
+Definition defaultSpecFun E stack : SpecFun E stack default_lrt :=
+  fun (v:void) => match v with end.
+
+(* A dependent pair of an LRT and a SpecFun with that LRT *)
+Definition SpecFunSig E stack : Type@{entree_u+1} :=
+  { lrt:LetRecType & SpecFun E stack lrt }.
+
+(* The dependent pair of the default SpecFun and its LRT *)
+Definition defaultSpecFunSig E stack : SpecFunSig E stack :=
+  existT _ default_lrt (defaultSpecFun E stack).
+
 (* A right-nested tuple of a list of functions in a recursive function stack *)
 Definition StackTuple E stack : Type@{entree_u} :=
   mapTuple (SpecFun E stack) stack.
@@ -541,7 +590,7 @@ Definition emptyStackTuple E : StackTuple E pnil := tt.
 Definition nthStackTupleFun E stack n (funs : StackTuple E stack) :
   SpecFun E stack (nthLRT stack n) :=
   nthProjDefault (SpecFun E stack) default_lrt
-    (fun (v:void) => match v with end) _ n funs.
+    (defaultSpecFun E stack) _ n funs.
 
 (* Apply a StackTuple to a StackCall to get a StackCallRet *)
 Definition applyStackTuple E stack (funs : StackTuple E stack)
@@ -808,6 +857,62 @@ Definition inclPolyStackTuple E calls1 calls2 defs
   (pft : PolyStackTuple E calls1 defs)
   : PolyStackTuple E calls2 defs :=
   fun stack' incl' => pft stack' (compStackIncl incl incl').
+
+(* An instance of a PolyStackTuple is a StackTuple for a possibly extended stack
+that includes all the all the SpecFuns in the original StackTuple *)
+Definition isTupleInst E stk stk' (incl : stackIncl stk stk')
+                       (ptup : PolyStackTuple E stk stk)
+                       (tup : StackTuple E stk') : Prop :=
+  forall n,
+    n < plength stk ->
+    nthProjDefaultSig (SpecFun E stk') (defaultSpecFunSig E stk') stk n
+      (ptup stk' incl)
+    = nthProjDefaultSig (SpecFun E stk') (defaultSpecFunSig E stk') stk'
+        (proj1_sig incl n) tup.
+
+Lemma isTupleInstAppL E stk1 stk2 stk' (incl : stackIncl (papp stk1 stk2) stk')
+                      (ptup1 : PolyStackTuple E stk1 stk1)
+                      (ptup2 : PolyStackTuple E (papp stk1 stk2) stk2)
+                      (tup : StackTuple E stk') :
+  isTupleInst E (papp stk1 stk2) stk' incl
+              (appPolyStackTuple
+                 _ _ _ _
+                 (inclPolyStackTuple _ _ _ _
+                    (weakenRightStackIncl _ _)
+                    ptup1)
+                 ptup2)
+              tup ->
+  isTupleInst E stk1 stk' (compStackIncl (weakenRightStackIncl _ _) incl)
+              ptup1 tup.
+Proof.
+  unfold isTupleInst, appPolyStackTuple, inclPolyStackTuple. simpl.
+  intros H n n_lt. etransitivity; [ | apply H ].
+  - symmetry; apply nthProjDefaultSig_app_l. assumption.
+  - eapply Lt.lt_le_trans; [ eassumption | apply plength_app_r ].
+Qed.
+
+Lemma isTupleInstAppR E stk1 stk2 stk' (incl : stackIncl (papp stk1 stk2) stk')
+                      (ptup1 : PolyStackTuple E (papp stk1 stk2) stk1)
+                      (ptup2 : PolyStackTuple E stk2 stk2)
+                      (tup : StackTuple E stk') :
+  isTupleInst E (papp stk1 stk2) stk' incl
+              (appPolyStackTuple
+                 _ _ _ _
+                 ptup1
+                 (inclPolyStackTuple _ _ _ _
+                    (weakenLeftStackIncl _ _)
+                    ptup2))
+              tup ->
+  isTupleInst E stk2 stk' (compStackIncl (weakenLeftStackIncl _ _) incl)
+              ptup2 tup.
+Proof.
+  unfold isTupleInst, appPolyStackTuple, inclPolyStackTuple. simpl.
+  intros H n n_lt.
+  etransitivity; [ | apply H ].
+  - rewrite nthProjDefaultSig_app_r; [ | apply Plus.le_plus_l ].
+    rewrite Minus.minus_plus. reflexivity.
+  - rewrite plength_papp. apply Plus.plus_lt_compat_l. assumption.
+Qed.
 
 
 (** Specification Definitions **)

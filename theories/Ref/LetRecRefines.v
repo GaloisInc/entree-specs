@@ -1226,7 +1226,7 @@ Proof.
   - destruct e1; destruct e2.
     + apply lr_refinesF_unfoldL. apply lr_refinesF_unfoldR.
       apply lr_refinesF_Tau. right. apply CIH.
-      apply (lr_refines_bind (RS:=postcond f f0)).
+      apply (lr_refines_bind (RS:=postcond s s0)).
       -- apply funsRef. assumption.
       -- intros. destruct (H0 x1 x2 H1) as [ H3 | [] ].
          assumption.
@@ -1278,5 +1278,17 @@ End lr_refines_discharge_push.
 
 (*** Definition Refinement ***)
 
-Definition def_refines {E1 E2} (d1 : SpecDef E1) (d2 : SpecDef E2) : Prop :=
-  forall stk1 incl1 stk2 incl2
+Definition def_refines {E1 E2} RPre RPost
+  (d1 : SpecDef E1) (d2 : SpecDef E2)
+  (RR : forall stk1 stk2
+               (args1 : LRTInput stk1 (defLRT _ d1))
+               (args2 : LRTInput stk2 (defLRT _ d2)),
+      LRTOutput stk1 (defLRT _ d1) args1 ->
+      LRTOutput stk2 (defLRT _ d2) args2 -> Prop) : Prop :=
+  forall stk1 incl1 stk2 incl2 funs1 funs2 args1 args2,
+    isTupleInst E1 _ stk1 incl1 (defFuns E1 d1) funs1 ->
+    isTupleInst E2 _ stk2 incl2 (defFuns E2 d2) funs2 ->
+    lr_refines funs1 funs2 (liftNilRel RPre) (liftNilPostRel RPost)
+      (RR stk1 stk2 args1 args2)
+      (lrtApply _ _ _ (defBody E1 d1 stk1 incl1) args1)
+      (lrtApply _ _ _ (defBody E2 d2 stk2 incl2) args2).
