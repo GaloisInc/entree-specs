@@ -258,8 +258,8 @@ Definition default_lrt : LetRecType :=
   LRT_FunDep void (fun _ => LRT_Ret (ArgType_Const void)).
 
 (* Get the nth element of a FunStack list, or void -> void if n is too big *)
-Definition nthLRT (frame : FunStack) n : LetRecType :=
-  nth_default' default_lrt frame n.
+Definition nthLRT (stk : FunStack) n : LetRecType :=
+  nth_default' default_lrt stk n.
 
 (* A partial application of a function of a LetRecType lrt_in to some of its
 FunDep arguments, resulting in LetRecType lrt_out *)
@@ -357,18 +357,17 @@ Fixpoint lrtApply stack lrt
 (* A recursive call to one of the functions in a FunStack, specified by a
 natural number n that picks a specific index in the FunStack along with a set of
 arguments for that recursive call, relative to a given stack *)
-(* FIXME: rename FrameCall -> StackCall *)
-Inductive FrameCall stack : Type@{entree_u} :=
-| FrameCallOfArgs n (args : LRTInput stack (nthLRT stack n)).
+Inductive StackCall stack : Type@{entree_u} :=
+| StackCallOfArgs n (args : LRTInput stack (nthLRT stack n)).
 
-(* The return type for a FrameCall recursive call, using a specific M *)
-Definition FrameCallRet stack (args: FrameCall stack) : Type@{entree_u} :=
+(* The return type for a StackCall recursive call, using a specific M *)
+Definition StackCallRet stack (args: StackCall stack) : Type@{entree_u} :=
   match args with
-  | FrameCallOfArgs _ n args => LRTOutput stack (nthLRT stack n) args
+  | StackCallOfArgs _ n args => LRTOutput stack (nthLRT stack n) args
   end.
 
-Global Instance EncodingType_FrameCall stack : EncodingType (FrameCall stack) :=
-  FrameCallRet stack.
+Global Instance EncodingType_StackCall stack : EncodingType (StackCall stack) :=
+  StackCallRet stack.
 
 (* The error event type *)
 Inductive ErrorE : Set :=
@@ -379,7 +378,7 @@ Global Instance EncodingType_ErrorE : EncodingType ErrorE := fun _ => void.
 (* Create an event type for either an event in E or a recursive call in a stack
    Γ of recursive functions in scope *)
 Definition FunStackE (E : EncType@{entree_u}) (stack : FunStack) : Type@{entree_u} :=
-  FrameCall stack + (ErrorE + E).
+  StackCall stack + (ErrorE + E).
 
 Global Instance EncodingType_FunStackE E stack : EncodingType (FunStackE E stack) :=
   _.
@@ -400,22 +399,22 @@ Global Instance ReSumRet_FunStackE_Error (E : EncType) Γ :
 
 
 (* Embed a call in the top level of the FunStack into a FunStackE *)
-Global Instance ReSum_FrameCall_FunStackE (E : EncType) (stack : FunStack) :
-  ReSum (FrameCall stack) (FunStackE E stack) :=
+Global Instance ReSum_StackCall_FunStackE (E : EncType) (stack : FunStack) :
+  ReSum (StackCall stack) (FunStackE E stack) :=
   fun args => inl args.
 
 (* Map the return value for embedding a call in the top level to a FunStackE *)
-Global Instance ReSumRet_FrameCall_FunStackE E stack :
-  ReSumRet (FrameCall stack) (FunStackE E stack) :=
+Global Instance ReSumRet_StackCall_FunStackE E stack :
+  ReSumRet (StackCall stack) (FunStackE E stack) :=
   fun _ r => r.
 
 Global Instance EncodingType_LRTInput stack lrt :
   EncodingType (LRTInput stack lrt) := LRTOutput stack lrt.
 
-(* ReSum instances for embedding the nth LRTInput into a FrameCall *)
+(* ReSum instances for embedding the nth LRTInput into a StackCall *)
 Global Instance ReSum_LRTInput_FunStackE E stack n :
   ReSum (LRTInput stack (nthLRT stack n)) (FunStackE E stack) :=
-  fun args => resum (FrameCallOfArgs stack n args).
+  fun args => resum (StackCallOfArgs stack n args).
 
 Global Instance ReSumRet_LRTInput_FunStackE E stack n :
   ReSumRet (LRTInput stack (nthLRT stack n)) (FunStackE E stack) :=
@@ -531,31 +530,31 @@ Definition CallLRTArg E stack lrt (arg:LRTArg stack (ArgType_Fun lrt)) :
 Definition SpecFun E stack lrt : Type@{entree_u} :=
   lrtPi stack lrt (fun args => SpecM E stack (LRTOutput _ lrt args)).
 
-(* A right-nested tuple of a list of functions in a recursive function frame *)
-Definition FrameTuple E stack : Type@{entree_u} :=
+(* A right-nested tuple of a list of functions in a recursive function stack *)
+Definition StackTuple E stack : Type@{entree_u} :=
   mapTuple (SpecFun E stack) stack.
 
-(* The FrameTuple of 0 functions *)
-Definition emptyFrameTuple E : FrameTuple E pnil := tt.
+(* The StackTuple of 0 functions *)
+Definition emptyStackTuple E : StackTuple E pnil := tt.
 
-(* Get the nth function in a FrameTuple *)
-Definition nthFrameTupleFun E stack n (funs : FrameTuple E stack) :
+(* Get the nth function in a StackTuple *)
+Definition nthStackTupleFun E stack n (funs : StackTuple E stack) :
   SpecFun E stack (nthLRT stack n) :=
   nthProjDefault (SpecFun E stack) default_lrt
     (fun (v:void) => match v with end) _ n funs.
 
-(* Apply a FrameTuple to a FrameCall to get a FrameCallRet *)
-Definition applyFrameTuple E stack (funs : FrameTuple E stack)
-           (call : FrameCall stack) : SpecM E stack (FrameCallRet stack call) :=
-  match call return SpecM E stack (FrameCallRet stack call) with
-  | FrameCallOfArgs _ n args =>
-    lrtApply stack (nthLRT stack n) _ (nthFrameTupleFun _ stack n funs) args
+(* Apply a StackTuple to a StackCall to get a StackCallRet *)
+Definition applyStackTuple E stack (funs : StackTuple E stack)
+           (call : StackCall stack) : SpecM E stack (StackCallRet stack call) :=
+  match call return SpecM E stack (StackCallRet stack call) with
+  | StackCallOfArgs _ n args =>
+    lrtApply stack (nthLRT stack n) _ (nthStackTupleFun _ stack n funs) args
   end.
 
 (* Create a multi-way letrec that binds 0 or more co-recursive functions *)
-Definition LetRecS E R stack (funs : FrameTuple E stack) (body : SpecM E stack R)
+Definition LetRecS E R stack (funs : StackTuple E stack) (body : SpecM E stack R)
   : SpecM E pnil R :=
-  resumEntree (interp_mrec_spec (applyFrameTuple E stack funs) body).
+  resumEntree (interp_mrec_spec (applyStackTuple E stack funs) body).
 
 
 (** Stack Inclusions **)
@@ -698,24 +697,24 @@ Program Definition castLRTInput stk lrt lrt' (e : lrt = lrt')
   (args : LRTInput stk lrt) :
   { args': LRTInput stk lrt' | LRTOutput _ _ args' = LRTOutput _ _ args } := args.
 
-Definition FrameCallWithRet stk R :=
-  { call : FrameCall stk | FrameCallRet stk call = R }.
+Definition StackCallWithRet stk R :=
+  { call : StackCall stk | StackCallRet stk call = R }.
 
-Definition FrameCallS E stk (args : FrameCall stk)
-  : SpecM E stk (FrameCallRet stk args) :=
+Definition StackCallS E stk (args : StackCall stk)
+  : SpecM E stk (StackCallRet stk args) :=
   trigger (H2:=@SpecEventReSumRet _ _ _ _ _ _) args.
 
-Definition CallS E stk R (call : FrameCallWithRet stk R) : SpecM E stk R :=
-  bind (FrameCallS E stk (proj1_sig call))
+Definition CallS E stk R (call : StackCallWithRet stk R) : SpecM E stk R :=
+  bind (StackCallS E stk (proj1_sig call))
     (fun r => ret (eq_rect _ (fun T => T) r R (proj2_sig call))).
 
-Definition mkFrameCall stk stk' (incl : stackIncl stk stk') n
+Definition mkStackCall stk stk' (incl : stackIncl stk stk') n
   : lrtPi stk' (nthLRT stk n)
-      (fun args => FrameCallWithRet stk' (LRTOutput _ _ args)) :=
+      (fun args => StackCallWithRet stk' (LRTOutput _ _ args)) :=
   lrtLambda stk' (nthLRT stk n)
-    (fun args => FrameCallWithRet stk' (LRTOutput _ _ args))
+    (fun args => StackCallWithRet stk' (LRTOutput _ _ args))
     (fun args =>
-       exist _ (FrameCallOfArgs _ (proj1_sig incl n)
+       exist _ (StackCallOfArgs _ (proj1_sig incl n)
                   (proj1_sig
                      (castLRTInput
                         _ _ _
@@ -730,28 +729,28 @@ Definition mkFrameCall stk stk' (incl : stackIncl stk stk') n
 
 (* FIXME: maybe the following is no longer needed...? *)
 (*
-(* A FrameCall where the arguments are relative to a different stack *)
+(* A StackCall where the arguments are relative to a different stack *)
 Inductive RelCall argStk stk : Type@{entree_u} :=
 | RelCallOfArgs n (args : LRTInput argStk (nthLRT stk n)).
 
-(* The return type for a FrameCall recursive call, using a specific M *)
+(* The return type for a StackCall recursive call, using a specific M *)
 Definition RelCallRet argStk stk (args: RelCall argStk stk) : Type@{entree_u} :=
   match args with
   | RelCallOfArgs _ _ n args => LRTOutput argStk (nthLRT stk n) args
   end.
 
 Definition inclRelCall stk stk' (incl : stackIncl stk stk')
-  (call : RelCall stk' stk) : FrameCall stk' :=
+  (call : RelCall stk' stk) : StackCall stk' :=
   match call with
   | RelCallOfArgs _ _ n args =>
-      FrameCallOfArgs _ (proj1_sig incl n)
+      StackCallOfArgs _ (proj1_sig incl n)
         (proj1_sig
            (castLRTInput _ _ _
               (proj1 (proj2_sig incl n (LRTInput_in_bounds _ _ _ args))) args))
   end.
 
 Definition inclRelCallRet stk stk' incl call :
-  FrameCallRet stk' (inclRelCall stk stk' incl call) = RelCallRet stk' stk call :=
+  StackCallRet stk' (inclRelCall stk stk' incl call) = RelCallRet stk' stk call :=
   match call with
   | RelCallOfArgs _ _ n args =>
       proj2_sig
@@ -759,15 +758,15 @@ Definition inclRelCallRet stk stk' incl call :
            (proj1 (proj2_sig incl n (LRTInput_in_bounds _ _ _ args))) args)
   end.
 
-Definition FrameCallS E stk (args : FrameCall stk)
-  : SpecM E stk (FrameCallRet stk args) :=
+Definition StackCallS E stk (args : StackCall stk)
+  : SpecM E stk (StackCallRet stk args) :=
   trigger (H2:=@SpecEventReSumRet _ _ _ _ _ _) args.
 
 Program Definition CallS E stk stk' (incl : stackIncl stk stk')
   (call : RelCall stk' stk) : SpecM E stk' (RelCallRet _ _ call) :=
   eq_rect
     _ (SpecM E stk')
-    (FrameCallS E stk' (inclRelCall stk stk' incl call))
+    (StackCallS E stk' (inclRelCall stk stk' incl call))
     _
     (inclRelCallRet stk stk' incl call).
 
@@ -790,24 +789,24 @@ Definition inclPolySpecFun E stk stk' lrt (incl : stackIncl stk stk')
   (f : PolySpecFun E stk lrt) : PolySpecFun E stk' lrt :=
   fun stk'' incl' => f stk'' (compStackIncl incl incl').
 
-(* A FrameTuple that is polymorphic in its function stack, which defines
+(* A StackTuple that is polymorphic in its function stack, which defines
 functions for all the defs that can call all the calls *)
-Definition PolyFrameTuple E calls defs :=
+Definition PolyStackTuple E calls defs :=
   forall stack', stackIncl calls stack' -> mapTuple (SpecFun E stack') defs.
 
-(* Append two PolyFrameTuples *)
-Definition appPolyFrameTuple E calls defs1 defs2
-  (pft1 : PolyFrameTuple E calls defs1)
-  (pft2 : PolyFrameTuple E calls defs2)
-  : PolyFrameTuple E calls (papp defs1 defs2) :=
+(* Append two PolyStackTuples *)
+Definition appPolyStackTuple E calls defs1 defs2
+  (pft1 : PolyStackTuple E calls defs1)
+  (pft2 : PolyStackTuple E calls defs2)
+  : PolyStackTuple E calls (papp defs1 defs2) :=
   fun stack' incl =>
     appMapTuple _ defs1 defs2 (pft1 stack' incl) (pft2 stack' incl).
 
-(* Apply a stackIncl to the calls list of a PolyFrameTuple *)
-Definition inclPolyFrameTuple E calls1 calls2 defs
+(* Apply a stackIncl to the calls list of a PolyStackTuple *)
+Definition inclPolyStackTuple E calls1 calls2 defs
   (incl : stackIncl calls1 calls2)
-  (pft : PolyFrameTuple E calls1 defs)
-  : PolyFrameTuple E calls2 defs :=
+  (pft : PolyStackTuple E calls1 defs)
+  : PolyStackTuple E calls2 defs :=
   fun stack' incl' => pft stack' (compStackIncl incl incl').
 
 
@@ -817,7 +816,7 @@ Definition inclPolyFrameTuple E calls1 calls2 defs
 LetRecS over a tuple of recursive function bodies *)
 Record SpecDef E :=
   { defStack : FunStack;
-    defFuns : PolyFrameTuple E defStack defStack;
+    defFuns : PolyStackTuple E defStack defStack;
     defLRT : LetRecType;
     defBody : PolySpecFun E defStack defLRT }.
 
@@ -839,15 +838,15 @@ Definition impsLRTs E (imps : plist (SpecDef E)) : FunStack :=
 
 (* Build the list of recursive functions for a list of imported spec defs *)
 Fixpoint impsFuns E (imps : plist (SpecDef E)) :
-  PolyFrameTuple E (impsStack E imps) (impsStack E imps) :=
-  match imps return PolyFrameTuple E (impsStack E imps) (impsStack E imps) with
+  PolyStackTuple E (impsStack E imps) (impsStack E imps) :=
+  match imps return PolyStackTuple E (impsStack E imps) (impsStack E imps) with
   | pnil => fun _ _ => tt
   | pcons d imps' =>
-      appPolyFrameTuple _ _ _ _
-        (inclPolyFrameTuple _ _ _ _
+      appPolyStackTuple _ _ _ _
+        (inclPolyStackTuple _ _ _ _
            (weakenRightStackIncl _ _)
            (defFuns _ d))
-        (inclPolyFrameTuple _ _ _ _
+        (inclPolyStackTuple _ _ _ _
            (weakenLeftStackIncl _ _)
            (impsFuns E imps'))
   end.
@@ -859,13 +858,13 @@ Definition defineSpecStack E stk (imps : plist (SpecDef E)) :=
 (* Define a spec from: a list of imported spec definitions; a tuple of
 recursively-defined functions; and a body that can call into either *)
 Definition defineSpec E stk lrt (imps : plist (SpecDef E))
-  (recs : PolyFrameTuple E (defineSpecStack E stk imps) stk)
+  (recs : PolyStackTuple E (defineSpecStack E stk imps) stk)
   (body : PolySpecFun E (defineSpecStack E stk imps) lrt) : SpecDef E :=
   {|
     defStack := defineSpecStack E stk imps;
     defFuns :=
-      appPolyFrameTuple _ _ _ _
-        recs (inclPolyFrameTuple _ _ _ _
+      appPolyStackTuple _ _ _ _
+        recs (inclPolyStackTuple _ _ _ _
                 (weakenLeftStackIncl _ _) (impsFuns E imps));
     defLRT := lrt;
     defBody := body
@@ -921,6 +920,7 @@ Definition importIncl E stk imps n :
   stackIncl (defStack E (nthSpecDef imps n)) (defineSpecStack E stk imps) :=
   compStackIncl (nthSpecIncl E imps n) (weakenLeftStackIncl _ _).
 
+
 (* FIXME: just keeping LRTValue in case it is useful in the future...
 (* A value of an LRTArgType *)
 Fixpoint LRTValue E (stack:FunStack) (argTp : LRTArgType) : Type@{entree_u} :=
@@ -952,7 +952,7 @@ Fixpoint LRTArg2Value E stack argTp : LRTArg stack argTp -> LRTValue E stack arg
           (fun args =>
              CallS
                E stack
-               (FrameCallOfArgs _ (projT1 sig)
+               (StackCallOfArgs _ (projT1 sig)
                   (applyDepApp stack _ _ (projT2 sig) args)))
   end
 with
