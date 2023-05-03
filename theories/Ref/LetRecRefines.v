@@ -1331,6 +1331,5 @@ Lemma lr_refines_poly_def_refines {E1 E2} RPre RPost
   def_refines RPre RPost d1 d2 RR.
 Proof.
   unfold def_refines, lr_refines_poly. intros.
-  Print TupsInst.
   apply (H (Build_TupsInst _ _ _ _ _ _ stk1 incl1 funs1 H0 stk2 incl2 funs2 H1)).
 Qed.
