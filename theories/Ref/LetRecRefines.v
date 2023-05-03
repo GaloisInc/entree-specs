@@ -1278,6 +1278,8 @@ End lr_refines_discharge_push.
 
 (*** Definition Refinement ***)
 
+(* One definition refines another iff for all extensions of the recursive
+functions of both sides, the bodies refine each other *)
 Definition def_refines {E1 E2} RPre RPost
   (d1 : SpecDef E1) (d2 : SpecDef E2)
   (RR : forall stk1 stk2
@@ -1292,3 +1294,43 @@ Definition def_refines {E1 E2} RPre RPost
       (RR stk1 stk2 args1 args2)
       (lrtApply _ _ _ (defBody E1 d1 stk1 incl1) args1)
       (lrtApply _ _ _ (defBody E2 d2 stk2 incl2) args2).
+
+(* An instantiation of a pair of polymorphic stack tuples *)
+Record TupsInst {E1 E2 stk1 stk2}
+  (pfuns1 : PolyStackTuple E1 stk1 stk1)
+  (pfuns2 : PolyStackTuple E2 stk2 stk2) : Type :=
+  { tupsInst_stk1 : FunStack;
+    tupsInst_incl1 : stackIncl stk1 tupsInst_stk1;
+    tupsInst_funs1 : StackTuple E1 tupsInst_stk1;
+    tupsInst_inst1 : isTupleInst _ _ _ tupsInst_incl1 pfuns1 tupsInst_funs1;
+    tupsInst_stk2 : FunStack;
+    tupsInst_incl2 : stackIncl stk2 tupsInst_stk2;
+    tupsInst_funs2 : StackTuple E2 tupsInst_stk2;
+    tupsInst_inst2 : isTupleInst _ _ _ tupsInst_incl2 pfuns2 tupsInst_funs2; }.
+
+(* Refinement wrt polymorphic stack tuples *)
+Definition lr_refines_poly {E1 E2 stk1 stk2}
+  pfuns1 pfuns2 (inst : @TupsInst E1 E2 stk1 stk2 pfuns1 pfuns2)
+  RPre RPost {R1 R2} (RR : Rel R1 R2) m1 m2 : Prop :=
+  lr_refines
+    (tupsInst_funs1 _ _ inst) (tupsInst_funs2 _ _ inst) RPre RPost RR m1 m2.
+
+(* lr_refines_poly can be used to prove a def_refines *)
+Lemma lr_refines_poly_def_refines {E1 E2} RPre RPost
+  (d1 : SpecDef E1) (d2 : SpecDef E2)
+  (RR : forall stk1 stk2
+               (args1: LRTInput stk1 (defLRT _ d1))
+               (args2: LRTInput stk2 (defLRT _ d2)),
+      LRTOutput stk1 (defLRT _ d1) args1 ->
+      LRTOutput stk2 (defLRT _ d2) args2 -> Prop) :
+  (forall (inst : TupsInst (defFuns E1 d1) (defFuns E2 d2)) args1 args2,
+      lr_refines_poly (defFuns E1 d1) (defFuns E2 d2) inst
+        (liftNilRel RPre) (liftNilPostRel RPost) (RR _ _ args1 args2)
+        (lrtApply _ _ _ (defBody E1 d1 _ (tupsInst_incl1 _ _ inst)) args1)
+        (lrtApply _ _ _ (defBody E2 d2 _ (tupsInst_incl2 _ _ inst)) args2)) ->
+  def_refines RPre RPost d1 d2 RR.
+Proof.
+  unfold def_refines, lr_refines_poly. intros.
+  Print TupsInst.
+  apply (H (Build_TupsInst _ _ _ _ _ _ stk1 incl1 funs1 H0 stk2 incl2 funs2 H1)).
+Qed.
