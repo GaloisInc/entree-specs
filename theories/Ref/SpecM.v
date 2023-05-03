@@ -858,17 +858,24 @@ Definition inclPolyStackTuple E calls1 calls2 defs
   : PolyStackTuple E calls2 defs :=
   fun stack' incl' => pft stack' (compStackIncl incl incl').
 
+(* An extension of a tuple along a stackIncl is a tuple that has all the same
+elements at the new positions mapped to by the stackIncl *)
+Definition isTupleExt E stk stk' (incl : stackIncl stk stk')
+                       (tup1 : mapTuple (SpecFun E stk') stk)
+                       (tup2 : StackTuple E stk') : Prop :=
+  forall n,
+    n < plength stk ->
+    nthProjDefaultSig (SpecFun E stk') (defaultSpecFunSig E stk') stk n tup1
+    = nthProjDefaultSig (SpecFun E stk') (defaultSpecFunSig E stk') stk'
+        (proj1_sig incl n) tup2.
+
+
 (* An instance of a PolyStackTuple is a StackTuple for a possibly extended stack
 that includes all the all the SpecFuns in the original StackTuple *)
 Definition isTupleInst E stk stk' (incl : stackIncl stk stk')
                        (ptup : PolyStackTuple E stk stk)
                        (tup : StackTuple E stk') : Prop :=
-  forall n,
-    n < plength stk ->
-    nthProjDefaultSig (SpecFun E stk') (defaultSpecFunSig E stk') stk n
-      (ptup stk' incl)
-    = nthProjDefaultSig (SpecFun E stk') (defaultSpecFunSig E stk') stk'
-        (proj1_sig incl n) tup.
+  isTupleExt E stk stk' incl (ptup stk' incl) tup.
 
 Lemma isTupleInstAppL E stk1 stk2 stk' (incl : stackIncl (papp stk1 stk2) stk')
                       (ptup1 : PolyStackTuple E stk1 stk1)
@@ -910,7 +917,7 @@ Proof.
   intros H n n_lt.
   etransitivity; [ | apply H ].
   - rewrite nthProjDefaultSig_app_r; [ | apply Plus.le_plus_l ].
-    rewrite Minus.minus_plus. reflexivity.
+    simpl. rewrite Minus.minus_plus. reflexivity.
   - rewrite plength_papp. apply Plus.plus_lt_compat_l. assumption.
 Qed.
 
