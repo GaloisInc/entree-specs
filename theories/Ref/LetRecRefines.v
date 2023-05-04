@@ -36,15 +36,30 @@ Import SpecMNotations.
 Local Open Scope entree_scope.
 
 
+(*** Pre- and Post-condition relations for SpecM ***)
+
+Definition SpecPreRel (E1 E2 : EncType) stk1 stk2 :=
+  Rel (FunStackE E1 stk1) (FunStackE E2 stk2).
+Definition SpecPostRel (E1 E2 : EncType) stk1 stk2 :=
+  PostRel (FunStackE E1 stk1) (FunStackE E2 stk2).
+
+(* The precondition requiring events on both sides to be equal *)
+Definition eqPreRel {E stk} : SpecPreRel E E stk stk := eq.
+
+(* The postcondition requiring return values on both sides to be equal *)
+Definition eqPostRel {E stk} : SpecPostRel E E stk stk :=
+  fun e1 e2 a1 a2 => eq_dep1 _ _ e1 a1 e2 a2.
+
+
+
 (*** The definition of letrec refinement ***)
 Section lr_refines.
 
 Context {E1 E2 : EncType} {stk1 stk2 : FunStack} {R1 R2 : Type}.
 Context (funs1 : StackTuple E1 stk1) (funs2 : StackTuple E2 stk2).
 
-Context (RPre : Rel (FunStackE E1 stk1) (FunStackE E2 stk2))
-  (RPost : PostRel (FunStackE E1 stk1) (FunStackE E2 stk2))
-  (RR : R1 -> R2 -> Prop).
+Context (RPre : SpecPreRel E1 E2 stk1 stk2)
+  (RPost : SpecPostRel E1 E2 stk1 stk2) (RR : R1 -> R2 -> Prop).
 
 Inductive lr_refinesF (sim : SpecM E1 stk1 R1 -> SpecM E2 stk2 R2 -> Prop) : SpecM' E1 stk1 R1 -> SpecM' E2 stk2 R2 -> Prop :=
 
@@ -1274,62 +1289,3 @@ Proof.
 Qed.
 
 End lr_refines_discharge_push.
-
-
-(*** Definition Refinement ***)
-
-(* One definition refines another iff for all extensions of the recursive
-functions of both sides, the bodies refine each other *)
-Definition def_refines {E1 E2} RPre RPost
-  (d1 : SpecDef E1) (d2 : SpecDef E2)
-  (RR : forall stk1 stk2
-               (args1 : LRTInput stk1 (defLRT _ d1))
-               (args2 : LRTInput stk2 (defLRT _ d2)),
-      LRTOutput stk1 (defLRT _ d1) args1 ->
-      LRTOutput stk2 (defLRT _ d2) args2 -> Prop) : Prop :=
-  forall stk1 incl1 stk2 incl2 funs1 funs2 args1 args2,
-    isTupleInst E1 _ stk1 incl1 (defFuns E1 d1) funs1 ->
-    isTupleInst E2 _ stk2 incl2 (defFuns E2 d2) funs2 ->
-    lr_refines funs1 funs2 (liftNilRel RPre) (liftNilPostRel RPost)
-      (RR stk1 stk2 args1 args2)
-      (lrtApply _ _ _ (defBody E1 d1 stk1 incl1) args1)
-      (lrtApply _ _ _ (defBody E2 d2 stk2 incl2) args2).
-
-(* An instantiation of a pair of polymorphic stack tuples *)
-Record TupsInst {E1 E2 stk1 stk2}
-  (pfuns1 : PolyStackTuple E1 stk1 stk1)
-  (pfuns2 : PolyStackTuple E2 stk2 stk2) : Type :=
-  { tupsInst_stk1 : FunStack;
-    tupsInst_incl1 : stackIncl stk1 tupsInst_stk1;
-    tupsInst_funs1 : StackTuple E1 tupsInst_stk1;
-    tupsInst_inst1 : isTupleInst _ _ _ tupsInst_incl1 pfuns1 tupsInst_funs1;
-    tupsInst_stk2 : FunStack;
-    tupsInst_incl2 : stackIncl stk2 tupsInst_stk2;
-    tupsInst_funs2 : StackTuple E2 tupsInst_stk2;
-    tupsInst_inst2 : isTupleInst _ _ _ tupsInst_incl2 pfuns2 tupsInst_funs2; }.
-
-(* Refinement wrt polymorphic stack tuples *)
-Definition lr_refines_poly {E1 E2 stk1 stk2}
-  pfuns1 pfuns2 (inst : @TupsInst E1 E2 stk1 stk2 pfuns1 pfuns2)
-  RPre RPost {R1 R2} (RR : Rel R1 R2) m1 m2 : Prop :=
-  lr_refines
-    (tupsInst_funs1 _ _ inst) (tupsInst_funs2 _ _ inst) RPre RPost RR m1 m2.
-
-(* lr_refines_poly can be used to prove a def_refines *)
-Lemma lr_refines_poly_def_refines {E1 E2} RPre RPost
-  (d1 : SpecDef E1) (d2 : SpecDef E2)
-  (RR : forall stk1 stk2
-               (args1: LRTInput stk1 (defLRT _ d1))
-               (args2: LRTInput stk2 (defLRT _ d2)),
-      LRTOutput stk1 (defLRT _ d1) args1 ->
-      LRTOutput stk2 (defLRT _ d2) args2 -> Prop) :
-  (forall (inst : TupsInst (defFuns E1 d1) (defFuns E2 d2)) args1 args2,
-      lr_refines_poly (defFuns E1 d1) (defFuns E2 d2) inst
-        (liftNilRel RPre) (liftNilPostRel RPost) (RR _ _ args1 args2)
-        (lrtApply _ _ _ (defBody E1 d1 _ (tupsInst_incl1 _ _ inst)) args1)
-        (lrtApply _ _ _ (defBody E2 d2 _ (tupsInst_incl2 _ _ inst)) args2)) ->
-  def_refines RPre RPost d1 d2 RR.
-Proof.
-  unfold def_refines, lr_refines_poly. intros.
-  apply (H (Build_TupsInst _ _ _ _ _ _ stk1 incl1 funs1 H0 stk2 incl2 funs2 H1)).
-Qed.

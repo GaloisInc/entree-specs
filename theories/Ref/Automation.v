@@ -28,6 +28,8 @@ From EnTree Require Import
      Eq.Eqit
      Ref.MRecSpec
      Ref.SpecMFacts
+     Ref.LetRecRefines
+     Ref.DefRefines
 .
 
 From Paco Require Import paco.
@@ -71,112 +73,6 @@ Ltac encodes_unfold_in H :=
 (***
  *** Definition and basic properties of spec_refines
  ***)
-
-(** Definition of refinement for SpecM **)
-
-Definition SpecPreRel (E1 E2 : EncType) Γ1 Γ2 :=
-  Rel (FunStackE E1 Γ1) (FunStackE E2 Γ2).
-Definition SpecPostRel (E1 E2 : EncType) Γ1 Γ2 :=
-  PostRel (FunStackE E1 Γ1) (FunStackE E2 Γ2).
-
-(* The precondition requiring events on both sides to be equal *)
-Definition eqPreRel {E Γ} : SpecPreRel E E Γ Γ := eq.
-
-(* The postcondition requiring return values on both sides to be equal *)
-Definition eqPostRel {E Γ} : SpecPostRel E E Γ Γ :=
-  fun e1 e2 a1 a2 => eq_dep1 _ _ e1 a1 e2 a2.
-
-(* Spec refinement = padded refinement *)
-Definition spec_refines {E1 E2 : EncType} {Γ1 Γ2}
-           (RPre : SpecPreRel E1 E2 Γ1 Γ2) (RPost : SpecPostRel E1 E2 Γ1 Γ2)
-           {R1 R2} (RR : Rel R1 R2)
-           (t1 : @SpecM E1 Γ1 R1) (t2 : @SpecM E2 Γ2 R2) :=
-  padded_refines RPre RPost RR t1 t2.
-
-Global Instance Proper_spec_refines E1 E2 Γ1 Γ2 RPre RPost R1 R2 RR :
-  Proper (eutt eq ==> eutt eq ==> Basics.flip Basics.impl)
-         (@spec_refines E1 E2 Γ1 Γ2 RPre RPost R1 R2 RR).
-Proof.
-  repeat intro. eapply padded_refines_proper_eutt; eauto.
-Qed.
-
-(** RetS and bind laws for spec_refines **)
-
-Lemma spec_refines_ret E1 E2 Γ1 Γ2 R1 R2 RPre RPost RR r1 r2 :
-  (RR r1 r2 : Prop) ->
-  @spec_refines E1 E2 Γ1 Γ2 R1 R2 RPre RPost RR (RetS r1) (RetS r2).
-Proof.
-  intros. apply padded_refines_ret. auto.
-Qed.
-
-Lemma spec_refines_ret_bind_r E1 E2 Γ1 Γ2 R1 R2 A
-      RPre RPost RR (t1 : SpecM E1 Γ1 R1) r (k2 : A -> SpecM E2 Γ2 R2) :
-  spec_refines RPre RPost RR t1 (k2 r) ->
-  spec_refines RPre RPost RR t1 (RetS r >>= k2).
-Proof.
-  intros; setoid_rewrite bind_ret_l; assumption.
-Qed.
-
-Lemma spec_refines_ret_bind_l E1 E2 Γ1 Γ2 R1 R2 A
-      RPre RPost RR r (k1 : A -> SpecM E1 Γ1 R1) (t2 : SpecM E2 Γ2 R2) :
-  spec_refines RPre RPost RR (k1 r) t2 ->
-  spec_refines RPre RPost RR (RetS r >>= k1) t2.
-Proof.
-  intros; setoid_rewrite bind_ret_l; assumption.
-Qed.
-
-Lemma padded_refines_ret_bind_l E1 E2 `{EncodingType E1} `{EncodingType E2} R1 R2 A 
-      RPre RPost RR r (k1 : A -> entree_spec E1 R1) (t : entree_spec E2 R2) :
-  padded_refines RPre RPost RR (k1 r) t ->
-  padded_refines RPre RPost RR (EnTree.bind (Ret r) k1) t.
-Proof.
-  intros. rewrite bind_ret_l. auto.
-Qed.
-
-Lemma padded_refines_ret_bind_r E1 E2 `{EncodingType E1} `{EncodingType E2} R1 R2 A 
-      RPre RPost RR r (k2 : A -> entree_spec E2 R2) (t : entree_spec E1 R1) :
-  padded_refines RPre RPost RR t (k2 r) ->
-  padded_refines RPre RPost RR t (EnTree.bind (Ret r) k2).
-Proof.
-  intros. rewrite bind_ret_l. auto.
-Qed.
-
-Lemma padded_refines_bind_bind_r E1 E2 `{EncodingType E1} `{EncodingType E2} R1 R2 A1 A2
-      RPre RPost RR (t1 : entree_spec E1 R1) (t2 : entree_spec E2 A1)
-      (k1 : A1 -> entree_spec E2 A2) (k2 : A2 -> entree_spec E2 R2) :
-  padded_refines RPre RPost RR t1 (EnTree.bind t2 (fun a => EnTree.bind (k1 a) k2)) ->
-  padded_refines RPre RPost RR t1 (EnTree.bind (EnTree.bind t2 k1) k2).
-Proof.
-  intros; setoid_rewrite bind_bind; assumption.
-Qed.
-
-Lemma padded_refines_bind_bind_l E1 E2 `{EncodingType E1} `{EncodingType E2} R1 R2 A1 A2
-      RPre RPost RR (t1 : entree_spec E1 R1) (t2 : entree_spec E2 A1)
-      (k1 : A1 -> entree_spec E2 A2) (k2 : A2 -> entree_spec E2 R2) :
-  padded_refines RPre RPost RR (EnTree.bind t2 (fun a => EnTree.bind (k1 a) k2)) t1 ->
-  padded_refines RPre RPost RR (EnTree.bind (EnTree.bind t2 k1) k2) t1.
-Proof.
-  intros; setoid_rewrite bind_bind; assumption.
-Qed.
-
-Lemma spec_refines_bind_bind_r E1 E2 Γ1 Γ2 R1 R2 A1 A2
-      RPre RPost RR (t1 : SpecM E1 Γ1 R1) (t2 : SpecM E2 Γ2 A1)
-      (k1 : A1 -> SpecM E2 Γ2 A2) (k2 : A2 -> SpecM E2 Γ2 R2) :
-  spec_refines RPre RPost RR t1 (t2 >>= (fun a => k1 a >>= k2)) ->
-  spec_refines RPre RPost RR t1 ((t2 >>= k1) >>= k2).
-Proof.
-  intros; setoid_rewrite bind_bind; assumption.
-Qed.
-
-Lemma spec_refines_bind_bind_l E1 E2 Γ1 Γ2 R1 R2 A1 A2
-      RPre RPost RR (t1 : SpecM E1 Γ1 A1) (k1 : A1 -> SpecM E1 Γ1 A2)
-      (k2 : A2 -> SpecM E1 Γ1 R1) (t2 : SpecM E2 Γ2 R2) :
-  spec_refines RPre RPost RR (t1 >>= (fun a => k1 a >>= k2)) t2 ->
-  spec_refines RPre RPost RR ((t1 >>= k1) >>= k2) t2.
-Proof.
-  intros; setoid_rewrite bind_bind; assumption.
-Qed.
-
 
 (** Refinement rules for the SpecM combinators **)
 
