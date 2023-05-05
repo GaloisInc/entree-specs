@@ -14,8 +14,8 @@ theories/Ref/SpecM.v
 theories/Ref/SpecMFacts.v
 theories/Ref/LetRecRefines.v
 theories/Ref/DefRefines.v
-theories/Ref/Automation.v
+# theories/Ref/Automation.v
 theories/Ref/RecSpecFix.v
-theories/Ref/RecFixSpecTotal.v
+# theories/Ref/RecFixSpecTotal.v
 
 theories/Ref/Concrete.v
