@@ -107,7 +107,9 @@ Qed.
 
 (*** RetS and bind laws for lr_refines_poly ***)
 
-Section lr_refines_poly_rules.
+(* NOTE: we make a separate section just for the bind rules so we can use them
+at different types in the rules section below *)
+Section lr_refines_poly_bind.
 Context {E1 E2 : EncType} {stk1 stk2 : FunStack}.
 Context (pfuns1 : PolyStackTuple E1 stk1 stk1)
   (pfuns2 : PolyStackTuple E2 stk2 stk2) (inst : TupsInst pfuns1 pfuns2).
@@ -156,6 +158,17 @@ Proof.
   intros; setoid_rewrite bind_bind; assumption.
 Qed.
 
+End lr_refines_poly_bind.
+
+
+Section lr_refines_poly_rules.
+Context {E1 E2 : EncType} {stk1 stk2 : FunStack}.
+Context (pfuns1 : PolyStackTuple E1 stk1 stk1)
+  (pfuns2 : PolyStackTuple E2 stk2 stk2) (inst : TupsInst pfuns1 pfuns2).
+
+Context (RPre : SpecPreRel E1 E2 (tupsInst_stk1 _ _ inst) (tupsInst_stk2 _ _ inst)).
+Context (RPost : SpecPostRel E1 E2 (tupsInst_stk1 _ _ inst) (tupsInst_stk2 _ _ inst)).
+Context R1 R2 (RR : Rel R1 R2).
 
 (*** Rule for TriggerS ***)
 
@@ -219,7 +232,7 @@ Proof.
 Qed.
 
 
-(** Refinement rules for Assert and Assume **)
+(*** Refinement rules for Assert and Assume ***)
 
 Lemma lr_refines_poly_assert_r (P:Prop)
       (t1 : SpecM E1 _ R1) (k2 : unit -> SpecM E2 _ R2) :
@@ -262,7 +275,7 @@ Proof.
 Qed.
 
 
-(** Refinement rules for if-then-else **)
+(*** Refinement rules for if-then-else ***)
 
 Lemma lr_refines_poly_if_r (t1 : SpecM E1 _ R1) (t2 t3 : SpecM E2 _ R2) b :
   (b = true -> lr_refines_poly pfuns1 pfuns2 inst RPre RPost RR t1 t2) ->
@@ -297,11 +310,136 @@ Proof.
 Qed.
 
 
+(*** Refinement rules for lists ***)
+
+Lemma lr_refines_poly_match_list_r A (t1 : SpecM E1 _ R1)
+  (t2 : A -> list A -> SpecM E2 _ R2) (t3 : SpecM E2 _ R2) xs :
+  (forall x xs', xs = x :: xs' ->
+                 lr_refines_poly pfuns1 pfuns2 inst RPre RPost RR t1 (t2 x xs')) ->
+  (xs = nil -> lr_refines_poly pfuns1 pfuns2 inst RPre RPost RR t1 t3) ->
+  lr_refines_poly pfuns1 pfuns2 inst RPre RPost RR
+    t1 (match xs with | x :: xs' => t2 x xs' | nil => t3 end).
+Proof.
+  intros. destruct xs; eauto.
+Qed.
+
+Lemma lr_refines_poly_match_list_l A (t3 : SpecM E2 _ R2)
+  (t1 : A -> list A -> SpecM E1 _ R1) (t2 : SpecM E1 _ R1) xs :
+  (forall x xs', xs = x :: xs' ->
+                 lr_refines_poly pfuns1 pfuns2 inst RPre RPost RR (t1 x xs') t3) ->
+  (xs = nil -> lr_refines_poly pfuns1 pfuns2 inst RPre RPost RR t2 t3) ->
+  lr_refines_poly pfuns1 pfuns2 inst RPre RPost RR
+    (match xs with | x :: xs' => t1 x xs' | nil => t2 end) t3.
+Proof.
+  intros. destruct xs; eauto.
+Qed.
+
+Lemma lr_refines_poly_match_list_bind_r B A (t1 : SpecM E1 _ R1)
+      (t2 : A -> list A -> SpecM E2 _ B) (t3 : SpecM E2 _ B)
+      (t4 : B -> SpecM E2 _ R2) xs :
+  lr_refines_poly pfuns1 pfuns2 inst RPre RPost RR
+    t1 (match xs with | x :: xs' => t2 x xs' >>= t4 | nil => t3 >>= t4 end) ->
+  lr_refines_poly pfuns1 pfuns2 inst RPre RPost RR
+    t1 ((match xs with | x :: xs' => t2 x xs' | nil => t3 end) >>= t4).
+Proof.
+  intros. destruct xs; eauto.
+Qed.
+
+Lemma lr_refines_poly_match_list_bind_l B A (t3 : SpecM E2 _ R2)
+      (t1 : A -> list A -> SpecM E1 _ B) (t2 : SpecM E1 _ B)
+      (t4 : B -> SpecM E1 _ R1) xs :
+  lr_refines_poly pfuns1 pfuns2 inst RPre RPost RR
+    (match xs with | x :: xs' => t1 x xs' >>= t4 | nil => t2 >>= t4 end) t3 ->
+  lr_refines_poly pfuns1 pfuns2 inst RPre RPost RR
+    ((match xs with | x :: xs' => t1 x xs' | nil => t2 end) >>= t4) t3.
+Proof.
+  intros. destruct xs; eauto.
+Qed.
+
+
+(*** Refinement rules for pairs ***)
+
+Lemma lr_refines_poly_match_pair_r A B (t1 : SpecM E1 _ R1)
+  (t2 : A -> B -> SpecM E2 _ R2) pr :
+  (forall x y, pr = (x, y) ->
+               lr_refines_poly pfuns1 pfuns2 inst RPre RPost RR t1 (t2 x y)) ->
+  lr_refines_poly pfuns1 pfuns2 inst RPre RPost RR
+    t1 (match pr with | (x,y) => t2 x y end).
+Proof.
+  intros. destruct pr; eauto.
+Qed.
+
+Lemma lr_refines_poly_match_pair_l A B (t1 : A -> B -> SpecM E1 _ R1)
+  (t2 : SpecM E2 _ R2) pr :
+  (forall x y, pr = (x, y) ->
+               lr_refines_poly pfuns1 pfuns2 inst RPre RPost RR (t1 x y) t2) ->
+  lr_refines_poly pfuns1 pfuns2 inst RPre RPost RR
+    (match pr with | (x,y) => t1 x y end) t2.
+Proof.
+  intros. destruct pr; eauto.
+Qed.
+
+Lemma lr_refines_poly_match_pair_bind_r A B C (t1 : SpecM E1 _ R1)
+  (t2 : A -> B -> SpecM E2 _ C) (t3 : C -> SpecM E2 _ R2) pr :
+  lr_refines_poly pfuns1 pfuns2 inst RPre RPost RR
+    t1 (match pr with | (x,y) => t2 x y >>= t3 end) ->
+  lr_refines_poly pfuns1 pfuns2 inst RPre RPost RR
+    t1 ((match pr with | (x,y) => t2 x y end) >>= t3).
+Proof.
+  intros. destruct pr; eauto.
+Qed.
+
+Lemma lr_refines_poly_match_pair_bind_l A B C (t1 : A -> B -> SpecM E1 _ C)
+  (t2 : SpecM E2 _ R2) (t3 : C -> SpecM E1 _ R1) pr :
+  lr_refines_poly pfuns1 pfuns2 inst RPre RPost RR
+    (match pr with | (x,y) => t1 x y >>= t3 end) t2 ->
+  lr_refines_poly pfuns1 pfuns2 inst RPre RPost RR
+    ((match pr with | (x,y) => t1 x y end) >>= t3) t2.
+Proof.
+  intros. destruct pr; eauto.
+Qed.
+
+
+(*** The trepeat combinator ***)
+
+(* Repeat a specification n times *)
+Fixpoint trepeat {E stk R} (n : nat) (s : SpecM E stk R) : SpecM E stk unit :=
+  match n with
+  | 0 => RetS tt
+  | S m => s;; trepeat m s
+  end.
+
+Lemma lr_refines_poly_trepeat_zero_r RRu (t1 : SpecM E1 _ R1) (t2 : SpecM E2 _ R2) :
+  lr_refines_poly pfuns1 pfuns2 inst RPre RPost RRu t1 (RetS tt) ->
+  lr_refines_poly pfuns1 pfuns2 inst RPre RPost RRu t1 (trepeat 0 t2).
+Proof. eauto. Qed.
+
+Lemma lr_refines_poly_trepeat_suc_r RRu (t1 : SpecM E1 _ R1) n (t2 : SpecM E2 _ R2) :
+  lr_refines_poly pfuns1 pfuns2 inst RPre RPost RRu t1 (t2 ;; trepeat n t2) ->
+  lr_refines_poly pfuns1 pfuns2 inst RPre RPost RRu t1 (trepeat (S n) t2).
+Proof. eauto. Qed.
+
+Lemma lr_refines_poly_trepeat_bind_zero_r R3 RRu (t1 : SpecM E1 _ R1)
+  (t2 : SpecM E2 _ R2) (t3 : unit -> SpecM E2 _ R3) :
+  lr_refines_poly pfuns1 pfuns2 inst RPre RPost RRu t1 (t3 tt) ->
+  lr_refines_poly pfuns1 pfuns2 inst RPre RPost RRu t1 (trepeat 0 t2 >>= t3).
+Proof. intro. unfold trepeat. apply lr_refines_poly_ret_bind_r. assumption. Qed.
+
+Lemma lr_refines_poly_trepeat_bind_suc_r R3 RRu (t1 : SpecM E1 _ R1) n
+  (t2 : SpecM E2 _ R2) (t3 : unit -> SpecM E2 _ R3) :
+  lr_refines_poly pfuns1 pfuns2 inst RPre RPost RRu t1 (t2 ;; (trepeat n t2 >>= t3)) ->
+  lr_refines_poly pfuns1 pfuns2 inst RPre RPost RRu t1 (trepeat (S n) t2 >>= t3).
+Proof.
+  simpl. intro. apply lr_refines_poly_bind_bind_r. assumption.
+Qed.
+
+
+End lr_refines_poly_rules.
+
 (*
 FIXME:
 - Prove the discharge lemma for lr_refines_poly
 - Write total_spec and prove lr_refines_poly for it
-- Update the easy lemmas (e.g., about binds) from Automation.v to use lr_refines_poly
 - Write and prove the lr_refines_poly rule(s) for CallS
 - Update all the automation
 *)
