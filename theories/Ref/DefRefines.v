@@ -157,6 +157,146 @@ Proof.
 Qed.
 
 
+(*** Rule for TriggerS ***)
+
+Lemma lr_refines_poly_trigger_bind (e1 : E1) (e2 : E2)
+      (k1 : encodes e1 -> SpecM E1 _ R1)
+      (k2 : encodes e2 -> SpecM E2 _ R2) :
+  RPre (resum e1) (resum e2) ->
+  (forall a b,
+      RPost (resum e1) (resum e2) a b ->
+      lr_refines_poly pfuns1 pfuns2 inst RPre RPost RR (k1 (resum_ret e1 a)) (k2 (resum_ret e2 b))) ->
+  lr_refines_poly pfuns1 pfuns2 inst RPre RPost RR (TriggerS e1 >>= k1) (TriggerS e2 >>= k2).
+Proof.
+  intros. pstep. apply lr_refinesF_Vis; [ assumption | ]. intros. left.
+  apply lr_refines_poly_ret_bind_l.
+  apply lr_refines_poly_ret_bind_r.
+  apply H0. assumption.
+Qed.  
+
+
+
+(*** Refinement rules for Quantifiers ***)
+
+Lemma lr_refines_poly_exists_r A `{QuantType A}
+      (t1 : SpecM E1 _ R1) (k2 : A -> SpecM E2 _ R2) a :
+  lr_refines_poly pfuns1 pfuns2 inst RPre RPost RR t1 (k2 a) ->
+  lr_refines_poly pfuns1 pfuns2 inst RPre RPost RR t1 (ExistsS A >>= k2).
+Proof.
+  intros. pstep.
+  apply (lr_refinesF_existsR _ _ _ _ _ _ _ _ _ (quantEnumInv a)).
+  apply lr_refinesF_TauR. pstep_reverse. apply lr_refines_poly_ret_bind_r.
+  rewrite quantEnumSurjective. assumption.
+Qed.
+
+Lemma lr_refines_poly_exists_l A `{QuantType A}
+      (k1 : A -> SpecM E1 _ R1) (t2 : SpecM E2 _ R2) :
+  (forall a, lr_refines_poly pfuns1 pfuns2 inst RPre RPost RR (k1 a) t2) ->
+  lr_refines_poly pfuns1 pfuns2 inst RPre RPost RR (ExistsS A >>= k1) t2.
+Proof.
+  intros. pstep. apply lr_refinesF_existsL. intros. apply lr_refinesF_TauL.
+  pstep_reverse. apply lr_refines_poly_ret_bind_l. apply H0.
+Qed.
+
+Lemma lr_refines_poly_forall_r A `{QuantType A}
+      (t1 : SpecM E1 _ R1) (k2 : A -> SpecM E2 _ R2) :
+  (forall a, lr_refines_poly pfuns1 pfuns2 inst RPre RPost RR t1 (k2 a)) ->
+  lr_refines_poly pfuns1 pfuns2 inst RPre RPost RR t1 (ForallS A >>= k2).
+Proof.
+  intros. pstep. apply lr_refinesF_forallR. intros. apply lr_refinesF_TauR.
+  pstep_reverse. apply lr_refines_poly_ret_bind_r. apply H0.
+Qed.
+
+Lemma lr_refines_poly_forall_l A `{QuantType A}
+      (k1 : A -> SpecM E1 _ R1) (t2 : SpecM E2 _ R2) a :
+  lr_refines_poly pfuns1 pfuns2 inst RPre RPost RR (k1 a) t2 ->
+  lr_refines_poly pfuns1 pfuns2 inst RPre RPost RR (ForallS A >>= k1) t2.
+Proof.
+  intros. pstep.
+  apply (lr_refinesF_forallL _ _ _ _ _ _ _ _ _ (quantEnumInv a)).
+  apply lr_refinesF_TauL. pstep_reverse. apply lr_refines_poly_ret_bind_l.
+  rewrite quantEnumSurjective. assumption.
+Qed.
+
+
+(** Refinement rules for Assert and Assume **)
+
+Lemma lr_refines_poly_assert_r (P:Prop)
+      (t1 : SpecM E1 _ R1) (k2 : unit -> SpecM E2 _ R2) :
+  P -> lr_refines_poly pfuns1 pfuns2 inst RPre RPost RR t1 (k2 tt) ->
+  lr_refines_poly pfuns1 pfuns2 inst RPre RPost RR t1 (AssertS P >>= k2).
+Proof.
+  intros. apply lr_refines_poly_bind_bind_r.
+  apply lr_refines_poly_exists_r; [ assumption | ].
+  apply lr_refines_poly_ret_bind_r. assumption.
+Qed.
+
+Lemma lr_refines_poly_assert_l (P:Prop)
+      (k1 : unit -> SpecM E1 _ R1) (t2 : SpecM E2 _ R2) :
+  (P -> lr_refines_poly pfuns1 pfuns2 inst RPre RPost RR (k1 tt) t2) ->
+  lr_refines_poly pfuns1 pfuns2 inst RPre RPost RR (AssertS P >>= k1) t2.
+Proof.
+  intros. apply lr_refines_poly_bind_bind_l.
+  apply lr_refines_poly_exists_l. intros.
+  apply lr_refines_poly_ret_bind_l. apply H. assumption.
+Qed.
+
+Lemma lr_refines_poly_assume_r (P:Prop)
+  (t1 : SpecM E1 _ R1) (k2 : unit -> SpecM E2 _ R2) :
+  (P -> lr_refines_poly pfuns1 pfuns2 inst RPre RPost RR t1 (k2 tt)) ->
+  lr_refines_poly pfuns1 pfuns2 inst RPre RPost RR t1 (AssumeS P >>= k2).
+Proof.
+  intros. apply lr_refines_poly_bind_bind_r.
+  apply lr_refines_poly_forall_r. intros.
+  apply lr_refines_poly_ret_bind_r. apply H. assumption.
+Qed.
+
+Lemma lr_refines_poly_assume_l (P:Prop)
+  (k1 : unit -> SpecM E1 _ R1) (t2 : SpecM E2 _ R2) :
+  P -> lr_refines_poly pfuns1 pfuns2 inst RPre RPost RR (k1 tt) t2 ->
+  lr_refines_poly pfuns1 pfuns2 inst RPre RPost RR (AssumeS P >>= k1) t2.
+Proof.
+  intros. apply lr_refines_poly_bind_bind_l.
+  apply lr_refines_poly_forall_l; [ assumption | ].
+  apply lr_refines_poly_ret_bind_l. assumption.
+Qed.
+
+
+(** Refinement rules for if-then-else **)
+
+Lemma lr_refines_poly_if_r (t1 : SpecM E1 _ R1) (t2 t3 : SpecM E2 _ R2) b :
+  (b = true -> lr_refines_poly pfuns1 pfuns2 inst RPre RPost RR t1 t2) ->
+  (b = false -> lr_refines_poly pfuns1 pfuns2 inst RPre RPost RR t1 t3) ->
+  lr_refines_poly pfuns1 pfuns2 inst RPre RPost RR t1 (if b then t2 else t3).
+Proof.
+  intros; destruct b; eauto.
+Qed.
+
+Lemma lr_refines_poly_if_l (t1 t2 : SpecM E1 _ R1) (t3 : SpecM E2 _ R2) b :
+  (b = true -> lr_refines_poly pfuns1 pfuns2 inst RPre RPost RR t1 t3) ->
+  (b = false -> lr_refines_poly pfuns1 pfuns2 inst RPre RPost RR t2 t3) ->
+  lr_refines_poly pfuns1 pfuns2 inst RPre RPost RR (if b then t1 else t2) t3.
+Proof.
+  intros; destruct b; eauto.
+Qed.
+
+Lemma lr_refines_poly_if_bind_r A (t1 : SpecM E1 _ R1) (t2 t3 : SpecM E2 _ A)
+      (b : bool) (t4 : A -> SpecM E2 _ R2) :
+  lr_refines_poly pfuns1 pfuns2 inst RPre RPost RR t1 (if b then t2 >>= t4 else t3 >>= t4) ->
+  lr_refines_poly pfuns1 pfuns2 inst RPre RPost RR t1 ((if b then t2 else t3) >>= t4).
+Proof.
+  intros; destruct b; eauto.
+Qed.
+
+Lemma lr_refines_poly_if_bind_l A (t1 t2 : SpecM E1 _ A)
+  (t3 : A -> SpecM E1 _ R1) (b : bool) (t4 : SpecM E2 _ R2) :
+  lr_refines_poly pfuns1 pfuns2 inst RPre RPost RR (if b then t1 >>= t3 else t2 >>= t3) t4 ->
+  lr_refines_poly pfuns1 pfuns2 inst RPre RPost RR ((if b then t1 else t2) >>= t3) t4.
+Proof.
+  intros; destruct b; eauto.
+Qed.
+
+
 (*
 FIXME:
 - Prove the discharge lemma for lr_refines_poly
