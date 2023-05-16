@@ -274,17 +274,23 @@ Global Instance EncodingType_EvType (ET:EvType) : EncodingType ET :=
 
 (** An inductive description of recursive function types and their arguments **)
 
-(* An encoded argument type for a recursive function *)
+(* An encoded argument type for a recursive function and its arguments *)
 Inductive LetRecType : Type@{entree_u + 1} :=
-| LRT_Ret (R : LRTArgType) : LetRecType
+(* These three constructors represent functions of 0 or more arguments *)
+| LRT_Ret (R : LetRecType) : LetRecType
 | LRT_FunDep (A : Type@{entree_u}) (rest : A -> LetRecType) : LetRecType
-| LRT_Fun (A : LRTArgType) (rest : LetRecType) : LetRecType
-with LRTArgType : Type@{entree_u + 1} :=
-| ArgType_Const (A : Type@{entree_u}) : LRTArgType
-| ArgType_Prod (A B : LRTArgType) : LRTArgType
-| ArgType_Sigma (A : Type@{entree_u}) (B : A -> LRTArgType) : LRTArgType
-| ArgType_Fun (lrt : LetRecType) : LRTArgType
+| LRT_Fun (A : LetRecType) (rest : LetRecType) : LetRecType
+(* These constructors represent the argument types used in functions *)
+| LRT_Unit : LetRecType
+| LRT_BinOp
+    (F : Type@{entree_u} -> Type@{entree_u} -> Type@{entree_u})
+    (A B : LetRecType) : LetRecType
+| LRT_Sigma (A : Type@{entree_u}) (B : A -> LetRecType) : LetRecType
 .
+
+(* The LetRecType that decodes to a specific type *)
+Definition LRT_Type (A : Type@{entree_u}) : LetRecType :=
+  LRT_BinOp (fun _ _ => A) LRT_Unit LRT_Unit.
 
 (* A FunStack is a list of LetRecTypes representing all of the functions bound
    by multiFixS that are currently in scope *)
@@ -292,7 +298,7 @@ Definition FunStack := plist LetRecType.
 
 (* A trivially inhabited "default" LetRecType *)
 Definition default_lrt : LetRecType :=
-  LRT_FunDep void (fun _ => LRT_Ret (ArgType_Const void)).
+  LRT_FunDep void (fun _ => LRT_Ret (LRT_Type void)).
 
 (* Get the nth element of a FunStack list, or void -> void if n is too big *)
 Definition nthLRT (stk : FunStack) n : LetRecType :=
@@ -304,29 +310,32 @@ Fixpoint LRTDepApp (lrt_in lrt_out : LetRecType) : Type@{entree_u} :=
   (lrt_in = lrt_out) +
     match lrt_in with
     | LRT_FunDep A lrt_in' => { a:A & LRTDepApp (lrt_in' a) lrt_out  }
-    | LRT_Ret _ => False
-    | LRT_Fun _ _ => False
+    | _ => False
     end.
 
-(* An argument to a recursive function call, which is a decodeing of the
-LRTArgType to its corresponding Coq type except that functions are just natural
+(* An argument to a recursive function call, which is a decoding of a
+LetRecType to its corresponding Coq type except that functions are just natural
 numbers that choose functions in the current function stack *)
-Fixpoint LRTArg (stack : FunStack) (argTp : LRTArgType) : Type@{entree_u} :=
+Fixpoint LRTArg (stack : FunStack) (argTp : LetRecType) : Type@{entree_u} :=
   match argTp with
-  | ArgType_Const A => A
-  | ArgType_Prod A B => LRTArg stack A * LRTArg stack B
-  | ArgType_Sigma A B => { x:A & LRTArg stack (B x) }
-  | ArgType_Fun lrt => { n:nat & LRTDepApp (nthLRT stack n) lrt }
+  | LRT_Ret R => { n:nat & LRTDepApp (nthLRT stack n) (LRT_Ret R) }
+  | LRT_FunDep A B => { n:nat & LRTDepApp (nthLRT stack n) (LRT_FunDep A B) }
+  | LRT_Fun A B => { n:nat & LRTDepApp (nthLRT stack n) (LRT_Fun A B) }
+  | LRT_Unit => unit
+  | LRT_BinOp F A B => F (LRTArg stack A) (LRTArg stack B)
+  | LRT_Sigma A B => { x:A & LRTArg stack (B x) }
   end.
 
 (* Compute a dependent tuple type of all the inputs of a LetRecType, i.e.,
    return the type { x:A & { y:B & ... { z:C & unit } ...}} from a LetRecType
-   that represents forall a b c..., SpecM ... (R a b c ...) *)
+   that represents forall a b c..., SpecM ... (R a b c ...). A LetRectype that
+   is not a function type just becomes the void type. *)
 Fixpoint LRTInput stack lrt : Type@{entree_u} :=
   match lrt with
   | LRT_Ret _ => unit
   | LRT_FunDep A rest => {a : A & LRTInput stack (rest a) }
   | LRT_Fun A rest => LRTArg stack A * LRTInput stack rest
+  | _ => void
   end.
 
 (* Compute the output type (R a b c ...) from a LetRecType that represents
@@ -339,10 +348,12 @@ Fixpoint LRTOutput stack lrt : EncodingType (LRTInput stack lrt) :=
                            let '(existT _ a args') := args in
                            LRTOutput stack (rest a) args'
   | LRT_Fun A rest => fun args => LRTOutput stack rest (snd args)
+  | _ => fun args => match args with end
   end.
 
 (* Build the type forall a b c ..., F (a, (b, (c, ...))) for an arbitrary type
-   function F over an LRTInput *)
+   function F over an LRTInput. A LetRecType that is not a function type turns
+   into a function from v:void to F v *)
 Fixpoint lrtPi stack lrt : (LRTInput stack lrt -> Type) -> Type :=
   match lrt return (LRTInput stack lrt -> Type) -> Type with
   | LRT_Ret _ => fun F => F tt
@@ -350,6 +361,7 @@ Fixpoint lrtPi stack lrt : (LRTInput stack lrt -> Type) -> Type :=
       fun F => forall a, lrtPi stack (lrtF a) (fun args => F (existT _ a args))
   | LRT_Fun A lrt' =>
       fun F => forall a, lrtPi stack lrt' (fun args => F (a, args))
+  | _ => fun F => forall v:void, F v
   end.
 
 (* Build an lrtPi function from a unary function on an LRTInput *)
@@ -369,6 +381,7 @@ Fixpoint lrtLambda stack lrt
       fun F f a => lrtLambda stack lrt'
                      (fun args => F (a, args))
                      (fun args => f (a, args))
+  | _ => fun _ _ v => match v with end
   end.
 
 (* Apply an lrtPi function *)
@@ -389,6 +402,8 @@ Fixpoint lrtApply stack lrt
       | (arg, args') =>
         lrtApply stack lrt' (fun args' => F (arg, args')) (f arg) args'
       end
+  | _ =>
+      fun _ _ v => match v with end
   end.
 
 (* A recursive call to one of the functions in a FunStack, specified by a
@@ -528,12 +543,6 @@ Fixpoint applyDepApp E stack lrt_in lrt_out :
         forall args:LRTInput stack lrt_out,
           SpecM E stack (LRTOutput stack lrt_out args)
   with
-  | LRT_Ret R =>
-      fun f da args =>
-        match da with
-        | inl e => (castCallFun E stack (LRT_Ret R) lrt_out e f) args
-        | inr bot => match bot with end
-        end
   | LRT_FunDep A lrtF =>
       fun f da args =>
         match da with
@@ -543,7 +552,7 @@ Fixpoint applyDepApp E stack lrt_in lrt_out :
                         (fun args' => f (existT _ (projT1 da') args'))
                         (projT2 da') args
         end
-  | LRT_Fun A lrt' =>
+  | _ =>
       fun f da args =>
         match da with
         | inl e => (castCallFun E stack _ lrt_out e f) args
@@ -552,13 +561,44 @@ Fixpoint applyDepApp E stack lrt_in lrt_out :
   end.
 
 (* Apply an LRTArg of monadic type *)
-Definition CallLRTArg E stack lrt (arg:LRTArg stack (ArgType_Fun lrt)) :
+Definition CallLRTArg E stack lrt :
+  LRTArg stack lrt ->
   lrtPi stack lrt (fun args => SpecM E stack (LRTOutput stack lrt args)) :=
-  lrtLambda stack lrt _
-    (fun args =>
-       applyDepApp E stack _ _
-         (trigger (H2:=@SpecEventReSumRet _ _ _ _ _ _))
-         (projT2 arg) args).
+  match lrt return LRTArg stack lrt ->
+                   lrtPi stack lrt (fun args =>
+                                      SpecM E stack (LRTOutput stack lrt args))
+  with
+  | LRT_Ret R =>
+      fun arg =>
+        lrtLambda stack (LRT_Ret R) _
+          (fun args =>
+             applyDepApp E stack _ _
+               (trigger (H2:=@SpecEventReSumRet _ _ _ _ _ _))
+               (projT2 arg) args)
+  | LRT_FunDep A B =>
+      fun arg =>
+        lrtLambda stack (LRT_FunDep A B) _
+          (fun args =>
+             applyDepApp E stack _ _
+               (trigger (H2:=@SpecEventReSumRet _ _ _ _ _ _))
+               (projT2 arg) args)
+  | LRT_Fun A B =>
+      fun arg =>
+        lrtLambda stack (LRT_Fun A B) _
+          (fun args =>
+             applyDepApp E stack _ _
+               (trigger (H2:=@SpecEventReSumRet _ _ _ _ _ _))
+               (projT2 arg) args)
+  | LRT_Unit =>
+      fun arg =>
+        lrtLambda stack LRT_Unit _ (fun v => match v with end)
+  | LRT_BinOp F A B =>
+      fun arg =>
+        lrtLambda stack (LRT_BinOp F A B) _ (fun v => match v with end)
+  | LRT_Sigma A B =>
+      fun arg =>
+        lrtLambda stack (LRT_Sigma A B) _ (fun v => match v with end)
+  end.
 
 
 (** Defining MultiFixS **)
