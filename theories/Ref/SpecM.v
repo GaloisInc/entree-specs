@@ -832,76 +832,11 @@ Definition CallS E stk1 stk2 (incl : stackIncl stk1 stk2)
   (call : MappedCall stk1 stk2) : SpecM E stk2 (encodes call) :=
   trigger call.
 
-FIXME HERE NOW
-
-Definition mkStackCall stk stk' (incl : stackIncl stk stk') n
-  : lrtPi stk' (nthLRT stk n)
-      (fun args => StackCallWithRet stk' (LRTOutput _ _ args)) :=
-  lrtLambda stk' (nthLRT stk n)
-    (fun args => StackCallWithRet stk' (LRTOutput _ _ args))
-    (fun args =>
-       exist _ (StackCallOfArgs _ (proj1_sig incl n)
-                  (proj1_sig
-                     (castLRTInput
-                        _ _ _
-                        (proj1 (proj2_sig incl n (LRTInput_in_bounds _ _ _ args)))
-                        args)))
-         (proj2_sig
-            (castLRTInput
-               _ _ _
-               (proj1 (proj2_sig incl n (LRTInput_in_bounds _ _ _ args)))
-               args))).
-
-
-(* FIXME: maybe the following is no longer needed...? *)
-(*
-(* A StackCall where the arguments are relative to a different stack *)
-Inductive RelCall argStk stk : Type@{entree_u} :=
-| RelCallOfArgs n (args : LRTInput argStk (nthLRT stk n)).
-
-(* The return type for a StackCall recursive call, using a specific M *)
-Definition RelCallRet argStk stk (args: RelCall argStk stk) : Type@{entree_u} :=
-  match args with
-  | RelCallOfArgs _ _ n args => LRTOutput argStk (nthLRT stk n) args
-  end.
-
-Definition inclRelCall stk stk' (incl : stackIncl stk stk')
-  (call : RelCall stk' stk) : StackCall stk' :=
-  match call with
-  | RelCallOfArgs _ _ n args =>
-      StackCallOfArgs _ (proj1_sig incl n)
-        (proj1_sig
-           (castLRTInput _ _ _
-              (proj1 (proj2_sig incl n (LRTInput_in_bounds _ _ _ args))) args))
-  end.
-
-Definition inclRelCallRet stk stk' incl call :
-  StackCallRet stk' (inclRelCall stk stk' incl call) = RelCallRet stk' stk call :=
-  match call with
-  | RelCallOfArgs _ _ n args =>
-      proj2_sig
-        (castLRTInput _ _ _
-           (proj1 (proj2_sig incl n (LRTInput_in_bounds _ _ _ args))) args)
-  end.
-
-Definition StackCallS E stk (args : StackCall stk)
-  : SpecM E stk (StackCallRet stk args) :=
-  trigger (H2:=@SpecEventReSumRet _ _ _ _ _ _) args.
-
-Program Definition CallS E stk stk' (incl : stackIncl stk stk')
-  (call : RelCall stk' stk) : SpecM E stk' (RelCallRet _ _ call) :=
-  eq_rect
-    _ (SpecM E stk')
-    (StackCallS E stk' (inclRelCall stk stk' incl call))
-    _
-    (inclRelCallRet stk stk' incl call).
-
-(* Make a RelCall *)
-Definition mkRelCall stk stk' n
-  : lrtPi stk' (nthLRT stk n) (fun args => RelCall stk' stk) :=
-  lrtLambda stk' (nthLRT stk n) _ (fun args => RelCallOfArgs stk' stk n args).
-*)
-
+Definition mkMappedCall stk1 stk2 (incl : stackIncl stk1 stk2) n
+  : lrtPi stk2 (nthLRT stk1 n) (fun _ => MappedCall stk1 stk2) :=
+  lrtLambda stk2 (nthLRT stk1 n)
+    (fun _ => MappedCall stk1 stk2)
+    (fun args => MappedCallOfArgs stk1 stk2 n args).
 
 
 (** Stack-polymorphic function tuples **)
