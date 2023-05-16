@@ -307,11 +307,11 @@ Definition nthLRT (stk : FunStack) n : LetRecType :=
 (* A partial application of a function of a LetRecType lrt_in to some of its
 FunDep arguments, resulting in LetRecType lrt_out *)
 Fixpoint LRTDepApp (lrt_in lrt_out : LetRecType) : Type@{entree_u} :=
-  (lrt_in = lrt_out) +
-    match lrt_in with
-    | LRT_FunDep A lrt_in' => { a:A & LRTDepApp (lrt_in' a) lrt_out  }
-    | _ => False
-    end.
+  match lrt_in with
+  | LRT_FunDep A lrt_in' =>
+      (lrt_in = lrt_out) + { a:A & LRTDepApp (lrt_in' a) lrt_out }
+  | _ => lrt_in = lrt_out
+  end.
 
 (* An argument to a recursive function call, which is a decoding of a
 LetRecType to its corresponding Coq type except that functions are just natural
@@ -432,8 +432,12 @@ Global Instance EncodingType_ErrorE : EncodingType ErrorE := fun _ => void.
 Definition FunStackE (E : EvType@{entree_u}) (stack : FunStack) : Type@{entree_u} :=
   StackCall stack + (ErrorE + E).
 
+(* The return type for a FunStackE effect in a SpecM computation *)
+Definition FunStackERet E stack (e:FunStackE E stack) : Type@{entree_u} :=
+  encodes e.
+
 Global Instance EncodingType_FunStackE E stack : EncodingType (FunStackE E stack) :=
-  _.
+  FunStackERet E stack.
 
 Global Instance ReSum_FunStackE_E (E : EvType) (Γ : FunStack) : ReSum E (FunStackE E Γ) :=
   fun e => inr (inr e).
@@ -553,11 +557,7 @@ Fixpoint applyDepApp E stack lrt_in lrt_out :
                         (projT2 da') args
         end
   | _ =>
-      fun f da args =>
-        match da with
-        | inl e => (castCallFun E stack _ lrt_out e f) args
-        | inr bot => match bot with end
-        end
+      fun f e args => (castCallFun E stack _ lrt_out e f) args
   end.
 
 (* Apply an LRTArg of monadic type *)
