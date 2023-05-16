@@ -263,13 +263,13 @@ Proof.
     + apply IHxs. apply le_S_n. assumption.
 Qed.
 
-(* A specialized dependent pair of a type and decoding function for it *)
-Polymorphic Record EncType@{u} : Type :=
-  { EncType_type :> Type@{u};
-    EncType_encodes : EncodingType EncType_type }.
+(* An event type = a type of events plus their return types *)
+Polymorphic Record EvType@{u} : Type :=
+  { EvType_type :> Type@{u};
+    EvType_encodes : EncodingType EvType_type }.
 
-Global Instance EncodingType_EncType (ET:EncType) : EncodingType ET :=
-  EncType_encodes ET.
+Global Instance EncodingType_EvType (ET:EvType) : EncodingType ET :=
+  EvType_encodes ET.
 
 
 (** An inductive description of recursive function types and their arguments **)
@@ -414,29 +414,29 @@ Global Instance EncodingType_ErrorE : EncodingType ErrorE := fun _ => void.
 
 (* Create an event type for either an event in E or a recursive call in a stack
    Γ of recursive functions in scope *)
-Definition FunStackE (E : EncType@{entree_u}) (stack : FunStack) : Type@{entree_u} :=
+Definition FunStackE (E : EvType@{entree_u}) (stack : FunStack) : Type@{entree_u} :=
   StackCall stack + (ErrorE + E).
 
 Global Instance EncodingType_FunStackE E stack : EncodingType (FunStackE E stack) :=
   _.
 
-Global Instance ReSum_FunStackE_E (E : EncType) (Γ : FunStack) : ReSum E (FunStackE E Γ) :=
+Global Instance ReSum_FunStackE_E (E : EvType) (Γ : FunStack) : ReSum E (FunStackE E Γ) :=
   fun e => inr (inr e).
 
-Global Instance ReSumRet_FunStackE_E (E : EncType) Γ :
+Global Instance ReSumRet_FunStackE_E (E : EvType) Γ :
   ReSumRet E (FunStackE E Γ) :=
   fun _ r => r.
 
-Global Instance ReSum_FunStackE_Error (E : EncType) (Γ : FunStack) : ReSum ErrorE (FunStackE E Γ) :=
+Global Instance ReSum_FunStackE_Error (E : EvType) (Γ : FunStack) : ReSum ErrorE (FunStackE E Γ) :=
   fun e => inr (inl e).
 
-Global Instance ReSumRet_FunStackE_Error (E : EncType) Γ :
+Global Instance ReSumRet_FunStackE_Error (E : EvType) Γ :
   ReSumRet ErrorE (FunStackE E Γ) :=
   fun _ r => r.
 
 
 (* Embed a call in the top level of the FunStack into a FunStackE *)
-Global Instance ReSum_StackCall_FunStackE (E : EncType) (stack : FunStack) :
+Global Instance ReSum_StackCall_FunStackE (E : EvType) (stack : FunStack) :
   ReSum (StackCall stack) (FunStackE E stack) :=
   fun args => inl args.
 
@@ -457,7 +457,7 @@ Global Instance ReSumRet_LRTInput_FunStackE E stack n :
   ReSumRet (LRTInput stack (nthLRT stack n)) (FunStackE E stack) :=
   fun _ r => r.
 
-Global Instance ReSum_Error_E_FunStack (E : EncType) (stack : FunStack) :
+Global Instance ReSum_Error_E_FunStack (E : EvType) (stack : FunStack) :
   ReSum (SpecEvent (ErrorE + E)) (SpecEvent (FunStackE E stack)) :=
   fun e => match e with
            | Spec_vis e => Spec_vis (resum e)
@@ -465,7 +465,7 @@ Global Instance ReSum_Error_E_FunStack (E : EncType) (stack : FunStack) :
            | Spec_exists T => Spec_exists T
            end.
 
-Global Instance ReSumRet_Error_E_FunStack (E : EncType) (stack : FunStack) :
+Global Instance ReSumRet_Error_E_FunStack (E : EvType) (stack : FunStack) :
   ReSumRet (SpecEvent (ErrorE + E)) (SpecEvent (FunStackE E stack)) :=
   fun e =>
     match e with
@@ -478,11 +478,11 @@ Global Instance ReSumRet_Error_E_FunStack (E : EncType) (stack : FunStack) :
 (** Defining the SpecM monad **)
 
 (* The SpecM monad is an entree spec over FunStackE events *)
-Definition SpecM (E:EncType) stack A : Type :=
+Definition SpecM (E:EvType) stack A : Type :=
   entree_spec (FunStackE E stack) A.
 
 (* The observation / unfolding of a SpecM computation tree *)
-Definition SpecM' (E:EncType) stack A : Type :=
+Definition SpecM' (E:EvType) stack A : Type :=
   entree_spec' (FunStackE E stack) A.
 
 (* The monadic operations on SpecM *)
@@ -499,7 +499,7 @@ Definition ForallS {E} {Γ} (A : Type) `{QuantType A} : SpecM E Γ A :=
   forall_spec A.
 Definition ExistsS {E} {Γ} (A : Type) `{QuantType A} : SpecM E Γ A :=
   exists_spec A.
-Definition TriggerS {E:EncType} {Γ} (e : E) : SpecM E Γ (encodes e) := trigger e.
+Definition TriggerS {E:EvType} {Γ} (e : E) : SpecM E Γ (encodes e) := trigger e.
 Definition ErrorS {E} {Γ} A (str : string) : SpecM E Γ A :=
   bind (trigger (mkErrorE str)) (fun (x:void) => match x with end).
 
@@ -1152,7 +1152,7 @@ End interpWithState.
 
 (* Corecursively looks for performances of exceptional effects. If an
    exceptional performance is caught, then `catch` is performed instead. *)
-Program CoFixpoint try_catch {E:EncType} {Γ} {A} {B}
+Program CoFixpoint try_catch {E:EvType} {Γ} {A} {B}
     (is_exceptional : FunStackE E Γ -> option A)
     (catch : A -> SpecM E Γ B) :
     SpecM E Γ B -> SpecM E Γ B :=

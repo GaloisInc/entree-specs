@@ -38,9 +38,9 @@ Local Open Scope entree_scope.
 
 (*** Pre- and Post-condition relations for SpecM ***)
 
-Definition SpecPreRel (E1 E2 : EncType) stk1 stk2 :=
+Definition SpecPreRel (E1 E2 : EvType) stk1 stk2 :=
   Rel (FunStackE E1 stk1) (FunStackE E2 stk2).
-Definition SpecPostRel (E1 E2 : EncType) stk1 stk2 :=
+Definition SpecPostRel (E1 E2 : EvType) stk1 stk2 :=
   PostRel (FunStackE E1 stk1) (FunStackE E2 stk2).
 
 (* The precondition requiring events on both sides to be equal *)
@@ -55,7 +55,7 @@ Definition eqPostRel {E stk} : SpecPostRel E E stk stk :=
 (*** The definition of letrec refinement ***)
 Section lr_refines.
 
-Context {E1 E2 : EncType} {stk1 stk2 : FunStack} {R1 R2 : Type}.
+Context {E1 E2 : EvType} {stk1 stk2 : FunStack} {R1 R2 : Type}.
 Context (funs1 : StackTuple E1 stk1) (funs2 : StackTuple E2 stk2).
 
 Context (RPre : SpecPreRel E1 E2 stk1 stk2)
@@ -193,7 +193,7 @@ Proof.
 Qed.
 
 (* Add a precondition for recursive calls *)
-Definition addCallPreRel {E1 E2 : EncType} {stk1 stk2}
+Definition addCallPreRel {E1 E2 : EvType} {stk1 stk2}
            (precond : Rel (StackCall stk1) (StackCall stk2))
            (RPre : Rel (FunStackE E1 pnil) (FunStackE E2 pnil)) :
   Rel (FunStackE E1 stk1) (FunStackE E2 stk2) :=
@@ -204,7 +204,7 @@ Definition addCallPreRel {E1 E2 : EncType} {stk1 stk2}
                end.
 
 (* Add a postcondition for recursive calls *)
-Definition addCallPostRel {E1 E2 : EncType} {stk1 stk2}
+Definition addCallPostRel {E1 E2 : EvType} {stk1 stk2}
            (postcond : PostRel (StackCall stk1) (StackCall stk2))
            (RPost : PostRel (FunStackE E1 pnil) (FunStackE E2 pnil)) :
   PostRel (FunStackE E1 stk1) (FunStackE E2 stk2) :=
@@ -217,7 +217,7 @@ Definition addCallPostRel {E1 E2 : EncType} {stk1 stk2}
 
 (*** Inversion lemmas about refinement ***)
 Section lr_refines_inv.
-Context {E1 E2 : EncType} {stk1 stk2 : FunStack} {R1 R2 : Type}.
+Context {E1 E2 : EvType} {stk1 stk2 : FunStack} {R1 R2 : Type}.
 Context (funs1 : StackTuple E1 stk1) (funs2 : StackTuple E2 stk2).
 
 Context (RPre : Rel (FunStackE E1 stk1) (FunStackE E2 stk2))
@@ -614,7 +614,7 @@ End lr_refines_inv.
 (*** Refinement respects entree equivalence ***)
 Section lr_refines_proper.
 
-Context {E1 E2 : EncType} {stk1 stk2 : FunStack} {R1 R2 : Type}.
+Context {E1 E2 : EvType} {stk1 stk2 : FunStack} {R1 R2 : Type}.
 Context (funs1 : StackTuple E1 stk1) (funs2 : StackTuple E2 stk2).
 
 Context (RPre : Rel (FunStackE E1 stk1) (FunStackE E2 stk2))
@@ -862,7 +862,7 @@ End lr_refines_proper.
 
 
 (* Refinement is proper wrt eutt *)
-Global Instance Proper_eutt_lr_refines {E1 E2 : EncType} {stk1 stk2} {R1 R2}
+Global Instance Proper_eutt_lr_refines {E1 E2 : EvType} {stk1 stk2} {R1 R2}
   funs1 funs2 RPre RPost RR :
   Proper (eutt eq ==> eutt eq ==> flip impl)
     (@lr_refines E1 E2 stk1 stk2 R1 R2 funs1 funs2 RPre RPost RR).
@@ -1033,7 +1033,7 @@ Qed.
 
 (*** Laws about refinement of bind ***)
 Section lr_refines_bind.
-Context {E1 E2 : EncType} {stk1 stk2 : FunStack} {R1 R2 : Type} {RR : Rel R1 R2}.
+Context {E1 E2 : EvType} {stk1 stk2 : FunStack} {R1 R2 : Type} {RR : Rel R1 R2}.
 Context {funs1 : StackTuple E1 stk1} {funs2 : StackTuple E2 stk2}.
 
 (* Helper lemma to apply entree_beta to the lhs of a bind *)
@@ -1067,7 +1067,7 @@ Proof.
   split; [ reflexivity | assumption ].
 Qed.
 
-Lemma BindS_Vis_eq {E:EncType} {stk R S} (e : SpecEvent (FunStackE E stk))
+Lemma BindS_Vis_eq {E:EvType} {stk R S} (e : SpecEvent (FunStackE E stk))
   (k1 : encodes e -> SpecM E stk R) (k2 : R -> SpecM E stk S) :
   Vis e k1 >>= k2 = Vis e (fun x => k1 x >>= k2).
 Proof.
@@ -1180,7 +1180,7 @@ End lr_refines_bind.
 
 (*** LetRec Lemma ***)
 Section lr_refines_letrec.
-Context {E1 E2 : EncType} {stk1 stk2 : FunStack} {R1 R2 : Type}.
+Context {E1 E2 : EvType} {stk1 stk2 : FunStack} {R1 R2 : Type}.
 Context (funs1 : StackTuple E1 stk1) (funs2 : StackTuple E2 stk2).
 Context (RPre : Rel (FunStackE E1 pnil) (FunStackE E2 pnil))
   (RPost : PostRel (FunStackE E1 pnil) (FunStackE E2 pnil))
@@ -1215,7 +1215,7 @@ End lr_refines_letrec.
 
 (*** Discharge and Push lemmas ***)
 Section lr_refines_discharge_push.
-Context {E1 E2 : EncType} {stk1 stk2 : FunStack} {R1 R2 : Type} {RR : Rel R1 R2}.
+Context {E1 E2 : EvType} {stk1 stk2 : FunStack} {R1 R2 : Type} {RR : Rel R1 R2}.
 Context (funs1 : StackTuple E1 stk1) (funs2 : StackTuple E2 stk2).
 
 (* Discharge a local pre/postcondition about calls *)

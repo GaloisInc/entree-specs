@@ -110,7 +110,7 @@ Qed.
 (* NOTE: we make a separate section just for the bind rules so we can use them
 at different types in the rules section below *)
 Section lr_refines_poly_bind.
-Context {E1 E2 : EncType} {stk1 stk2 : FunStack}.
+Context {E1 E2 : EvType} {stk1 stk2 : FunStack}.
 Context (pfuns1 : PolyStackTuple E1 stk1 stk1)
   (pfuns2 : PolyStackTuple E2 stk2 stk2) (inst : TupsInst pfuns1 pfuns2).
 
@@ -162,7 +162,7 @@ End lr_refines_poly_bind.
 
 
 Section lr_refines_poly_rules.
-Context {E1 E2 : EncType} {stk1 stk2 : FunStack}.
+Context {E1 E2 : EvType} {stk1 stk2 : FunStack}.
 Context (pfuns1 : PolyStackTuple E1 stk1 stk1)
   (pfuns2 : PolyStackTuple E2 stk2 stk2) (inst : TupsInst pfuns1 pfuns2).
 
