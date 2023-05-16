@@ -265,11 +265,11 @@ Qed.
 
 (* An event type = a type of events plus their return types *)
 Polymorphic Record EvType@{u} : Type :=
-  { EvType_type :> Type@{u};
-    EvType_encodes : EncodingType EvType_type }.
+  { evTypeType :> Type@{u};
+    evRetType : EncodingType evTypeType }.
 
 Global Instance EncodingType_EvType (ET:EvType) : EncodingType ET :=
-  EvType_encodes ET.
+  evRetType ET.
 
 
 (** An inductive description of recursive function types and their arguments **)
