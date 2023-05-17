@@ -812,71 +812,73 @@ Program Definition uncastLRTOutput stk lrt lrt' (e : lrt = lrt')
   (ret : LRTOutput stk lrt' (castLRTInput _ lrt lrt' e args)) :
   LRTOutput stk lrt args := _.
 
-(* A StackCall to a function in stk1 with args relative to stk2; the idea is
-that it is being "mapped" from stk1 to stk2 *)
-Inductive MappedCall stk1 stk2 : Type@{entree_u} :=
-| MappedCallOfArgs n (args : LRTInput stk2 (nthLRT stk1 n)).
+(* A StackCall in a polymorphic context (in the sense of PolySpecFun, below),
+where the call is into a function in stk1 but where stk1 has been extended to
+some arbitrary stk2 *)
+Inductive PolyStackCall stk1 stk2 : Type@{entree_u} :=
+| PolyStackCallOfArgs n (args : LRTInput stk2 (nthLRT stk1 n)).
 
-(* The return type for a MappedCall recursive call *)
-Definition MappedCallRet stk1 stk2 (call: MappedCall stk1 stk2) : Type@{entree_u} :=
+(* The return type for a PolyStackCall recursive call *)
+Definition PolyStackCallRet stk1 stk2
+  (call: PolyStackCall stk1 stk2) : Type@{entree_u} :=
   match call with
-  | MappedCallOfArgs _ _ n args => LRTOutput stk2 (nthLRT stk1 n) args
+  | PolyStackCallOfArgs _ _ n args => LRTOutput stk2 (nthLRT stk1 n) args
   end.
 
-(* Convert a MappedCall to the StackCall it is meant to be mapped to *)
-Definition mapMappedCall stk1 stk2 (incl : stackIncl stk1 stk2)
-  (call : MappedCall stk1 stk2) : StackCall stk2 :=
+(* Convert a PolyStackCall to the StackCall it is meant to be mapped to *)
+Definition mapPolyStackCall stk1 stk2 (incl : stackIncl stk1 stk2)
+  (call : PolyStackCall stk1 stk2) : StackCall stk2 :=
   match call with
-  | MappedCallOfArgs _ _ n args =>
+  | PolyStackCallOfArgs _ _ n args =>
       StackCallOfArgs stk2 (applyIncl incl n)
         (castLRTInput stk2 _ _ (eq_sym (applyInclEq incl n)) args)
   end.
 
-(* Convert a StackCallRet back to a MappedCallRet *)
-Definition unmapMappedCallRet stk1 stk2 (incl : stackIncl stk1 stk2)
-  (call : MappedCall stk1 stk2) :
-  StackCallRet _ (mapMappedCall _ _ incl call) ->
-  MappedCallRet stk1 stk2 call :=
-  match call return StackCallRet _ (mapMappedCall _ _ incl call) ->
-                    MappedCallRet stk1 stk2 call with
-  | MappedCallOfArgs _ _ n args =>
+(* Convert a StackCallRet back to a PolyStackCallRet *)
+Definition unmapPolyStackCallRet stk1 stk2 (incl : stackIncl stk1 stk2)
+  (call : PolyStackCall stk1 stk2) :
+  StackCallRet _ (mapPolyStackCall _ _ incl call) ->
+  PolyStackCallRet stk1 stk2 call :=
+  match call return StackCallRet _ (mapPolyStackCall _ _ incl call) ->
+                    PolyStackCallRet stk1 stk2 call with
+  | PolyStackCallOfArgs _ _ n args =>
       uncastLRTOutput _ _ _ (eq_sym (applyInclEq incl n)) args
   end.
 
 (* Tell the typeclass system to look for stackIncl assumptions *)
 Global Hint Extern 1 (stackIncl _ _) => assumption : typeclass_instances.
 
-Global Instance EncodingType_MappedCall stk1 stk2
-  : EncodingType (MappedCall stk1 stk2) := MappedCallRet stk1 stk2.
+Global Instance EncodingType_PolyStackCall stk1 stk2
+  : EncodingType (PolyStackCall stk1 stk2) := PolyStackCallRet stk1 stk2.
 
-Global Program Instance ReSum_MappedCall stk1 stk2 (incl : stackIncl stk1 stk2) :
-  ReSum (MappedCall stk1 stk2) (StackCall stk2) :=
-  mapMappedCall stk1 stk2 incl.
+Global Program Instance ReSum_PolyStackCall stk1 stk2 (incl : stackIncl stk1 stk2) :
+  ReSum (PolyStackCall stk1 stk2) (StackCall stk2) :=
+  mapPolyStackCall stk1 stk2 incl.
 
-Global Program Instance ReSumRet_MappedCall stk1 stk2
+Global Program Instance ReSumRet_PolyStackCall stk1 stk2
   (incl : stackIncl stk1 stk2) :
-  ReSumRet (MappedCall stk1 stk2) (StackCall stk2) :=
-  unmapMappedCallRet stk1 stk2 incl.
+  ReSumRet (PolyStackCall stk1 stk2) (StackCall stk2) :=
+  unmapPolyStackCallRet stk1 stk2 incl.
 
-Global Program Instance ReSum_MappedCall_FunStackE E stk1 stk2
+Global Program Instance ReSum_PolyStackCall_FunStackE E stk1 stk2
   (incl : stackIncl stk1 stk2) :
-  ReSum (MappedCall stk1 stk2) (FunStackE E stk2) :=
-  fun args => inl (mapMappedCall _ _ incl args).
+  ReSum (PolyStackCall stk1 stk2) (FunStackE E stk2) :=
+  fun args => inl (mapPolyStackCall _ _ incl args).
 
-Global Program Instance ReSumRet_MappedCall_FunStackE E stk1 stk2
+Global Program Instance ReSumRet_PolyStackCall_FunStackE E stk1 stk2
   (incl : stackIncl stk1 stk2) :
-  ReSumRet (MappedCall stk1 stk2) (FunStackE E stk2) :=
-  fun args ret => unmapMappedCallRet _ _ incl args ret.
+  ReSumRet (PolyStackCall stk1 stk2) (FunStackE E stk2) :=
+  fun args ret => unmapPolyStackCallRet _ _ incl args ret.
 
 Definition CallS E stk1 stk2 (incl : stackIncl stk1 stk2)
-  (call : MappedCall stk1 stk2) : SpecM E stk2 (encodes call) :=
+  (call : PolyStackCall stk1 stk2) : SpecM E stk2 (encodes call) :=
   trigger call.
 
-Definition mkMappedCall stk1 stk2 n
-  : lrtPi stk2 (nthLRT stk1 n) (fun _ => MappedCall stk1 stk2) :=
+Definition mkPolyStackCall stk1 stk2 n
+  : lrtPi stk2 (nthLRT stk1 n) (fun _ => PolyStackCall stk1 stk2) :=
   lrtLambda stk2 (nthLRT stk1 n)
-    (fun _ => MappedCall stk1 stk2)
-    (fun args => MappedCallOfArgs stk1 stk2 n args).
+    (fun _ => PolyStackCall stk1 stk2)
+    (fun args => PolyStackCallOfArgs stk1 stk2 n args).
 
 
 (** Stack-polymorphic function tuples **)
