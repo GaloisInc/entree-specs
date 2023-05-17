@@ -872,7 +872,7 @@ Definition CallS E stk1 stk2 (incl : stackIncl stk1 stk2)
   (call : MappedCall stk1 stk2) : SpecM E stk2 (encodes call) :=
   trigger call.
 
-Definition mkMappedCall stk1 stk2 (incl : stackIncl stk1 stk2) n
+Definition mkMappedCall stk1 stk2 n
   : lrtPi stk2 (nthLRT stk1 n) (fun _ => MappedCall stk1 stk2) :=
   lrtLambda stk2 (nthLRT stk1 n)
     (fun _ => MappedCall stk1 stk2)
