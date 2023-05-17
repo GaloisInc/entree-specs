@@ -277,7 +277,7 @@ Global Instance EncodingType_EvType (ET:EvType) : EncodingType ET :=
 (* An encoded argument type for a recursive function and its arguments *)
 Inductive LetRecType : Type@{entree_u + 1} :=
 (* These three constructors represent functions of 0 or more arguments *)
-| LRT_Ret (R : LetRecType) : LetRecType
+| LRT_SpecM (R : LetRecType) : LetRecType
 | LRT_FunDep (A : Type@{entree_u}) (rest : A -> LetRecType) : LetRecType
 | LRT_Fun (A : LetRecType) (rest : LetRecType) : LetRecType
 (* These constructors represent the argument types used in functions *)
@@ -298,7 +298,7 @@ Definition FunStack := plist LetRecType.
 
 (* A trivially inhabited "default" LetRecType *)
 Definition default_lrt : LetRecType :=
-  LRT_FunDep void (fun _ => LRT_Ret (LRT_Type void)).
+  LRT_FunDep void (fun _ => LRT_SpecM (LRT_Type void)).
 
 (* Get the nth element of a FunStack list, or void -> void if n is too big *)
 Definition nthLRT (stk : FunStack) n : LetRecType :=
@@ -318,7 +318,7 @@ LetRecType to its corresponding Coq type except that functions are just natural
 numbers that choose functions in the current function stack *)
 Fixpoint LRTArg (stack : FunStack) (argTp : LetRecType) : Type@{entree_u} :=
   match argTp with
-  | LRT_Ret R => { n:nat & LRTDepApp (nthLRT stack n) (LRT_Ret R) }
+  | LRT_SpecM R => { n:nat & LRTDepApp (nthLRT stack n) (LRT_SpecM R) }
   | LRT_FunDep A B => { n:nat & LRTDepApp (nthLRT stack n) (LRT_FunDep A B) }
   | LRT_Fun A B => { n:nat & LRTDepApp (nthLRT stack n) (LRT_Fun A B) }
   | LRT_Unit => unit
@@ -332,7 +332,7 @@ Fixpoint LRTArg (stack : FunStack) (argTp : LetRecType) : Type@{entree_u} :=
    is not a function type just becomes the void type. *)
 Fixpoint LRTInput stack lrt : Type@{entree_u} :=
   match lrt with
-  | LRT_Ret _ => unit
+  | LRT_SpecM _ => unit
   | LRT_FunDep A rest => {a : A & LRTInput stack (rest a) }
   | LRT_Fun A rest => LRTArg stack A * LRTInput stack rest
   | _ => void
@@ -343,7 +343,7 @@ Fixpoint LRTInput stack lrt : Type@{entree_u} :=
    to a function of that type *)
 Fixpoint LRTOutput stack lrt : EncodingType (LRTInput stack lrt) :=
   match lrt with
-  | LRT_Ret R => fun _ => LRTArg stack R
+  | LRT_SpecM R => fun _ => LRTArg stack R
   | LRT_FunDep A rest => fun args =>
                            let '(existT _ a args') := args in
                            LRTOutput stack (rest a) args'
@@ -356,7 +356,7 @@ Fixpoint LRTOutput stack lrt : EncodingType (LRTInput stack lrt) :=
    into a function from v:void to F v *)
 Fixpoint lrtPi stack lrt : (LRTInput stack lrt -> Type) -> Type :=
   match lrt return (LRTInput stack lrt -> Type) -> Type with
-  | LRT_Ret _ => fun F => F tt
+  | LRT_SpecM _ => fun F => F tt
   | LRT_FunDep A lrtF =>
       fun F => forall a, lrtPi stack (lrtF a) (fun args => F (existT _ a args))
   | LRT_Fun A lrt' =>
@@ -372,7 +372,7 @@ Fixpoint lrtLambda stack lrt
         forall (F : LRTInput stack lrt -> Type),
           (forall args, F args) -> lrtPi stack lrt F
   with
-  | LRT_Ret _ => fun _ f => f tt
+  | LRT_SpecM _ => fun _ f => f tt
   | LRT_FunDep A lrtF =>
     fun F f a => lrtLambda stack (lrtF a)
                    (fun args => F (existT _ a args))
@@ -388,7 +388,7 @@ Fixpoint lrtLambda stack lrt
 Fixpoint lrtApply stack lrt
   : forall F, lrtPi stack lrt F -> forall args, F args :=
   match lrt return forall F, lrtPi stack lrt F -> forall args, F args with
-  | LRT_Ret _ =>
+  | LRT_SpecM _ =>
     fun F f u => match u return F u with | tt => f end
   | LRT_FunDep A lrtF =>
     fun F f args =>
@@ -568,9 +568,9 @@ Definition CallLRTArg E stack lrt :
                    lrtPi stack lrt (fun args =>
                                       SpecM E stack (LRTOutput stack lrt args))
   with
-  | LRT_Ret R =>
+  | LRT_SpecM R =>
       fun arg =>
-        lrtLambda stack (LRT_Ret R) _
+        lrtLambda stack (LRT_SpecM R) _
           (fun args =>
              applyDepApp E stack _ _
                (trigger (H2:=@SpecEventReSumRet _ _ _ _ _ _))
@@ -1097,7 +1097,7 @@ Fixpoint LRTValue E (stack:FunStack) (argTp : LRTArgType) : Type@{entree_u} :=
 with
 LRTValueFun E (stack:FunStack) (lrt : LetRecType) : Type@{entree_u} :=
   match lrt with
-  | LRT_Ret R => SpecM E stack (LRTValue E stack R)
+  | LRT_SpecM R => SpecM E stack (LRTValue E stack R)
   | LRT_FunDep A lrtF => forall a, LRTValueFun E stack (lrtF a)
   | LRT_Fun A lrt' => LRTArg stack A -> LRTValueFun E stack lrt'
   end.
@@ -1126,7 +1126,7 @@ LRTArgFun2ValueFun E stack lrt : (forall args:LRTInput stack lrt,
   match lrt return (forall args,
                     SpecM E stack (LRTOutput stack lrt args)) ->
                    LRTValueFun E stack lrt with
-  | LRT_Ret R =>
+  | LRT_SpecM R =>
       fun f => bind (f tt) (fun x => ret (LRTArg2Value E stack R x))
   | LRT_FunDep A lrt' =>
       fun f a =>
