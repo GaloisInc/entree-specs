@@ -62,11 +62,11 @@ Record TupsInst {E1 E2 stk1 stk2}
   (pfuns2 : PolyStackTuple E2 stk2 stk2) : Type :=
   { tupsInst_stk1 : FunStack;
     tupsInst_incl1 : stackIncl stk1 tupsInst_stk1;
-    tupsInst_funs1 : StackTuple E1 tupsInst_stk1;
+    tupsInst_funs1 : StackTuple E1 tupsInst_stk1 tupsInst_stk1;
     tupsInst_inst1 : isTupleInst _ _ _ tupsInst_incl1 pfuns1 tupsInst_funs1;
     tupsInst_stk2 : FunStack;
     tupsInst_incl2 : stackIncl stk2 tupsInst_stk2;
-    tupsInst_funs2 : StackTuple E2 tupsInst_stk2;
+    tupsInst_funs2 : StackTuple E2 tupsInst_stk2 tupsInst_stk2;
     tupsInst_inst2 : isTupleInst _ _ _ tupsInst_incl2 pfuns2 tupsInst_funs2; }.
 
 (* Refinement wrt polymorphic stack tuples *)

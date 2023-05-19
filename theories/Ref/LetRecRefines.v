@@ -56,7 +56,7 @@ Definition eqPostRel {E stk} : SpecPostRel E E stk stk :=
 Section lr_refines.
 
 Context {E1 E2 : EvType} {stk1 stk2 : FunStack} {R1 R2 : Type}.
-Context (funs1 : StackTuple E1 stk1) (funs2 : StackTuple E2 stk2).
+Context (funs1 : StackTuple E1 stk1 stk1) (funs2 : StackTuple E2 stk2 stk2).
 
 Context (RPre : SpecPreRel E1 E2 stk1 stk2)
   (RPost : SpecPostRel E1 E2 stk1 stk2) (RR : R1 -> R2 -> Prop).
@@ -218,7 +218,7 @@ Definition addCallPostRel {E1 E2 : EvType} {stk1 stk2}
 (*** Inversion lemmas about refinement ***)
 Section lr_refines_inv.
 Context {E1 E2 : EvType} {stk1 stk2 : FunStack} {R1 R2 : Type}.
-Context (funs1 : StackTuple E1 stk1) (funs2 : StackTuple E2 stk2).
+Context (funs1 : StackTuple E1 stk1 stk1) (funs2 : StackTuple E2 stk2 stk2).
 
 Context (RPre : Rel (FunStackE E1 stk1) (FunStackE E2 stk2))
   (RPost : PostRel (FunStackE E1 stk1) (FunStackE E2 stk2))
@@ -615,7 +615,7 @@ End lr_refines_inv.
 Section lr_refines_proper.
 
 Context {E1 E2 : EvType} {stk1 stk2 : FunStack} {R1 R2 : Type}.
-Context (funs1 : StackTuple E1 stk1) (funs2 : StackTuple E2 stk2).
+Context (funs1 : StackTuple E1 stk1 stk1) (funs2 : StackTuple E2 stk2 stk2).
 
 Context (RPre : Rel (FunStackE E1 stk1) (FunStackE E2 stk2))
   (RPost : PostRel (FunStackE E1 stk1) (FunStackE E2 stk2))
@@ -899,8 +899,8 @@ Qed.
 Lemma lr_refines_trans {E1 E2 E3} {stk1 stk2 stk3} {R1 R2 R3}
   RPre1 RPre2 RPost1 RPost2
   (RR1 : R1 -> R2 -> Prop) (RR2 : R2 -> R3 -> Prop)
-  (funs1 : StackTuple E1 stk1) (funs2 : StackTuple E2 stk2)
-  (funs3 : StackTuple E3 stk3)
+  (funs1 : StackTuple E1 stk1 stk1) (funs2 : StackTuple E2 stk2 stk2)
+  (funs3 : StackTuple E3 stk3 stk3)
   (t1 : SpecM E1 stk1 R1) (t2 : SpecM E2 stk2 R2) (t3 : SpecM E3 stk3 R3) :
   lr_refines funs1 funs2 (liftNilRel RPre1) (liftNilPostRel RPost1) RR1 t1 t2 ->
   lr_refines funs2 funs3 (liftNilRel RPre2) (liftNilPostRel RPost2) RR2 t2 t3 ->
@@ -1034,7 +1034,7 @@ Qed.
 (*** Laws about refinement of bind ***)
 Section lr_refines_bind.
 Context {E1 E2 : EvType} {stk1 stk2 : FunStack} {R1 R2 : Type} {RR : Rel R1 R2}.
-Context {funs1 : StackTuple E1 stk1} {funs2 : StackTuple E2 stk2}.
+Context {funs1 : StackTuple E1 stk1 stk1} {funs2 : StackTuple E2 stk2 stk2}.
 
 (* Helper lemma to apply entree_beta to the lhs of a bind *)
 Lemma observing_BindS E stk A B m (k : A -> SpecM E stk B) :
@@ -1181,14 +1181,14 @@ End lr_refines_bind.
 (*** LetRec Lemma ***)
 Section lr_refines_letrec.
 Context {E1 E2 : EvType} {stk1 stk2 : FunStack} {R1 R2 : Type}.
-Context (funs1 : StackTuple E1 stk1) (funs2 : StackTuple E2 stk2).
+Context (funs1 : StackTuple E1 stk1 stk1) (funs2 : StackTuple E2 stk2 stk2).
 Context (RPre : Rel (FunStackE E1 pnil) (FunStackE E2 pnil))
   (RPost : PostRel (FunStackE E1 pnil) (FunStackE E2 pnil))
   (RR : Rel R1 R2).
 
 Lemma lr_refines_letrec t1 t2 :
   lr_refines funs1 funs2 (liftNilRel RPre) (liftNilPostRel RPost) RR t1 t2 ->
-  lr_refines (emptyStackTuple E1) (emptyStackTuple E2) RPre RPost RR
+  lr_refines (emptyStackTuple E1 _) (emptyStackTuple E2 _) RPre RPost RR
     (LetRecS _ R1 _ funs1 t1) (LetRecS _ R2 _ funs2 t2).
 Proof.
   revert t1 t2; pcofix CIH; intros t1 t2 ref12.
@@ -1216,7 +1216,7 @@ End lr_refines_letrec.
 (*** Discharge and Push lemmas ***)
 Section lr_refines_discharge_push.
 Context {E1 E2 : EvType} {stk1 stk2 : FunStack} {R1 R2 : Type} {RR : Rel R1 R2}.
-Context (funs1 : StackTuple E1 stk1) (funs2 : StackTuple E2 stk2).
+Context (funs1 : StackTuple E1 stk1 stk1) (funs2 : StackTuple E2 stk2 stk2).
 
 (* Discharge a local pre/postcondition about calls *)
 Lemma lr_refines_discharge RPre RPost precond postcond t1 t2 :

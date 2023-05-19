@@ -619,29 +619,30 @@ Definition SpecFunSig E stack : Type@{entree_u+1} :=
 Definition defaultSpecFunSig E stack : SpecFunSig E stack :=
   existT _ default_lrt (defaultSpecFun E stack).
 
-(* A right-nested tuple of a list of functions in a recursive function stack *)
-Definition StackTuple E stack : Type@{entree_u} :=
-  mapTuple (SpecFun E stack) stack.
+(* A right-nested tuple of a list of function definitions for all the
+LetRecTypes in the defs list, that can make calls into the calls list *)
+Definition StackTuple E calls defs : Type@{entree_u} :=
+  mapTuple (SpecFun E calls) defs.
 
 (* The StackTuple of 0 functions *)
-Definition emptyStackTuple E : StackTuple E pnil := tt.
+Definition emptyStackTuple E calls : StackTuple E calls pnil := tt.
 
 (* Get the nth function in a StackTuple *)
-Definition nthStackTupleFun E stack n (funs : StackTuple E stack) :
-  SpecFun E stack (nthLRT stack n) :=
-  nthProjDefault (SpecFun E stack) default_lrt
-    (defaultSpecFun E stack) _ n funs.
+Definition nthStackTupleFun E calls defs n (funs : StackTuple E calls defs) :
+  SpecFun E calls (nthLRT defs n) :=
+  nthProjDefault (SpecFun E calls) default_lrt
+    (defaultSpecFun E calls) _ n funs.
 
 (* Apply a StackTuple to a StackCall to get a StackCallRet *)
-Definition applyStackTuple E stack (funs : StackTuple E stack)
+Definition applyStackTuple E stack (funs : StackTuple E stack stack)
            (call : StackCall stack) : SpecM E stack (StackCallRet stack call) :=
   match call return SpecM E stack (StackCallRet stack call) with
   | StackCallOfArgs _ n args =>
-    lrtApply stack (nthLRT stack n) _ (nthStackTupleFun _ stack n funs) args
+    lrtApply stack (nthLRT stack n) _ (nthStackTupleFun _ stack stack n funs) args
   end.
 
 (* Create a multi-way letrec that binds 0 or more co-recursive functions *)
-Definition LetRecS E R stack (funs : StackTuple E stack) (body : SpecM E stack R)
+Definition LetRecS E R stack (funs : StackTuple E stack stack) (body : SpecM E stack R)
   : SpecM E pnil R :=
   resumEntree (interp_mrec_spec (applyStackTuple E stack funs) body).
 
@@ -895,7 +896,7 @@ Definition inclPolySpecFun E stk stk' lrt (incl : stackIncl stk stk')
 (* A StackTuple that is polymorphic in its function stack, which defines
 functions for all the defs that can call all the calls *)
 Definition PolyStackTuple E calls defs :=
-  forall stack', stackIncl calls stack' -> mapTuple (SpecFun E stack') defs.
+  forall calls', stackIncl calls calls' -> StackTuple E calls' defs.
 
 (* Append two PolyStackTuples *)
 Definition appPolyStackTuple E calls defs1 defs2
@@ -916,7 +917,7 @@ Definition inclPolyStackTuple E calls1 calls2 defs
 elements at the new positions mapped to by the stackIncl *)
 Definition isTupleExt E stk stk' (incl : stackIncl stk stk')
                        (tup1 : mapTuple (SpecFun E stk') stk)
-                       (tup2 : StackTuple E stk') : Prop :=
+                       (tup2 : StackTuple E stk' stk') : Prop :=
   forall n,
     n < plength stk ->
     nthProjDefaultSig (SpecFun E stk') (defaultSpecFunSig E stk') stk n tup1
@@ -928,13 +929,13 @@ Definition isTupleExt E stk stk' (incl : stackIncl stk stk')
 that includes all the all the SpecFuns in the original StackTuple *)
 Definition isTupleInst E stk stk' (incl : stackIncl stk stk')
                        (ptup : PolyStackTuple E stk stk)
-                       (tup : StackTuple E stk') : Prop :=
+                       (tup : StackTuple E stk' stk') : Prop :=
   isTupleExt E stk stk' incl (ptup stk' incl) tup.
 
 Lemma isTupleInstAppL E stk1 stk2 stk' (incl : stackIncl (papp stk1 stk2) stk')
                       (ptup1 : PolyStackTuple E stk1 stk1)
                       (ptup2 : PolyStackTuple E (papp stk1 stk2) stk2)
-                      (tup : StackTuple E stk') :
+                      (tup : StackTuple E stk' stk') :
   isTupleInst E (papp stk1 stk2) stk' incl
               (appPolyStackTuple
                  _ _ _ _
@@ -955,7 +956,7 @@ Qed.
 Lemma isTupleInstAppR E stk1 stk2 stk' (incl : stackIncl (papp stk1 stk2) stk')
                       (ptup1 : PolyStackTuple E (papp stk1 stk2) stk1)
                       (ptup2 : PolyStackTuple E stk2 stk2)
-                      (tup : StackTuple E stk') :
+                      (tup : StackTuple E stk' stk') :
   isTupleInst E (papp stk1 stk2) stk' incl
               (appPolyStackTuple
                  _ _ _ _
