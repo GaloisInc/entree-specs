@@ -2,6 +2,7 @@
 
 theories/Basics/HeterogeneousRelations.v
 theories/Basics/QuantType.v
+theories/Basics/PolyList.v
 theories/Core/EnTreeDefinition.v
 theories/Core/SubEvent.v
 theories/Eq/Eqit.v
@@ -17,5 +18,6 @@ theories/Ref/DefRefines.v
 # theories/Ref/Automation.v
 theories/Ref/RecSpecFix.v
 # theories/Ref/RecFixSpecTotal.v
-
 theories/Ref/Concrete.v
+
+theories/EnTreeSpecs.v

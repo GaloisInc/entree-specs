@@ -18,6 +18,7 @@ From Coq Require Export
 From EnTree Require Import
      Basics.HeterogeneousRelations
      Basics.QuantType
+     Basics.PolyList
      Core.EnTreeDefinition
      Core.SubEvent
      Ref.EnTreeSpecDefinition
