@@ -62,7 +62,7 @@ Definition fibMap : (nat -> M nat) -> nat -> M nat :=
 End HOExamples.
 
 
-(** Helper definitions **)
+(** Event types **)
 
 (* An event type = a type of events plus their return types *)
 Polymorphic Record EvType@{u} : Type :=
@@ -71,6 +71,82 @@ Polymorphic Record EvType@{u} : Type :=
 
 Global Instance EncodingType_EvType (ET:EvType) : EncodingType ET :=
   evRetType ET.
+
+
+(** Finite binary functors **)
+
+(* A finite binary functor is a functor that intuitively contains finitely many
+elements of the types in its arguments *)
+Class FinBinFunctor (F : Type@{entree_u} -> Type@{entree_u} -> Type@{entree_u}) :=
+  { finBinFmap : forall A B C D, (A -> B) -> (C -> D) -> F A C -> F B D;
+    finBinMax : forall (A B : nat -> Type@{entree_u}),
+      (forall n, A n -> A (S n)) -> (forall n, B n -> B (S n)) ->
+      F ({ n:nat & A n}) ({ n:nat & B n}) ->
+      { n & F (A n) (B n) } }.
+
+(* The constant functor is a finite binary functor *)
+#[global]
+Instance Const_FinBinFunctor T : FinBinFunctor (fun _ _ => T) :=
+  {|
+    finBinFmap := fun _ _ _ _ f g (t:T) => t;
+    finBinMax := fun A B incA incB (t:T) => existT _ 0 t
+  |}.
+
+(* Finite binary functors compose *)
+#[global]
+Instance Compose_FinBinFunctor F G H
+  `{FinBinFunctor F} `{FinBinFunctor G} `{FinBinFunctor H}
+  : FinBinFunctor (fun A B => F (G A B) (H A B)) :=
+  {|
+    finBinFmap := fun A B C D f g (x:F (G A C) (H A C)) =>
+                    finBinFmap (G A C) (G B D) (H A C) (H B D)
+                               (finBinFmap A B C D f g)
+                               (finBinFmap A B C D f g) x;
+    finBinMax :=
+      fun A B incA incB x =>
+        finBinMax
+          (F:=F)
+          (fun n => G (A n) (B n)) (fun n => H (A n) (B n))
+          (fun n =>
+             finBinFmap (F:=G) (A n) (A (S n)) (B n) (B (S n)) (incA n) (incB n))
+          (fun n =>
+             finBinFmap (F:=H) (A n) (A (S n)) (B n) (B (S n)) (incA n) (incB n))
+          (finBinFmap
+             (F:=F)
+             (G { n & A n} { n & B n}) { n & G (A n) (B n) }
+             (H { n & A n} { n & B n}) { n & H (A n) (B n) }
+             (finBinMax A B incA incB)
+             (finBinMax A B incA incB)
+             x)
+  |}.
+
+Fixpoint levelAdd (A : nat -> Type@{entree_u}) (incA : forall n, A n -> A (S n))
+  n m (a : A n) : A (m + n) :=
+  match m return A (m + n) with
+  | 0 => a
+  | S m' => incA (m' + n) (levelAdd A incA n m' a)
+  end.
+
+Program Definition levelLift A incA n m (l: n <= m) (a:A n) : A m :=
+  eq_rect _ A (levelAdd A incA n (m - n) a) _ _.
+Next Obligation.
+  rewrite PeanoNat.Nat.add_comm. apply Minus.le_plus_minus_r. assumption.
+Defined.
+
+Definition levelCombine (A B C : nat -> Type@{entree_u}) incA incB
+  (f : forall n, A n -> B n -> C n) (a : { n & A n}) (b : { n & B n})
+  : { n & C n } :=
+  existT C
+    (max (projT1 a) (projT1 b))
+    (f (max (projT1 a) (projT1 b))
+       (levelLift A incA (projT1 a) (max (projT1 a) (projT1 b))
+          (PeanoNat.Nat.le_max_l (projT1 a) (projT1 b)) (projT2 a))
+       (levelLift B incB (projT1 b) (max (projT1 a) (projT1 b))
+          (PeanoNat.Nat.le_max_r (projT1 a) (projT1 b)) (projT2 b))).
+
+Definition levelIncr (A : nat -> Type@{entree_u}) (a : { n & A (S n) }) :
+  { n & A n } :=
+  existT A (S (projT1 a)) (projT2 a).
 
 
 (** An inductive description of recursive function types and their arguments **)
@@ -83,9 +159,7 @@ Inductive LetRecType : Type@{entree_u + 1} :=
 | LRT_Fun (A : LetRecType) (rest : LetRecType) : LetRecType
 (* These constructors represent the argument types used in functions *)
 | LRT_Unit : LetRecType
-| LRT_BinOp
-    (F : Type@{entree_u} -> Type@{entree_u} -> Type@{entree_u})
-    (A B : LetRecType) : LetRecType
+| LRT_BinOp F `{FinBinFunctor F} (A B : LetRecType) : LetRecType
 | LRT_Sigma (A : Type@{entree_u}) (B : A -> LetRecType) : LetRecType
 .
 
@@ -105,27 +179,216 @@ Definition default_lrt : LetRecType :=
 Definition nthLRT (stk : FunStack) n : LetRecType :=
   nth_default' default_lrt stk n.
 
-(* A partial application of a function of a LetRecType lrt_in to some of its
-FunDep arguments, resulting in LetRecType lrt_out *)
-Fixpoint LRTDepApp (lrt_in lrt_out : LetRecType) : Type@{entree_u} :=
-  match lrt_in with
-  | LRT_FunDep A lrt_in' =>
-      (lrt_in = lrt_out) + { a:A & LRTDepApp (lrt_in' a) lrt_out }
-  | _ => lrt_in = lrt_out
+(* An argument to a recursive function call, which is a decoding of a LetRecType
+to its corresponding Coq type except that functions are interpreted using the
+supplied type functor *)
+Fixpoint LRTArgF (Clos : LetRecType -> Type@{entree_u}) (argTp : LetRecType)
+  : Type@{entree_u} :=
+  match argTp with
+  | LRT_SpecM R => Clos (LRT_SpecM R)
+  | LRT_FunDep A B => Clos (LRT_FunDep A B)
+  | LRT_Fun A B => Clos (LRT_Fun A B)
+  | LRT_Unit => unit
+  | LRT_BinOp F A B => F (LRTArgF Clos A) (LRTArgF Clos B)
+  | LRT_Sigma A B => { x:A & LRTArgF Clos (B x) }
   end.
 
-(* An argument to a recursive function call, which is a decoding of a
-LetRecType to its corresponding Coq type except that functions are just natural
-numbers that choose functions in the current function stack *)
-Fixpoint LRTArg (stack : FunStack) (argTp : LetRecType) : Type@{entree_u} :=
-  match argTp with
-  | LRT_SpecM R => { n:nat & LRTDepApp (nthLRT stack n) (LRT_SpecM R) }
-  | LRT_FunDep A B => { n:nat & LRTDepApp (nthLRT stack n) (LRT_FunDep A B) }
-  | LRT_Fun A B => { n:nat & LRTDepApp (nthLRT stack n) (LRT_Fun A B) }
-  | LRT_Unit => unit
-  | LRT_BinOp F A B => F (LRTArg stack A) (LRTArg stack B)
-  | LRT_Sigma A B => { x:A & LRTArg stack (B x) }
+Fixpoint LRTArgsF Clos n lrt : Type@{entree_u} :=
+  match n with
+  | 0 => unit
+  | S n' =>
+      match lrt with
+      | LRT_SpecM R => void
+      | LRT_FunDep A B => { a:A & LRTArgsF Clos n' (B a) }
+      | LRT_Fun A B => LRTArgF Clos A * LRTArgsF Clos n' B
+      | LRT_Unit => void
+      | LRT_BinOp F A B => void
+      | LRT_Sigma A B => void
+      end
   end.
+
+Fixpoint LRTArgsFOut Clos n lrt : LRTArgsF Clos n lrt -> LetRecType :=
+  match n with
+  | 0 => fun _ => lrt
+  | S n' =>
+      match lrt return LRTArgsF Clos (S n') lrt -> LetRecType with
+      | LRT_SpecM R => fun bot => match bot with end
+      | LRT_FunDep A B =>
+          fun args => LRTArgsFOut Clos n' (B (projT1 args)) (projT2 args)
+      | LRT_Fun A B =>
+          fun args => LRTArgsFOut Clos n' B (snd args)
+      | LRT_Unit => fun bot => match bot with end
+      | LRT_BinOp F A B => fun bot => match bot with end
+      | LRT_Sigma A B => fun bot => match bot with end
+      end
+  end.
+
+(* A "closure type" is a type of a closure plus a map to the LetRecType of a
+closure of that type *)
+Definition ClosType := { T : Type@{entree_u} & T -> LetRecType }.
+
+(* A closure of a LetRecType for a given ClosType *)
+Definition ClosOfType (CT : ClosType) lrt : Type@{entree_u} :=
+  { clos:projT1 CT & projT2 CT clos = lrt }.
+
+Record LRTClosF (CT : ClosType) : Type@{entree_u} :=
+  { lrtClosClos : projT1 CT;
+    lrtClosNumArgs : nat;
+    lrtClosArgs : LRTArgsF (ClosOfType CT) lrtClosNumArgs (projT2 CT lrtClosClos) }.
+
+Definition LRTClosFType CT (clos : LRTClosF CT) : LetRecType :=
+  LRTArgsFOut
+    (ClosOfType CT) (lrtClosNumArgs CT clos)
+    (projT2 CT (lrtClosClos CT clos))
+    (lrtClosArgs CT clos).
+
+Fixpoint LRTClosAndRet stk lvl : ClosType :=
+  match lvl with
+  | 0 => existT (fun T => T -> LetRecType) nat (nthLRT stk)
+  | S lvl' =>
+      existT
+        (fun T => T -> LetRecType)
+        (LRTClosF (LRTClosAndRet stk lvl'))
+        (LRTClosFType (LRTClosAndRet stk lvl'))
+  end.
+
+Definition LRTClosLvl stk lrt lvl : Type@{entree_u} :=
+  ClosOfType (LRTClosAndRet stk lvl) lrt.
+
+Definition LRTClosLvlIncr stk lrt lvl (clos:LRTClosLvl stk lrt lvl)
+  : LRTClosLvl stk lrt (S lvl) :=
+  existT
+    _
+    (Build_LRTClosF (LRTClosAndRet stk lvl) (projT1 clos) 0 tt)
+    (projT2 clos).
+
+Definition LRTClosLvlLift stk lrt lvl1 lvl2 (l:lvl1 <= lvl2)
+  : LRTClosLvl stk lrt lvl1 -> LRTClosLvl stk lrt lvl2 :=
+  levelLift (LRTClosLvl stk lrt) (LRTClosLvlIncr stk lrt) lvl1 lvl2 l.
+
+Definition LRTArgLvl stk argTp lvl :=
+  LRTArgF (fun lrt => LRTClosLvl stk lrt lvl) argTp.
+
+Fixpoint LRTArgLvlIncr stk argTp lvl :
+  LRTArgLvl stk argTp lvl -> LRTArgLvl stk argTp (S lvl) :=
+  match argTp return LRTArgLvl stk argTp lvl -> LRTArgLvl stk argTp (S lvl) with
+  | LRT_SpecM R => LRTClosLvlIncr stk (LRT_SpecM R) lvl
+  | LRT_FunDep A B => LRTClosLvlIncr stk (LRT_FunDep A B) lvl
+  | LRT_Fun A B => LRTClosLvlIncr stk (LRT_Fun A B) lvl
+  | LRT_Unit => fun u => u
+  | LRT_BinOp F A B =>
+      finBinFmap _ _ _ _ (LRTArgLvlIncr stk A lvl) (LRTArgLvlIncr stk B lvl)
+  | LRT_Sigma A B =>
+      fun p => existT _ (projT1 p) (LRTArgLvlIncr stk (B (projT1 p)) lvl (projT2 p))
+  end.
+
+Definition LRTArgLvlLift stk argTp lvl1 lvl2 (l: lvl1 <= lvl2)
+  : LRTArgLvl stk argTp lvl1 -> LRTArgLvl stk argTp lvl2 :=
+  levelLift (LRTArgLvl stk argTp) (LRTArgLvlIncr stk argTp) lvl1 lvl2 l.
+
+Definition LRTArgsLvl stk n lrt lvl :=
+  LRTArgsF (fun lrt => LRTClosLvl stk lrt lvl) n lrt.
+
+Fixpoint LRTArgsLvlIncr stk n lrt lvl :
+  LRTArgsLvl stk n lrt lvl -> LRTArgsLvl stk n lrt (S lvl) :=
+  match n return LRTArgsLvl stk n lrt lvl -> LRTArgsLvl stk n lrt (S lvl) with
+  | 0 => fun u => u
+  | S n' =>
+      match lrt return LRTArgsLvl stk (S n') lrt lvl ->
+                       LRTArgsLvl stk (S n') lrt (S lvl) with
+      | LRT_SpecM R => fun bot => match bot with end
+      | LRT_FunDep A B =>
+          fun p => existT _ (projT1 p)
+                     (LRTArgsLvlIncr stk n' (B (projT1 p)) lvl (projT2 p))
+      | LRT_Fun A B =>
+          fun p => (LRTArgLvlIncr stk A lvl (fst p),
+                    LRTArgsLvlIncr stk n' B lvl (snd p))
+      | LRT_Unit => fun bot => match bot with end
+      | LRT_BinOp F A B => fun bot => match bot with end
+      | LRT_Sigma A B => fun bot => match bot with end
+      end
+  end.
+
+Definition LRTArgsLvlLift stk n lrt lvl1 lvl2 (l: lvl1 <= lvl2)
+  : LRTArgsLvl stk n lrt lvl1 -> LRTArgsLvl stk n lrt lvl2 :=
+  levelLift (LRTArgsLvl stk n lrt) (LRTArgsLvlIncr stk n lrt) lvl1 lvl2 l.
+
+Definition LRTArgsOutLvl stk n lrt lvl args :=
+  LRTArgsFOut (fun lrt => LRTClosLvl stk lrt lvl) n lrt args.
+
+Definition LRTClos stk lrt : Type@{entree_u} :=
+  { lvl & LRTClosLvl stk lrt lvl }.
+
+Definition LRTArg stk argTp : Type@{entree_u} := LRTArgF (LRTClos stk) argTp.
+
+Fixpoint LRTArgMax stk argTp
+  : LRTArg stk argTp -> { lvl & LRTArgLvl stk argTp lvl } :=
+  match argTp return LRTArg stk argTp -> { lvl & LRTArgLvl stk argTp lvl } with
+  | LRT_SpecM R => fun clos => clos
+  | LRT_FunDep A B => fun clos => clos
+  | LRT_Fun A B => fun clos => clos
+  | LRT_Unit => fun u => existT _ 0 u
+  | LRT_BinOp F A B =>
+      fun x =>
+        finBinMax (LRTArgLvl stk A) (LRTArgLvl stk B)
+          (LRTArgLvlIncr stk A) (LRTArgLvlIncr stk B)
+          (finBinFmap _ _ _ _ (LRTArgMax stk A) (LRTArgMax stk B) x)
+  | LRT_Sigma A B =>
+      fun p =>
+        existT _ (projT1 (LRTArgMax stk (B (projT1 p)) (projT2 p)))
+          (existT _ (projT1 p) (projT2 (LRTArgMax stk (B (projT1 p)) (projT2 p))))
+  end.
+
+Definition LRTArgs stk n lrt : Type@{entree_u} := LRTArgsF (LRTClos stk) n lrt.
+
+Fixpoint LRTArgsMax stk n lrt : LRTArgs stk n lrt ->
+                                { lvl & LRTArgsLvl stk n lrt lvl } :=
+  match n return LRTArgs stk n lrt -> { lvl & LRTArgsLvl stk n lrt lvl } with
+  | 0 => fun u => existT _ 0 u
+  | S n' =>
+      match lrt return LRTArgs stk (S n') lrt ->
+                       { lvl & LRTArgsLvl stk (S n') lrt lvl } with
+      | LRT_SpecM R => fun bot => match bot with end
+      | LRT_FunDep A B =>
+          fun p =>
+            existT
+              (fun lvl => LRTArgsLvl stk (S n') (LRT_FunDep A B) lvl)
+              (projT1 (LRTArgsMax stk n' (B (projT1 p)) (projT2 p)))
+              (existT
+                 _
+                 (projT1 p)
+                 (projT2 (LRTArgsMax stk n' (B (projT1 p)) (projT2 p))))
+      | LRT_Fun A B =>
+          fun p =>
+            levelCombine
+              (LRTArgLvl stk A) (LRTArgsLvl stk n' B)
+              (LRTArgsLvl stk (S n') (LRT_Fun A B))
+              (LRTArgLvlIncr stk A) (LRTArgsLvlIncr stk n' B)
+              (fun n a b => (a, b))
+              (LRTArgMax stk A (fst p)) (LRTArgsMax stk n' B (snd p))
+      | LRT_Unit => fun bot => match bot with end
+      | LRT_BinOp F A B => fun bot => match bot with end
+      | LRT_Sigma A B => fun bot => match bot with end
+      end
+  end.
+
+Definition LRTArgsOut stk n lrt : LRTArgs stk n lrt -> LetRecType :=
+  LRTArgsFOut (LRTClos stk) n lrt.
+
+Definition applyLRTClos stk lrt (clos : LRTClos stk lrt) n (args:LRTArgs stk n lrt)
+  : LRTClos stk (LRTArgsOut stk n lrt args) :=
+  levelIncr 
+
+  existT
+    _ (S (projT1 clos))
+    (Build_LRTClosF
+       (LRTClosAndRet stk (projT1 clos))
+       _
+       1
+       (a, tt)
+    ).
+
+
 
 (* Compute a dependent tuple type of all the inputs of a LetRecType, i.e.,
    return the type { x:A & { y:B & ... { z:C & unit } ...}} from a LetRecType
