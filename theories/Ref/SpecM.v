@@ -16,8 +16,13 @@ From EnTree Require Import
      Ref.MRecSpec
 .
 From Coq Require Import
-     Strings.String
-     Lists.List
+  Arith.Arith
+  Strings.String
+  Lists.List
+  Logic.Eqdep_dec
+  Logic.EqdepFacts
+  Eqdep EqdepFacts
+  Morphisms
 .
 
 From Paco Require Import paco.
@@ -26,6 +31,7 @@ Local Open Scope entree_scope.
 Local Open Scope list_scope.
 
 Import Monads.
+Import ProperNotations.
 
 
 (* Examples of higher-order functions we want to write *)
@@ -73,80 +79,317 @@ Global Instance EncodingType_EvType (ET:EvType) : EncodingType ET :=
   evRetType ET.
 
 
-(** Finite binary functors **)
+(** Utilities for nat-indexed types, i.e., types indexed by "levels" **)
 
-(* A finite binary functor is a functor that intuitively contains finitely many
-elements of the types in its arguments *)
-Class FinBinFunctor (F : Type@{entree_u} -> Type@{entree_u} -> Type@{entree_u}) :=
-  { finBinFmap : forall A B C D, (A -> B) -> (C -> D) -> F A C -> F B D;
-    finBinMax : forall (A B : nat -> Type@{entree_u}),
-      (forall n, A n -> A (S n)) -> (forall n, B n -> B (S n)) ->
-      F ({ n:nat & A n}) ({ n:nat & B n}) ->
-      { n & F (A n) (B n) } }.
-
-(* The constant functor is a finite binary functor *)
-#[global]
-Instance Const_FinBinFunctor T : FinBinFunctor (fun _ _ => T) :=
-  {|
-    finBinFmap := fun _ _ _ _ f g (t:T) => t;
-    finBinMax := fun A B incA incB (t:T) => existT _ 0 t
-  |}.
-
-(* Finite binary functors compose *)
-#[global]
-Instance Compose_FinBinFunctor F G H
-  `{FinBinFunctor F} `{FinBinFunctor G} `{FinBinFunctor H}
-  : FinBinFunctor (fun A B => F (G A B) (H A B)) :=
-  {|
-    finBinFmap := fun A B C D f g (x:F (G A C) (H A C)) =>
-                    finBinFmap (G A C) (G B D) (H A C) (H B D)
-                               (finBinFmap A B C D f g)
-                               (finBinFmap A B C D f g) x;
-    finBinMax :=
-      fun A B incA incB x =>
-        finBinMax
-          (F:=F)
-          (fun n => G (A n) (B n)) (fun n => H (A n) (B n))
-          (fun n =>
-             finBinFmap (F:=G) (A n) (A (S n)) (B n) (B (S n)) (incA n) (incB n))
-          (fun n =>
-             finBinFmap (F:=H) (A n) (A (S n)) (B n) (B (S n)) (incA n) (incB n))
-          (finBinFmap
-             (F:=F)
-             (G { n & A n} { n & B n}) { n & G (A n) (B n) }
-             (H { n & A n} { n & B n}) { n & H (A n) (B n) }
-             (finBinMax A B incA incB)
-             (finBinMax A B incA incB)
-             x)
-  |}.
-
-Fixpoint levelAdd (A : nat -> Type@{entree_u}) (incA : forall n, A n -> A (S n))
-  n m (a : A n) : A (m + n) :=
-  match m return A (m + n) with
+(* Apply a level-incrementing function to increment from level 0 *)
+Fixpoint levelIncFrom0 (A : nat -> Type@{entree_u}) (incA : forall n, A n -> A (S n))
+  n (a : A 0) : A n :=
+  match n with
   | 0 => a
-  | S m' => incA (m' + n) (levelAdd A incA n m' a)
+  | S n' => incA n' (levelIncFrom0 A incA n' a)
   end.
 
+(* Apply a level-incrementing function multiple times, adding on the left *)
+Fixpoint levelAddL (A : nat -> Type@{entree_u}) (incA : forall n, A n -> A (S n))
+  n m (a : A m) : A (n + m) :=
+  match n return A (n + m) with
+  | 0 => a
+  | S n' => incA (n' + m) (levelAddL A incA n' m a)
+  end.
+
+(* Apply a level-incrementing function multiple times, adding on the right *)
+Fixpoint levelAddR n :
+  forall (A : nat -> Type@{entree_u}) (incA : forall n, A n -> A (S n)) m,
+    A n -> A (n + m) :=
+  match n return forall A incA m, A n -> A (n + m) with
+  | 0 => fun A incA m a => levelIncFrom0 A incA m a
+  | S n' =>
+      fun A incA m a =>
+        levelAddR n' (fun lvl => A (S lvl)) (fun lvl => incA (S lvl)) m a
+  end.
+
+(* Lift the level m of a type to the level max n m with a new level n on the left *)
+Fixpoint levelMaxL n m :
+  forall (A : nat -> Type@{entree_u}) (incA : forall n, A n -> A (S n)),
+    A m -> A (max n m) :=
+  match n return forall A incA, A m -> A (max n m) with
+  | 0 => fun _ _ a => a
+  | S n' =>
+      match m return forall A incA, A m -> A (max (S n') m) with
+      | 0 => fun A incA a => levelIncFrom0 A incA (S n') a
+      | S m' =>
+          fun A incA a =>
+            levelMaxL n' m' (fun lvl => A (S lvl)) (fun lvl => incA (S lvl)) a
+      end
+  end.
+
+(* Lift the level n of a type to the level max n m with a new level m on the right *)
+Fixpoint levelMaxR n m :
+  forall (A : nat -> Type@{entree_u}) (incA : forall n, A n -> A (S n)),
+    A n -> A (max n m) :=
+  match n return forall A incA, A n -> A (max n m) with
+  | 0 => fun A incA a => levelIncFrom0 A incA m a
+  | S n' =>
+      match m return forall A incA, A (S n') -> A (max (S n') m) with
+      | 0 => fun _ _ a => a
+      | S m' =>
+          fun A incA a =>
+            levelMaxR n' m' (fun lvl => A (S lvl)) (fun lvl => incA (S lvl)) a
+      end
+  end.
+
+Lemma elimLevelIncFrom0 A incA n B (f : forall n, A n -> B) :
+  (forall n a, f n a = f (S n) (incA n a)) ->
+  forall a, f n (levelIncFrom0 A incA n a) = f 0 a.
+Proof.
+  intros; induction n.
+  - reflexivity.
+  - simpl. rewrite <- H. apply IHn.
+Qed.
+
+Lemma elimLevelMaxL n m A incA B (f : forall n, A n -> B) :
+  (forall n a, f n a = f (S n) (incA n a)) ->
+  forall a, f (max n m) (levelMaxL n m A incA a) = f m a.
+Proof.
+  revert m A incA B f; induction n; intros; [ | destruct m ].
+  - reflexivity.
+  - apply elimLevelIncFrom0. assumption.
+  - apply (IHn m (fun lvl : nat => A (S lvl)) (fun lvl : nat => incA (S lvl))
+             B (fun n => f (S n))).
+    intros. apply H.
+Qed.
+
+Lemma elimLevelMaxR n m A incA B (f : forall n, A n -> B) :
+  (forall n a, f n a = f (S n) (incA n a)) ->
+  forall a, f (max n m) (levelMaxR n m A incA a) = f n a.
+Proof.
+  revert m A incA B f; induction n; intros; [ | destruct m ].
+  - apply elimLevelIncFrom0. assumption.
+  - reflexivity.
+  - apply (IHn m (fun lvl : nat => A (S lvl)) (fun lvl : nat => incA (S lvl))
+             B (fun n => f (S n))).
+    intros. apply H.
+Qed.
+
+(* Lift the level of a type to a level that is at least as big *)
 Program Definition levelLift A incA n m (l: n <= m) (a:A n) : A m :=
-  eq_rect _ A (levelAdd A incA n (m - n) a) _ _.
+  eq_rect _ A (levelAddL A incA (m - n) n a) _ _.
 Next Obligation.
-  rewrite PeanoNat.Nat.add_comm. apply Minus.le_plus_minus_r. assumption.
+  rewrite Nat.add_comm. apply le_plus_minus_r. assumption.
 Defined.
 
+(* Map a level-polymorphic function over an object at a given level *)
+Definition levelMap A B (f : forall n:nat, A n -> B n) (a: { n & A n })
+  : { n & B n } :=
+  existT B (projT1 a) (f (projT1 a) (projT2 a)).
+
+(* Apply a level-polymorphic function to combine to level objects, incrementing
+their levels if necessary *)
 Definition levelCombine (A B C : nat -> Type@{entree_u}) incA incB
   (f : forall n, A n -> B n -> C n) (a : { n & A n}) (b : { n & B n})
   : { n & C n } :=
   existT C
     (max (projT1 a) (projT1 b))
     (f (max (projT1 a) (projT1 b))
-       (levelLift A incA (projT1 a) (max (projT1 a) (projT1 b))
-          (PeanoNat.Nat.le_max_l (projT1 a) (projT1 b)) (projT2 a))
-       (levelLift B incB (projT1 b) (max (projT1 a) (projT1 b))
-          (PeanoNat.Nat.le_max_r (projT1 a) (projT1 b)) (projT2 b))).
+       (levelMaxR (projT1 a) (projT1 b) A incA (projT2 a))
+       (levelMaxL (projT1 a) (projT1 b) B incB (projT2 b))).
 
-Definition levelIncr (A : nat -> Type@{entree_u}) (a : { n & A (S n) }) :
-  { n & A n } :=
+(* Move a successor from the type functor to the level argument *)
+Definition levelIncr (A : nat -> Type@{entree_u}) (a : { n & A (S n) })
+  : { n & A n } :=
   existT A (S (projT1 a)) (projT2 a).
+
+(* Ensure the level of an object is at least some given lvl by mapping the
+object to the supremum of lvl and its current level *)
+Definition levelSup A incA lvl (a : { n & A n }) : { n & A n } :=
+  existT A (max (projT1 a) lvl)
+    (levelMaxR (projT1 a) lvl A incA (projT2 a)).
+
+(* An object whose level has been explicitly lifted to n *)
+Inductive Lifted (A : nat -> Type@{entree_u}) lvl : Type@{entree_u} :=
+| MkLifted lvl' (le : lvl' <= lvl) (a : A lvl').
+
+Definition mkLifted (A : nat -> Type@{entree_u}) lvl (a:A lvl) : Lifted A lvl :=
+  MkLifted A lvl lvl (le_n lvl) a.
+
+(* Inject from { n & A n } into a lifted type *)
+Definition injLifted (A : nat -> Type@{entree_u}) (a : { n & A n })
+  : Lifted A (projT1 a) :=
+  mkLifted A (projT1 a) (projT2 a).
+
+(* Increment the level of a Lifted object *)
+Definition incLifted A lvl (l: Lifted A lvl) : Lifted A (S lvl) :=
+  match l with
+  | MkLifted _ _ lvl' le a => MkLifted A (S lvl) lvl' (le_S lvl' lvl le) a
+  end.
+
+(* Lift the level of a Lifted object *)
+Definition liftLifted A lvl lvl' (leq : lvl <= lvl') (l: Lifted A lvl)
+  : Lifted A lvl' :=
+  match l with
+  | MkLifted _ _ lvl'' leq' a =>
+      MkLifted A lvl' lvl'' (le_trans _ _ _ leq' leq) a
+  end.
+
+(* Map a Lifted object back to an object with a level *)
+Definition elimLifted A lvl (l: Lifted A lvl) : { n & A n } :=
+  match l with
+  | MkLifted _ _ lvl' le a => existT A lvl' a
+  end.
+
+(* Incrementing the level of a Lifted does not change what it eliminates to *)
+Definition elimIncLiftedEq A lvl l :
+  elimLifted A (S lvl) (incLifted A lvl l) = elimLifted A lvl l :=
+  match l return elimLifted A (S lvl) (incLifted A lvl l) = elimLifted A lvl l with
+  | MkLifted _ _ lvl' le a => eq_refl (existT A lvl' a)
+  end.
+
+(* Make a Lifted with an existentially quantified level from an { n & A n } *)
+Definition mkExLifted (A : nat -> Type@{entree_u}) (a : { n & A n })
+  : { n & Lifted A n } :=
+  existT (Lifted A) (projT1 a) (mkLifted A (projT1 a) (projT2 a)).
+
+(* Combine two Lifted with existentially quantified levels *)
+Definition exLiftedCombine A B C
+  (f : forall n, Lifted A n -> Lifted B n -> C n)
+  (a : { n & Lifted A n}) (b : { n & Lifted B n})
+  : { n & C n } :=
+  existT C
+    (max (projT1 a) (projT1 b))
+    (f (max (projT1 a) (projT1 b))
+       (liftLifted A (projT1 a) (max (projT1 a) (projT1 b))
+          (Nat.le_max_l (projT1 a) (projT1 b))
+          (projT2 a))
+       (liftLifted B (projT1 b) (max (projT1 a) (projT1 b))
+          (Nat.le_max_r (projT1 a) (projT1 b))
+          (projT2 b))).
+
+
+(** Binary functors that preserve colimits **)
+
+(* The class of binary functors that preserve countable colimits, i.e., such
+that F A B is a colimit of countably many types whenever A and B are both
+colimits of countably many types. Since the type { n & A n } is always a colimit
+and colimits are unique up to isomorphism, this is equivalent to saying that F
+of two types of this form is isomorphic to a type of this form. We call the
+morphism to this colimit type "fmapMax2" because the first projection
+intuitively gives the maximum level contained in the object. *)
+Class ColimFunctor2 (F : Type@{entree_u} -> Type@{entree_u} -> Type@{entree_u}) :=
+  { fmap2 : forall A1 A2 B1 B2, (A1 -> A2) -> (B1 -> B2) -> F A1 B1 -> F A2 B2;
+    fmapMax2 : forall (A B : nat -> Type@{entree_u}),
+      (forall n, A n -> A (S n)) -> (forall n, B n -> B (S n)) ->
+      F ({ n:nat & A n}) ({ n:nat & B n}) ->
+      { n & F (A n) (B n) };
+    fmap2Proper : forall A1 A2 B1 B2,
+      Proper ((eq ==> eq) ==> (eq ==> eq) ==> eq ==> eq) (fmap2 A1 A2 B1 B2);
+    fmap2Id : forall A B fab, fmap2 A A B B (fun x => x) (fun x => x) fab = fab;
+    fmap2Comp : forall A1 A2 A3 B1 B2 B3 f1 f2 g1 g2 fab,
+      fmap2 A2 A3 B2 B3 f2 g2 (fmap2 A1 A2 B1 B2 f1 g1 fab) =
+        fmap2 A1 A3 B1 B3 (fun x => f2 (f1 x)) (fun x => g2 (g1 x)) fab;
+    fmapMax2Eq :
+    forall A B C D incA incB (f: forall n, A n -> C) (g: forall n, B n -> D) fab,
+      (forall n a, f n a = f (S n) (incA n a)) ->
+      (forall n b, g n b = g (S n) (incB n b)) ->
+      fmap2
+        (A (projT1 (fmapMax2 A B incA incB fab))) C
+        (B (projT1 (fmapMax2 A B incA incB fab))) D
+        (f (projT1 (fmapMax2 A B incA incB fab)))
+        (g (projT1 (fmapMax2 A B incA incB fab)))
+        (projT2 (fmapMax2 A B incA incB fab))
+      =
+        fmap2 { n & A n } C { n & B n } D
+          (fun a => f (projT1 a) (projT2 a))
+          (fun b => g (projT1 b) (projT2 b))
+          fab;
+  }.
+
+(* The constant functor preserves colimits *)
+#[global] Program Instance Const_ColimFunctor2 T : ColimFunctor2 (fun _ _ => T) :=
+  {|
+    fmap2 := fun _ _ _ _ f g (t:T) => t;
+    fmapMax2 := fun A B _ _ (t:T) => existT _ 0 t
+  |}.
+Next Obligation.
+  repeat intro. assumption.
+Defined.
+
+
+(* The pair functor preserves colimits *) Print Nat.max.
+#[global]
+Program Instance Pair_ColimFunctor2 : ColimFunctor2 (fun A B => prod A B) :=
+  {|
+    fmap2 := fun _ _ _ _ f g p => (f (fst p), g (snd p));
+    fmapMax2 :=
+      fun A B incA incB p =>
+        levelCombine _ _ _ incA incB (fun _ a b => (a, b)) (fst p) (snd p);
+  |}.
+Next Obligation.
+  repeat intro. f_equal.
+  - apply H; f_equal; assumption.
+  - apply H0; f_equal; assumption.
+Defined.
+Next Obligation.
+  simpl. f_equal; [ apply elimLevelMaxR | apply elimLevelMaxL ]; assumption.
+Defined.
+
+#[global]
+Program Instance Compose_ColimFunctor2 F G H
+  `{ColimFunctor2 F} `{ColimFunctor2 G} `{ColimFunctor2 H}
+  : ColimFunctor2 (fun A B => F (G A B) (H A B)) :=
+  {|
+    fmap2 := fun A B C D f g (x:F (G A C) (H A C)) =>
+                    fmap2 (G A C) (G B D) (H A C) (H B D)
+                               (fmap2 A B C D f g)
+                               (fmap2 A B C D f g) x;
+    fmapMax2 :=
+      fun A B incA incB x =>
+        fmapMax2
+          (F:=F)
+          (fun n => G (A n) (B n))
+          (fun n => H (A n) (B n))
+          (fun n => fmap2 (A n) (A (S n)) (B n) (B (S n)) (incA n) (incB n))
+          (fun n => fmap2 (A n) (A (S n)) (B n) (B (S n)) (incA n) (incB n))
+          (fmap2
+             (F:=F)
+             (G { n & A n} { n & B n}) { n & G (A n) (B n) }
+             (H { n & A n} { n & B n}) { n & H (A n) (B n) }
+             (fmapMax2 A B incA incB)
+             (fmapMax2 A B incA incB)
+             x)
+  |}.
+Next Obligation.
+  repeat intro.
+  apply fmap2Proper; [ apply fmap2Proper | apply fmap2Proper | ]; assumption.
+Defined.
+Next Obligation.
+  etransitivity; [ | apply fmap2Id ].
+  apply fmap2Proper; [ | | reflexivity ];
+    repeat intro; subst x; apply fmap2Id.
+Defined.
+Next Obligation.
+  repeat rewrite fmap2Comp.
+  apply fmap2Proper; [ | | reflexivity ];
+    repeat intro; subst x; apply fmap2Comp.
+Defined.
+Next Obligation.
+  etransitivity;
+    [ apply
+        (fmapMax2Eq (F:=F) _ _ _ _
+           (fun n => fmap2 (F:=G) (A n) (A (S n)) (B n) (B (S n)) (incA n) (incB n))
+           (fun n => fmap2 (F:=H) (A n) (A (S n)) (B n) (B (S n)) (incA n) (incB n))
+           (fun n => fmap2 (F:=G) (A n) C (B n) D (f n) (g n))
+           (fun n => fmap2 (F:=H) (A n) C (B n) D (f n) (g n)))
+    | ].
+  - intros. rewrite fmap2Comp.
+    apply fmap2Proper; [ | | reflexivity ];
+      repeat intro; subst x; [ apply H3 | apply H4 ].
+  - intros. rewrite fmap2Comp.
+    apply fmap2Proper; [ | | reflexivity ];
+      repeat intro; subst x; [ apply H3 | apply H4 ].
+  - rewrite fmap2Comp.
+    apply fmap2Proper; [ | | reflexivity ];
+      repeat intro; subst x; apply fmapMax2Eq; assumption.
+Defined.
 
 
 (** An inductive description of recursive function types and their arguments **)
@@ -159,7 +402,7 @@ Inductive LetRecType : Type@{entree_u + 1} :=
 | LRT_FunClos (A : LetRecType) (rest : LetRecType) : LetRecType
 (* These constructors represent the argument types used in functions *)
 | LRT_Unit : LetRecType
-| LRT_BinOp F `{FinBinFunctor F} (A B : LetRecType) : LetRecType
+| LRT_BinOp F `{ColimFunctor2 F} (A B : LetRecType) : LetRecType
 | LRT_Sigma (A : Type@{entree_u}) (B : A -> LetRecType) : LetRecType
 .
 
@@ -302,7 +545,7 @@ Fixpoint LRTArgLvlIncr stk argTp lvl :
   | LRT_FunClos A B => LRTClosLvlIncr stk (LRT_FunClos A B) lvl
   | LRT_Unit => fun u => u
   | LRT_BinOp F A B =>
-      finBinFmap _ _ _ _ (LRTArgLvlIncr stk A lvl) (LRTArgLvlIncr stk B lvl)
+      fmap2 _ _ _ _ (LRTArgLvlIncr stk A lvl) (LRTArgLvlIncr stk B lvl)
   | LRT_Sigma A B =>
       fun p => existT _ (projT1 p) (LRTArgLvlIncr stk (B (projT1 p)) lvl (projT2 p))
   end.
@@ -356,9 +599,9 @@ Fixpoint LRTArgMax stk argTp
   | LRT_Unit => fun u => existT _ 0 u
   | LRT_BinOp F A B =>
       fun x =>
-        finBinMax (LRTArgLvl stk A) (LRTArgLvl stk B)
+        fmapMax2 (LRTArgLvl stk A) (LRTArgLvl stk B)
           (LRTArgLvlIncr stk A) (LRTArgLvlIncr stk B)
-          (finBinFmap _ _ _ _ (LRTArgMax stk A) (LRTArgMax stk B) x)
+          (fmap2 _ _ _ _ (LRTArgMax stk A) (LRTArgMax stk B) x)
   | LRT_Sigma A B =>
       fun p =>
         existT _ (projT1 (LRTArgMax stk (B (projT1 p)) (projT2 p)))
@@ -439,11 +682,10 @@ Definition applyLRTClosArgs stk lrt n (clos: LRTClos stk lrt)
        (LRTClosArgsMax stk n lrt dargs cargs)).
 
 
-
-(* Compute a dependent tuple type of all the inputs of a LetRecType, i.e.,
-   return the type { x:A & { y:B & ... { z:C & unit } ...}} from a LetRecType
-   that represents forall a b c..., SpecM ... (R a b c ...). A LetRectype that
-   is not a function type just becomes the void type. *)
+(* A dependent tuple type of all the inputs of a LetRecType, i.e., return the
+   type { x:A & { y:B & ... { z:C & unit } ...}} from a LetRecType that
+   represents forall a b c..., SpecM ... (R a b c ...). A LetRectype that is not
+   a function type just becomes the void type. *)
 Fixpoint LRTInput stack lrt : Type@{entree_u} :=
   match lrt with
   | LRT_SpecM _ => unit
@@ -452,9 +694,9 @@ Fixpoint LRTInput stack lrt : Type@{entree_u} :=
   | _ => void
   end.
 
-(* Compute the output type (R a b c ...) from a LetRecType that represents
-   forall a b c..., SpecM ... (R a b c ...) and a dependent tuple of arguments
-   to a function of that type *)
+(* The output type (R a b c ...) of a LetRecType that represents the function
+   type forall a b c..., SpecM ... (R a b c ...) given a dependent tuple of
+   arguments to a function of that type *)
 Fixpoint LRTOutput stack lrt : EncodingType (LRTInput stack lrt) :=
   match lrt with
   | LRT_SpecM R => fun _ => LRTArg stack R
