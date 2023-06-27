@@ -278,7 +278,7 @@ Class ColimFunctor2 (F : Type@{entree_u} -> Type@{entree_u} -> Type@{entree_u}) 
   { fmap2 : forall A1 A2 B1 B2, (A1 -> A2) -> (B1 -> B2) -> F A1 B1 -> F A2 B2;
     fmapMax2 : forall (A B : nat -> Type@{entree_u}),
       (forall n, A n -> A (S n)) -> (forall n, B n -> B (S n)) ->
-      F ({ n:nat & A n}) ({ n:nat & B n}) ->
+      F { n:nat & A n} { n:nat & B n} ->
       { n & F (A n) (B n) };
     fmap2Proper : forall A1 A2 B1 B2,
       Proper ((eq ==> eq) ==> (eq ==> eq) ==> eq ==> eq) (fmap2 A1 A2 B1 B2);
@@ -302,6 +302,7 @@ Class ColimFunctor2 (F : Type@{entree_u} -> Type@{entree_u} -> Type@{entree_u}) 
           (fun b => g (projT1 b) (projT2 b))
           fab;
   }.
+
 
 (* The constant functor preserves colimits *)
 #[global] Program Instance Const_ColimFunctor2 T : ColimFunctor2 (fun _ _ => T) :=
@@ -422,6 +423,10 @@ Definition default_lrt : LetRecType :=
 Definition nthLRT (stk : FunStack) n : LetRecType :=
   nth_default' default_lrt stk n.
 
+Definition nthClos (Closs : plist (LetRecType -> Type@{entree_u})) n
+  : LetRecType -> Type@{entree_u} :=
+  nth_default' (A:=LetRecType -> Type@{entree_u}) (fun _ => void) Closs n.
+
 (* An argument to a recursive function call, which is a decoding of a LetRecType
 to its corresponding Coq type except that functions are interpreted using the
 supplied type functor *)
@@ -450,16 +455,18 @@ Fixpoint LRTDepArgs n lrt : Type@{entree_u} :=
       end
   end.
 
-Fixpoint LRTClosArgsF Clos n lrt : LRTDepArgs n lrt -> Type@{entree_u} :=
+Fixpoint LRTClosArgsF (Arg: LetRecType -> Type@{entree_u}) n lrt
+  : LRTDepArgs n lrt -> Type@{entree_u} :=
   match n with
   | 0 => fun _ => unit
   | S n' =>
       match lrt return LRTDepArgs (S n') lrt -> Type with
       | LRT_SpecM R => fun bot => match bot with end
       | LRT_FunDep A B =>
-          fun args => LRTClosArgsF Clos n' (B (projT1 args)) (projT2 args)
+          fun args => LRTClosArgsF Arg n' (B (projT1 args)) (projT2 args)
       | LRT_FunClos A B =>
-          fun args => prod (LRTArgF Clos A) (LRTClosArgsF Clos n' B args)
+          fun args =>
+            prod (Arg A) (LRTClosArgsF Arg n' B args)
       | LRT_Unit => fun bot => match bot with end
       | LRT_BinOp F A B => fun bot => match bot with end
       | LRT_Sigma A B => fun bot => match bot with end
@@ -482,80 +489,43 @@ Fixpoint LRTDepArgsOut n lrt : LRTDepArgs n lrt -> LetRecType :=
       end
   end.
 
-Definition LRTArgsF Clos n lrt : Type@{entree_u} :=
-  { dep_args:LRTDepArgs n lrt & LRTClosArgsF Clos n lrt dep_args }.
+Definition LRTArgsF Arg n lrt : Type@{entree_u} :=
+  { dep_args:LRTDepArgs n lrt & LRTClosArgsF Arg n lrt dep_args }.
 
-Definition LRTArgsFOut Clos n lrt : LRTArgsF Clos n lrt -> LetRecType :=
+Definition LRTArgsFOut Arg n lrt : LRTArgsF Arg n lrt -> LetRecType :=
   fun args => LRTDepArgsOut n lrt (projT1 args).
 
+Definition LiftedLRTArgF Closs argTp :=
+  { lft & LRTArgF (nthClos Closs lft) argTp }.
 
-(* A "closure type" is a type of a closure plus a map to the LetRecType of a
-closure of that type *)
-Definition ClosType := { T : Type@{entree_u} & T -> LetRecType }.
-
-(* A closure of a LetRecType for a given ClosType *)
-Definition ClosOfType (CT : ClosType) lrt : Type@{entree_u} :=
-  { clos:projT1 CT & projT2 CT clos = lrt }.
-
-Record LRTClosF (CT : ClosType) : Type@{entree_u} :=
-  { lrtClosClos : projT1 CT;
+(* NOTE: we use LiftedLRTArgF here so that we can lift closure arguments in a
+way that isn't defined recursively with lifting closures themselves *)
+Record LRTClosF stk (Closs : plist (LetRecType -> Type@{entree_u})) lrt
+  : Type@{entree_u} :=
+  { lrtClosNum : nat;
     lrtClosNumArgs : nat;
-    lrtClosDepArgs  : LRTDepArgs lrtClosNumArgs (projT2 CT lrtClosClos);
-    lrtClosArgs : LRTClosArgsF (ClosOfType CT) lrtClosNumArgs
-                    (projT2 CT lrtClosClos) lrtClosDepArgs }.
+    lrtClosDepArgs  : LRTDepArgs lrtClosNumArgs (nthLRT stk lrtClosNum);
+    lrtClosArgs : LRTClosArgsF (LiftedLRTArgF Closs) lrtClosNumArgs
+                    (nthLRT stk lrtClosNum) lrtClosDepArgs;
+    lrtClosLRTEq : LRTDepArgsOut lrtClosNumArgs _ lrtClosDepArgs = lrt }.
 
-Definition LRTClosFType CT (clos : LRTClosF CT) : LetRecType :=
-  LRTDepArgsOut
-    (lrtClosNumArgs CT clos)
-    (projT2 CT (lrtClosClos CT clos))
-    (lrtClosDepArgs CT clos).
-
-Fixpoint LRTClosAndRet stk lvl : ClosType :=
+Fixpoint LRTClosTypes stk lvl : plist (LetRecType -> Type@{entree_u}) :=
   match lvl with
-  | 0 => existT (fun T => T -> LetRecType) nat (nthLRT stk)
+  | 0 => pnil
   | S lvl' =>
-      existT
-        (fun T => T -> LetRecType)
-        (LRTClosF (LRTClosAndRet stk lvl'))
-        (LRTClosFType (LRTClosAndRet stk lvl'))
+      pcons (LRTClosF stk (LRTClosTypes stk lvl')) (LRTClosTypes stk lvl')
   end.
 
-Definition LRTClosLvl stk lrt lvl : Type@{entree_u} :=
-  ClosOfType (LRTClosAndRet stk lvl) lrt.
+Definition LiftedLRTArgLvl stk argTp lvl : Type@{entree_u} :=
+  LiftedLRTArgF (LRTClosTypes stk lvl) argTp.
 
-Definition LRTClosLvlIncr stk lrt lvl (clos:LRTClosLvl stk lrt lvl)
-  : LRTClosLvl stk lrt (S lvl) :=
-  existT
-    _
-    (Build_LRTClosF (LRTClosAndRet stk lvl) (projT1 clos) 0 tt tt)
-    (projT2 clos).
-
-Definition LRTClosLvlLift stk lrt lvl1 lvl2 (l:lvl1 <= lvl2)
-  : LRTClosLvl stk lrt lvl1 -> LRTClosLvl stk lrt lvl2 :=
-  levelLift (LRTClosLvl stk lrt) (LRTClosLvlIncr stk lrt) lvl1 lvl2 l.
-
-Definition LRTArgLvl stk argTp lvl :=
-  LRTArgF (fun lrt => LRTClosLvl stk lrt lvl) argTp.
-
-Fixpoint LRTArgLvlIncr stk argTp lvl :
-  LRTArgLvl stk argTp lvl -> LRTArgLvl stk argTp (S lvl) :=
-  match argTp return LRTArgLvl stk argTp lvl -> LRTArgLvl stk argTp (S lvl) with
-  | LRT_SpecM R => LRTClosLvlIncr stk (LRT_SpecM R) lvl
-  | LRT_FunDep A B => LRTClosLvlIncr stk (LRT_FunDep A B) lvl
-  | LRT_FunClos A B => LRTClosLvlIncr stk (LRT_FunClos A B) lvl
-  | LRT_Unit => fun u => u
-  | LRT_BinOp F A B =>
-      fmap2 _ _ _ _ (LRTArgLvlIncr stk A lvl) (LRTArgLvlIncr stk B lvl)
-  | LRT_Sigma A B =>
-      fun p => existT _ (projT1 p) (LRTArgLvlIncr stk (B (projT1 p)) lvl (projT2 p))
-  end.
-
-Definition LRTArgLvlLift stk argTp lvl1 lvl2 (l: lvl1 <= lvl2)
-  : LRTArgLvl stk argTp lvl1 -> LRTArgLvl stk argTp lvl2 :=
-  levelLift (LRTArgLvl stk argTp) (LRTArgLvlIncr stk argTp) lvl1 lvl2 l.
+Definition LiftedLRTArgLvlInc stk argTp lvl
+  (arg : LiftedLRTArgLvl stk argTp lvl)
+  : LiftedLRTArgLvl stk argTp (S lvl) :=
+  existT _ (S (projT1 arg)) (projT2 arg).
 
 Definition LRTClosArgsLvl stk n lrt lvl dargs :=
-  LRTClosArgsF (fun lrt => LRTClosLvl stk lrt lvl) n lrt dargs.
+  LRTClosArgsF (fun argTp => LiftedLRTArgLvl stk argTp lvl) n lrt dargs.
 
 Fixpoint LRTClosArgsLvlIncr stk n lrt lvl :
   forall dargs, LRTClosArgsLvl stk n lrt lvl dargs ->
@@ -565,25 +535,65 @@ Fixpoint LRTClosArgsLvlIncr stk n lrt lvl :
   | 0 => fun _ u => u
   | S n' =>
       match lrt return forall dargs, LRTClosArgsLvl stk (S n') lrt lvl dargs ->
-                                     LRTClosArgsLvl stk (S n') lrt (S lvl) dargs with
+                                     LRTClosArgsLvl stk (S n') lrt (S lvl) dargs
+      with
       | LRT_SpecM R => fun bot => match bot with end
       | LRT_FunDep A B =>
           fun dargs cargs =>
             LRTClosArgsLvlIncr stk n' (B (projT1 dargs)) lvl (projT2 dargs) cargs
       | LRT_FunClos A B =>
-          fun dargs cargs => (LRTArgLvlIncr stk A lvl (fst cargs),
-                               LRTClosArgsLvlIncr stk n' B lvl dargs (snd cargs))
+          fun dargs cargs =>
+            (existT _ (S (projT1 (fst cargs))) (projT2 (fst cargs))
+              ,
+              LRTClosArgsLvlIncr stk n' B lvl dargs (snd cargs))
       | LRT_Unit => fun bot => match bot with end
       | LRT_BinOp F A B => fun bot => match bot with end
       | LRT_Sigma A B => fun bot => match bot with end
       end
   end.
 
-Definition LRTClosArgsLvlLift stk n lrt lvl1 lvl2 (l: lvl1 <= lvl2) dargs
-  : LRTClosArgsLvl stk n lrt lvl1 dargs -> LRTClosArgsLvl stk n lrt lvl2 dargs :=
-  levelLift (fun lvl => LRTClosArgsLvl stk n lrt lvl dargs)
-    (fun lvl => LRTClosArgsLvlIncr stk n lrt lvl dargs) lvl1 lvl2 l.
+Definition LRTClosLvl stk lrt lvl :=
+  LRTClosF stk (LRTClosTypes stk lvl) lrt.
 
+Definition LRTClosLvlIncr stk lrt lvl (clos : LRTClosLvl stk lrt lvl)
+  : LRTClosLvl stk lrt (S lvl) :=
+  {|
+    lrtClosNum := lrtClosNum _ _ _ clos;
+    lrtClosNumArgs := lrtClosNumArgs _ _ _ clos;
+    lrtClosDepArgs := lrtClosDepArgs _ _ _ clos;
+    lrtClosArgs := LRTClosArgsLvlIncr stk _ _ lvl _ (lrtClosArgs _ _ _ clos);
+    lrtClosLRTEq := lrtClosLRTEq _ _ _ clos;
+  |}.
+
+Definition LiftedLRTClosLvl stk lrt : nat -> Type@{entree_u} :=
+  Lifted (LRTClosLvl stk lrt).
+
+Definition LRTArgLvl stk argTp lvl : Type@{entree_u} :=
+  LRTArgF (fun lrt => LiftedLRTClosLvl stk lrt lvl) argTp.
+
+Fixpoint LRTArgLvlIncr stk argTp lvl :
+  LRTArgLvl stk argTp lvl -> LRTArgLvl stk argTp (S lvl) :=
+  match argTp return LRTArgLvl stk argTp lvl -> LRTArgLvl stk argTp (S lvl) with
+  | LRT_SpecM R => incLifted _ lvl
+  | LRT_FunDep A B => incLifted _ lvl
+  | LRT_FunClos A B => incLifted _ lvl
+  | LRT_Unit => fun u => u
+  | LRT_BinOp F A B =>
+      fmap2 _ _ _ _ (LRTArgLvlIncr stk A lvl) (LRTArgLvlIncr stk B lvl)
+  | LRT_Sigma A B =>
+      fun p => existT _ (projT1 p) (LRTArgLvlIncr stk (B (projT1 p)) lvl (projT2 p))
+  end.
+
+FIXME HERE: LiftedLRTArgLvl needs to have the same sort of lifted closures as
+LRTArgLvl!
+
+Definition mkLiftedLRTArgLvl stk argTp lvl (arg : LRTArgLvl stk argTp lvl)
+  : LiftedLRTArgLvl stk argTp lvl :=
+  existT _ 0 arg.
+
+
+Definition mkExLiftedLRTArgLvl stk argTp (arg : { lvl & LRTArgLvl stk argTp lvl })
+  : { 
 
 Definition LRTClos stk lrt : Type@{entree_u} :=
   { lvl & LRTClosLvl stk lrt lvl }.
@@ -593,9 +603,9 @@ Definition LRTArg stk argTp : Type@{entree_u} := LRTArgF (LRTClos stk) argTp.
 Fixpoint LRTArgMax stk argTp
   : LRTArg stk argTp -> { lvl & LRTArgLvl stk argTp lvl } :=
   match argTp return LRTArg stk argTp -> { lvl & LRTArgLvl stk argTp lvl } with
-  | LRT_SpecM R => fun clos => clos
-  | LRT_FunDep A B => fun clos => clos
-  | LRT_FunClos A B => fun clos => clos
+  | LRT_SpecM R => fun clos => mkExLifted _ clos
+  | LRT_FunDep A B => fun clos => mkExLifted _ clos
+  | LRT_FunClos A B => fun clos => mkExLifted _ clos
   | LRT_Unit => fun u => existT _ 0 u
   | LRT_BinOp F A B =>
       fun x =>
@@ -608,8 +618,60 @@ Fixpoint LRTArgMax stk argTp
           (existT _ (projT1 p) (projT2 (LRTArgMax stk (B (projT1 p)) (projT2 p))))
   end.
 
+Fixpoint LRTArgMaxInv stk argTp lvl :
+  LRTArgLvl stk argTp lvl -> LRTArg stk argTp :=
+  match argTp return LRTArgLvl stk argTp lvl -> LRTArg stk argTp with
+  | LRT_SpecM R => fun clos => elimLifted _ _ clos
+  | LRT_FunDep A B => fun clos => elimLifted _ _ clos
+  | LRT_FunClos A B => fun clos => elimLifted _ _ clos
+  | LRT_Unit => fun u => u
+  | LRT_BinOp F A B =>
+      fmap2
+        (LRTArgLvl stk A lvl) (LRTArg stk A) (LRTArgLvl stk B lvl) (LRTArg stk B)
+        (LRTArgMaxInv stk A lvl) (LRTArgMaxInv stk B lvl)
+  | LRT_Sigma A B =>
+      fun p =>
+        existT _ (projT1 p) (LRTArgMaxInv stk (B (projT1 p)) lvl (projT2 p))
+  end.
+
+Lemma LRTArgMaxInvInc stk argTp lvl (arg : LRTArgLvl stk argTp lvl) :
+  LRTArgMaxInv stk argTp lvl arg
+  = LRTArgMaxInv stk argTp (S lvl) (LRTArgLvlIncr stk argTp lvl arg).
+Proof.
+  revert arg; induction argTp; intros; simpl.
+  - symmetry; apply elimIncLiftedEq.
+  - symmetry; apply elimIncLiftedEq.
+  - symmetry; apply elimIncLiftedEq.
+  - reflexivity.
+  - rewrite fmap2Comp.
+    apply (fmap2Proper (F:=F)); [ | | reflexivity ];
+      repeat intro; subst x; [ apply IHargTp1 | apply IHargTp2 ].
+  - f_equal; apply H.
+Qed.
+
+Lemma LRTArgMaxInvEq stk argTp arg :
+  LRTArgMaxInv stk argTp (projT1 (LRTArgMax stk argTp arg))
+    (projT2 (LRTArgMax stk argTp arg))
+  = arg.
+Proof.
+  revert arg; induction argTp; intros; simpl.
+  - destruct arg; reflexivity.
+  - destruct arg; reflexivity.
+  - destruct arg; reflexivity.
+  - reflexivity.
+  - etransitivity; [ apply (fmapMax2Eq (F:=F)) | ].
+    + apply LRTArgMaxInvInc.
+    + apply LRTArgMaxInvInc.
+    + rewrite fmap2Comp.
+      etransitivity; [ | apply (fmap2Id (F:=F)) ].
+      apply (fmap2Proper (F:=F)); [ | | reflexivity ];
+        repeat intro; subst x; [ apply IHargTp1 | apply IHargTp2 ].
+  - destruct arg. simpl. rewrite H. reflexivity.
+Qed.
+
+
 Definition LRTClosArgs stk n lrt dargs : Type@{entree_u} :=
-  LRTClosArgsF (LRTClos stk) n lrt dargs.
+  LRTClosArgsF (LRTArgF (LRTClos stk)) n lrt dargs.
 
 Fixpoint LRTClosArgsMax stk n lrt :
   forall dargs, LRTClosArgs stk n lrt dargs ->
@@ -629,10 +691,10 @@ Fixpoint LRTClosArgsMax stk n lrt :
       | LRT_FunClos A B =>
           fun dargs cargs =>
             levelCombine
-              (LRTArgLvl stk A)
+              (LiftedLRTArgLvl stk A)
               (fun lvl => LRTClosArgsLvl stk n' B lvl dargs)
               (fun lvl => LRTClosArgsLvl stk (S n') (LRT_FunClos A B) lvl dargs)
-              (LRTArgLvlIncr stk A)
+              (LiftedLRTArgLvlInc stk A)
               (fun lvl => LRTClosArgsLvlIncr stk n' B lvl dargs)
               (fun n a b => (a, b))
               (LRTArgMax stk A (fst cargs))
@@ -643,43 +705,7 @@ Fixpoint LRTClosArgsMax stk n lrt :
       end
   end.
 
-Definition LRTArgs stk n lrt : Type@{entree_u} :=
-  LRTArgsF (LRTClos stk) n lrt.
 
-Definition LRTArgsOut stk n lrt : LRTArgs stk n lrt -> LetRecType :=
-  LRTArgsFOut (LRTClos stk) n lrt.
-
-Definition applyLRTClosF (CT:ClosType) lrt (clos: ClosOfType CT lrt) n :
-  forall dargs, LRTClosArgsF (ClosOfType CT) n lrt dargs ->
-                { clos' : LRTClosF CT &
-                            LRTClosFType CT clos' = LRTDepArgsOut n lrt dargs } :=
-  eq_rect (projT2 CT (projT1 clos))
-    (fun lrt' => forall dargs,
-         LRTClosArgsF (ClosOfType CT) n lrt' dargs ->
-         { clos' : LRTClosF CT &
-                     LRTClosFType CT clos' = LRTDepArgsOut n lrt' dargs })
-    (fun dargs cargs =>
-       existT _ (Build_LRTClosF CT (projT1 clos) n dargs cargs) (eq_refl _))
-    lrt (projT2 clos).
-
-Program Definition applyLRTClosArgsLvl stk lrt n lvl (clos: LRTClosLvl stk lrt lvl)
-  (dargs: LRTDepArgs n lrt) (cargs: LRTClosArgsLvl stk n lrt lvl dargs)
-  : LRTClosLvl stk (LRTDepArgsOut n lrt dargs) (S lvl) :=
-  applyLRTClosF (LRTClosAndRet stk lvl) lrt clos n dargs cargs.
-
-Definition applyLRTClosArgs stk lrt n (clos: LRTClos stk lrt)
-  (dargs: LRTDepArgs n lrt) (cargs: LRTClosArgs stk n lrt dargs)
-  : LRTClos stk (LRTDepArgsOut n lrt dargs) :=
-  levelIncr (LRTClosLvl stk (LRTDepArgsOut n lrt dargs))
-    (levelCombine
-       (LRTClosLvl stk lrt)
-       (fun lvl => LRTClosArgsLvl stk n lrt lvl dargs)
-       (fun lvl => LRTClosLvl stk (LRTDepArgsOut n lrt dargs) (S lvl))
-       (LRTClosLvlIncr stk lrt)
-       (fun lvl => LRTClosArgsLvlIncr stk n lrt lvl dargs)
-       (fun lvl clos' cargs' => applyLRTClosArgsLvl stk lrt n lvl clos' dargs cargs')
-       clos
-       (LRTClosArgsMax stk n lrt dargs cargs)).
 
 
 (* A dependent tuple type of all the inputs of a LetRecType, i.e., return the
