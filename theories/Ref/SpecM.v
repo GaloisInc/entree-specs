@@ -315,7 +315,7 @@ Next Obligation.
 Defined.
 
 
-(* The pair functor preserves colimits *) Print Nat.max.
+(* The pair functor preserves colimits *)
 #[global]
 Program Instance Pair_ColimFunctor2 : ColimFunctor2 (fun A B => prod A B) :=
   {|
@@ -1085,7 +1085,9 @@ Proof.
 Qed.
 
 
-(*
+(**
+ ** N-ary functions over LetRecTypes
+ **)
 
 (* Build the type forall a b c ..., F (a, (b, (c, ...))) for an arbitrary type
    function F over an LRTInput. A LetRecType that is not a function type turns
@@ -1141,8 +1143,11 @@ Fixpoint lrtApply stack lrt
   | _ =>
       fun _ _ v => match v with end
   end.
-*)
 
+
+(**
+ ** Calls to an arbitrary corecursive function in the stack
+ **)
 
 (* A recursive call to one of the functions in a FunStack, specified by a
 natural number n that picks a specific index in the FunStack along with a set of
@@ -1177,6 +1182,10 @@ Proof.
   simpl. rewrite LRTArgsToInputOut. apply castLRTOutput.
 Qed.
 
+
+(**
+ ** EncodingType and ReSum instances for defining SpecM
+ **)
 
 Global Instance EncodingType_StackCall stack : EncodingType (StackCall stack) :=
   StackCallRet stack.
@@ -1254,7 +1263,9 @@ Global Instance ReSumRet_Error_E_FunStack (E : EvType) (stack : FunStack) :
     end.
 
 
-(** Defining the SpecM monad **)
+(**
+ ** The SpecM monad
+ **)
 
 (* The SpecM monad is an entree spec over FunStackE events *)
 Definition SpecM (E:EvType) stack A : Type :=
@@ -1288,7 +1299,7 @@ Global Instance SpecM_Monad {E} Γ : Monad (SpecM E Γ) :=
     bind := fun A B m k => BindS m k;
   |}.
 
-Definition callLRTClos {E stk R} (clos: LRTClos stk (LRT_SpecM R))
+Definition CallS {E stk R} (clos: LRTClos stk (LRT_SpecM R))
   : SpecM E stk (LRTArg stk R) :=
   eq_rect
     (StackCallRet stk (LRTClosToCall stk R clos))
@@ -1298,13 +1309,9 @@ Definition callLRTClos {E stk R} (clos: LRTClos stk (LRT_SpecM R))
     (LRTClosToCallRet stk R clos).
 
 
-FIXME HERE NOW:
-- Use above to define CallS
-- Define lrtFunType, lrtProp, and lrtSatisfies
-- Prove that lrtSatisfies is preserved by application
-
-
-(** Defining MultiFixS **)
+(**
+ ** Defining MultiFixS
+ **)
 
 (* A monadic function whose type is described by the encoding lrt *)
 Definition SpecFun E stack lrt : Type@{entree_u} :=
@@ -1350,7 +1357,9 @@ Definition LetRecS E R stack (funs : StackTuple E stack stack) (body : SpecM E s
   resumEntree (interp_mrec_spec (applyStackTuple E stack funs) body).
 
 
-(** Stack Inclusions **)
+(**
+ ** Stack Inclusions
+ **)
 
 (* A stack inclusion is a mapping from the indices of one stack to those of
 another that preserves LetRecTypes. Note that this is not technically a relation
@@ -1496,96 +1505,31 @@ Next Obligation.
 Defined.
 
 
-(** Defining recursive calls in a stack-polymorphic way **)
+(**
+ ** Building closures in a stack-polymorphic way
+ **)
 
-(* An input for a call in a stack can only be to a call number that is in range *)
-Lemma LRTInput_in_bounds stk stk' n (args : LRTInput stk' (nthLRT stk n)) :
-  n < plength stk.
-Proof.
-  destruct (Compare_dec.le_lt_dec (plength stk) n); [ | assumption ].
-  unfold nthLRT in args; rewrite nth_default'_default in args;
-    [ destruct (projT1 args) | assumption ].
-Qed.
+Definition mkLRTClos stk1 stk2 (incl : stackIncl stk1 stk2) n
+  : LRTClos stk2 (nthLRT stk1 n) :=
+  existT _ 0
+         {|
+           lrtClosNum := applyIncl incl n;
+           lrtClosNumArgs := 0;
+           lrtClosDepArgs := LRTDepArgsNil _;
+           lrtClosClosArgs := LRTClosArgsFNil _ _;
+           lrtClosLRTEq := applyInclEq incl n;
+         |}.
 
-Definition castLRTInput stk lrt lrt' (e : lrt = lrt')
-  (args : LRTInput stk lrt) : LRTInput stk lrt' :=
-  eq_rect lrt (LRTInput stk) args lrt' e.
-
-Program Definition uncastLRTOutput stk lrt lrt' (e : lrt = lrt')
-  (args : LRTInput stk lrt)
-  (ret : LRTOutput stk lrt' (castLRTInput _ lrt lrt' e args)) :
-  LRTOutput stk lrt args := _.
-
-(* A StackCall in a polymorphic context (in the sense of PolySpecFun, below),
-where the call is into a function in stk1 but where stk1 has been extended to
-some arbitrary stk2 *)
-Inductive PolyStackCall stk1 stk2 : Type@{entree_u} :=
-| PolyStackCallOfArgs n (args : LRTInput stk2 (nthLRT stk1 n)).
-
-(* The return type for a PolyStackCall recursive call *)
-Definition PolyStackCallRet stk1 stk2
-  (call: PolyStackCall stk1 stk2) : Type@{entree_u} :=
-  match call with
-  | PolyStackCallOfArgs _ _ n args => LRTOutput stk2 (nthLRT stk1 n) args
-  end.
-
-(* Convert a PolyStackCall to the StackCall it is meant to be mapped to *)
-Definition mapPolyStackCall stk1 stk2 (incl : stackIncl stk1 stk2)
-  (call : PolyStackCall stk1 stk2) : StackCall stk2 :=
-  match call with
-  | PolyStackCallOfArgs _ _ n args =>
-      StackCallOfArgs stk2 (applyIncl incl n)
-        (castLRTInput stk2 _ _ (eq_sym (applyInclEq incl n)) args)
-  end.
-
-(* Convert a StackCallRet back to a PolyStackCallRet *)
-Definition unmapPolyStackCallRet stk1 stk2 (incl : stackIncl stk1 stk2)
-  (call : PolyStackCall stk1 stk2) :
-  StackCallRet _ (mapPolyStackCall _ _ incl call) ->
-  PolyStackCallRet stk1 stk2 call :=
-  match call return StackCallRet _ (mapPolyStackCall _ _ incl call) ->
-                    PolyStackCallRet stk1 stk2 call with
-  | PolyStackCallOfArgs _ _ n args =>
-      uncastLRTOutput _ _ _ (eq_sym (applyInclEq incl n)) args
-  end.
-
-(* Tell the typeclass system to look for stackIncl assumptions *)
-Global Hint Extern 1 (stackIncl _ _) => assumption : typeclass_instances.
-
-Global Instance EncodingType_PolyStackCall stk1 stk2
-  : EncodingType (PolyStackCall stk1 stk2) := PolyStackCallRet stk1 stk2.
-
-Global Program Instance ReSum_PolyStackCall stk1 stk2 (incl : stackIncl stk1 stk2) :
-  ReSum (PolyStackCall stk1 stk2) (StackCall stk2) :=
-  mapPolyStackCall stk1 stk2 incl.
-
-Global Program Instance ReSumRet_PolyStackCall stk1 stk2
-  (incl : stackIncl stk1 stk2) :
-  ReSumRet (PolyStackCall stk1 stk2) (StackCall stk2) :=
-  unmapPolyStackCallRet stk1 stk2 incl.
-
-Global Program Instance ReSum_PolyStackCall_FunStackE E stk1 stk2
-  (incl : stackIncl stk1 stk2) :
-  ReSum (PolyStackCall stk1 stk2) (FunStackE E stk2) :=
-  fun args => inl (mapPolyStackCall _ _ incl args).
-
-Global Program Instance ReSumRet_PolyStackCall_FunStackE E stk1 stk2
-  (incl : stackIncl stk1 stk2) :
-  ReSumRet (PolyStackCall stk1 stk2) (FunStackE E stk2) :=
-  fun args ret => unmapPolyStackCallRet _ _ incl args ret.
-
-Definition CallS E stk1 stk2 (incl : stackIncl stk1 stk2)
-  (call : PolyStackCall stk1 stk2) : SpecM E stk2 (encodes call) :=
-  trigger call.
-
-Definition mkPolyStackCall stk1 stk2 n
-  : lrtPi stk2 (nthLRT stk1 n) (fun _ => PolyStackCall stk1 stk2) :=
-  lrtLambda stk2 (nthLRT stk1 n)
-    (fun _ => PolyStackCall stk1 stk2)
-    (fun args => PolyStackCallOfArgs stk1 stk2 n args).
+(*
+FIXME HERE:
+- Define lrtProp and lrtSatisfies
+- Prove that lrtSatisfies is preserved by application
+*)
 
 
-(** Stack-polymorphic function tuples **)
+(**
+ ** Stack-polymorphic function tuples
+ **)
 
 (* A monadic function that is polymorphic in its function stack *)
 Definition PolySpecFun E stack lrt :=
@@ -1680,7 +1624,9 @@ Proof.
 Qed.
 
 
-(** Specification Definitions **)
+(**
+ ** Specification Definitions
+ **)
 
 (* A "spec definition" represents a definition of a SpecM monadic function via
 LetRecS over a tuple of recursive function bodies *)
@@ -1843,7 +1789,11 @@ LRTArgFun2ValueFun E stack lrt : (forall args:LRTInput stack lrt,
   end.
 *)
 
-(** Notations in terms of the SpecM combinators **)
+
+(**
+ ** Notations in terms of the SpecM combinators
+ **)
+
 Module SpecMNotations.
 
 Notation "t1 >>= k2" := (BindS t1 k2)
@@ -1859,7 +1809,9 @@ Notation "' p <- t1 ;; t2" :=
 End SpecMNotations.
 
 
-(* Interpreting SpecM computations in the state monad *)
+(**
+ ** Interpreting SpecM computations in the state monad
+ **)
 
 Section interpWithState.
 Import ExtLib.Structures.Functor.
