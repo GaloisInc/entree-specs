@@ -1040,16 +1040,52 @@ Fixpoint LRTOutput stack lrt : EncodingType (LRTInput stack lrt) :=
   end.
 
 
+Definition LRTInputCons stk lrt :
+  forall darg:LRTDepHead lrt, LRTClosHead (LRTArgF (LRTClos stk)) lrt ->
+                              LRTInput stk (LRTTail lrt darg) ->
+                              LRTInput stk lrt :=
+  match lrt return forall darg, LRTClosHead (LRTArgF (LRTClos stk)) lrt ->
+                                LRTInput stk (LRTTail lrt darg) ->
+                                LRTInput stk lrt with
+  | LRT_SpecM R => fun bot => match bot with end
+  | LRT_FunDep A B => fun a _ inps => existT _ a inps
+  | LRT_FunClos A B => fun _ arg inps => (arg, inps)
+  | LRT_Unit => fun bot => match bot with end
+  | LRT_BinOp F A B => fun bot => match bot with end
+  | LRT_Sigma A B => fun bot => match bot with end
+  end.
+
+Lemma LRTInputConsOut stk lrt darg carg inps :
+  LRTOutput stk lrt (LRTInputCons stk lrt darg carg inps) =
+    LRTOutput stk _ inps.
+Proof.
+  destruct lrt; try destruct darg; reflexivity.
+Qed.
+
 Fixpoint LRTArgsToInput stk n lrt :
   forall dargs, LRTClosArgs stk n lrt dargs ->
-                LRTInput stk (LRTDepArgsOut n lrt dargs) -> LRTInput stk lrt.
+                LRTInput stk (LRTDepArgsOut n lrt dargs) -> LRTInput stk lrt :=
+  match n return forall dargs, LRTClosArgs stk n lrt dargs ->
+                               LRTInput stk (LRTDepArgsOut n lrt dargs) ->
+                               LRTInput stk lrt
+  with
+  | 0 => fun _ _ inps => inps
+  | S n' =>
+      fun dargs cargs inps =>
+        LRTArgsToInput stk n' _ (projT1 dargs) (fst cargs)
+          (LRTInputCons stk _ (projT2 dargs) (snd cargs) inps)
+  end.
+
+Lemma LRTArgsToInputOut stk n lrt dargs cargs inps :
+  LRTOutput stk lrt (LRTArgsToInput stk n lrt dargs cargs inps) =
+    LRTOutput stk _ inps.
+Proof.
+  revert dargs cargs inps; induction n; [ reflexivity | ]; intros.
+  etransitivity; [ apply IHn | apply LRTInputConsOut ].
+Qed.
 
 
-FIXME HERE NOW:
-- Finish the above and prove that it commutes with apply
-- Define lrtFunType, lrtProp, and lrtSatisfies
-- Prove that lrtSatisfies is preserved by application
-
+(*
 
 (* Build the type forall a b c ..., F (a, (b, (c, ...))) for an arbitrary type
    function F over an LRTInput. A LetRecType that is not a function type turns
@@ -1105,6 +1141,8 @@ Fixpoint lrtApply stack lrt
   | _ =>
       fun _ _ v => match v with end
   end.
+*)
+
 
 (* A recursive call to one of the functions in a FunStack, specified by a
 natural number n that picks a specific index in the FunStack along with a set of
@@ -1117,6 +1155,28 @@ Definition StackCallRet stack (args: StackCall stack) : Type@{entree_u} :=
   match args with
   | StackCallOfArgs _ n args => LRTOutput stack (nthLRT stack n) args
   end.
+
+Definition LRTClosToCall stk R (clos: LRTClos stk (LRT_SpecM R)) : StackCall stk :=
+  StackCallOfArgs stk (lrtClosNum _ _ _ (projT2 clos))
+    (LRTArgsToInput stk
+       (lrtClosNumArgs _ _ _ (projT2 clos))
+       (nthLRT stk (lrtClosNum _ _ _ (projT2 clos)))
+       (lrtClosDepArgs _ _ _ (projT2 clos))
+       (LRTClosArgsMaxInv _ _ _ _ _ (lrtClosClosArgs _ _ _ (projT2 clos)))
+       (eq_rect (LRT_SpecM R) (LRTInput stk) tt _ (eq_sym (lrtClosLRTEq _ _ _ (projT2 clos))))).
+
+Lemma castLRTOutput stk lrt1 lrt2 (inps: LRTInput stk lrt2) (e: lrt1 = lrt2) :
+  LRTOutput stk lrt1 (eq_rect lrt2 (LRTInput stk) inps lrt1 (eq_sym e)) = LRTOutput stk lrt2 inps.
+Proof.
+  destruct e. reflexivity.
+Qed.
+
+Lemma LRTClosToCallRet stk R clos :
+  StackCallRet stk (LRTClosToCall stk R clos) = LRTArg stk R.
+Proof.
+  simpl. rewrite LRTArgsToInputOut. apply castLRTOutput.
+Qed.
+
 
 Global Instance EncodingType_StackCall stack : EncodingType (StackCall stack) :=
   StackCallRet stack.
@@ -1228,77 +1288,20 @@ Global Instance SpecM_Monad {E} Γ : Monad (SpecM E Γ) :=
     bind := fun A B m k => BindS m k;
   |}.
 
-(* Helper for applyDepApp *)
-Definition castCallFun E stack lrt1 lrt2 (e : lrt1 = lrt2)
-  (f: forall args:LRTInput stack lrt1, SpecM E stack (LRTOutput _ _ args))
-  : (forall args:LRTInput stack lrt2, SpecM E stack (LRTOutput _ _ args)) :=
-  eq_rect lrt1
-    (fun lrt => forall args:LRTInput stack lrt, SpecM E stack (LRTOutput _ _ args))
-    f lrt2 e.
+Definition callLRTClos {E stk R} (clos: LRTClos stk (LRT_SpecM R))
+  : SpecM E stk (LRTArg stk R) :=
+  eq_rect
+    (StackCallRet stk (LRTClosToCall stk R clos))
+    (SpecM E stk)
+    (trigger (LRTClosToCall stk R clos))
+    (LRTArg stk R)
+    (LRTClosToCallRet stk R clos).
 
-(* Apply an LRTDepApp to its remaining arguments *)
-Fixpoint applyDepApp E stack lrt_in lrt_out :
-  (forall args:LRTInput stack lrt_in, SpecM E stack (LRTOutput _ _ args)) ->
-  LRTDepApp lrt_in lrt_out ->
-  forall args:LRTInput stack lrt_out, SpecM E stack (LRTOutput stack lrt_out args) :=
-  match lrt_in return
-        (forall args:LRTInput stack lrt_in, SpecM E stack (LRTOutput _ _ args)) ->
-        LRTDepApp lrt_in lrt_out ->
-        forall args:LRTInput stack lrt_out,
-          SpecM E stack (LRTOutput stack lrt_out args)
-  with
-  | LRT_FunDep A lrtF =>
-      fun f da args =>
-        match da with
-        | inl e => (castCallFun E stack _ lrt_out e f) args
-        | inr da' =>
-            applyDepApp E stack (lrtF (projT1 da')) lrt_out
-                        (fun args' => f (existT _ (projT1 da') args'))
-                        (projT2 da') args
-        end
-  | _ =>
-      fun f e args => (castCallFun E stack _ lrt_out e f) args
-  end.
 
-(* Apply an LRTArg of monadic type *)
-Definition CallLRTArg E stack lrt :
-  LRTArg stack lrt ->
-  lrtPi stack lrt (fun args => SpecM E stack (LRTOutput stack lrt args)) :=
-  match lrt return LRTArg stack lrt ->
-                   lrtPi stack lrt (fun args =>
-                                      SpecM E stack (LRTOutput stack lrt args))
-  with
-  | LRT_SpecM R =>
-      fun arg =>
-        lrtLambda stack (LRT_SpecM R) _
-          (fun args =>
-             applyDepApp E stack _ _
-               (trigger (H2:=@SpecEventReSumRet _ _ _ _ _ _))
-               (projT2 arg) args)
-  | LRT_FunDep A B =>
-      fun arg =>
-        lrtLambda stack (LRT_FunDep A B) _
-          (fun args =>
-             applyDepApp E stack _ _
-               (trigger (H2:=@SpecEventReSumRet _ _ _ _ _ _))
-               (projT2 arg) args)
-  | LRT_FunClos A B =>
-      fun arg =>
-        lrtLambda stack (LRT_FunClos A B) _
-          (fun args =>
-             applyDepApp E stack _ _
-               (trigger (H2:=@SpecEventReSumRet _ _ _ _ _ _))
-               (projT2 arg) args)
-  | LRT_Unit =>
-      fun arg =>
-        lrtLambda stack LRT_Unit _ (fun v => match v with end)
-  | LRT_BinOp F A B =>
-      fun arg =>
-        lrtLambda stack (LRT_BinOp F A B) _ (fun v => match v with end)
-  | LRT_Sigma A B =>
-      fun arg =>
-        lrtLambda stack (LRT_Sigma A B) _ (fun v => match v with end)
-  end.
+FIXME HERE NOW:
+- Use above to define CallS
+- Define lrtFunType, lrtProp, and lrtSatisfies
+- Prove that lrtSatisfies is preserved by application
 
 
 (** Defining MultiFixS **)
