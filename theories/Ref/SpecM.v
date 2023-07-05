@@ -402,14 +402,10 @@ Inductive LetRecType : Type@{entree_u + 1} :=
 | LRT_FunDep (A : Type@{entree_u}) (rest : A -> LetRecType) : LetRecType
 | LRT_FunClos (A : LetRecType) (rest : LetRecType) : LetRecType
 (* These constructors represent the argument types used in functions *)
-| LRT_Unit : LetRecType
+| LRT_Type (A : Type@{entree_u}) : LetRecType
 | LRT_BinOp F `{ColimFunctor2 F} (A B : LetRecType) : LetRecType
 | LRT_Sigma (A : Type@{entree_u}) (B : A -> LetRecType) : LetRecType
 .
-
-(* The LetRecType that decodes to a specific type *)
-Definition LRT_Type (A : Type@{entree_u}) : LetRecType :=
-  LRT_BinOp (fun _ _ => A) LRT_Unit LRT_Unit.
 
 (* A FunStack is a list of LetRecTypes representing all of the functions bound
    by multiFixS that are currently in scope *)
@@ -436,7 +432,7 @@ Fixpoint LRTArgF (Clos : LetRecType -> Type@{entree_u}) (argTp : LetRecType)
   | LRT_SpecM R => Clos (LRT_SpecM R)
   | LRT_FunDep A B => Clos (LRT_FunDep A B)
   | LRT_FunClos A B => Clos (LRT_FunClos A B)
-  | LRT_Unit => unit
+  | LRT_Type A => A
   | LRT_BinOp F A B => F (LRTArgF Clos A) (LRTArgF Clos B)
   | LRT_Sigma A B => { x:A & LRTArgF Clos (B x) }
   end.
@@ -452,7 +448,7 @@ Definition LRTHead (Arg: LetRecType -> Type@{entree_u}) lrt : Type@{entree_u} :=
   | LRT_SpecM R => void
   | LRT_FunDep A B => A
   | LRT_FunClos A B => Arg A
-  | LRT_Unit => void
+  | LRT_Type A => void
   | LRT_BinOp F A B => void
   | LRT_Sigma A B => void
   end.
@@ -463,7 +459,7 @@ Definition LRTDepHead lrt : Type@{entree_u} :=
   | LRT_SpecM R => void
   | LRT_FunDep A B => A
   | LRT_FunClos A B => unit
-  | LRT_Unit => void
+  | LRT_Type A => void
   | LRT_BinOp F A B => void
   | LRT_Sigma A B => void
   end.
@@ -474,7 +470,7 @@ Definition LRTClosHead (Arg: LetRecType -> Type@{entree_u}) lrt : Type@{entree_u
   | LRT_SpecM R => void
   | LRT_FunDep A B => unit
   | LRT_FunClos A B => Arg A
-  | LRT_Unit => void
+  | LRT_Type A => void
   | LRT_BinOp F A B => void
   | LRT_Sigma A B => void
   end.
@@ -485,7 +481,7 @@ Definition projLRTHeadD Arg lrt : LRTHead Arg lrt -> LRTDepHead lrt :=
   | LRT_SpecM R => fun bot => match bot with end
   | LRT_FunDep A B => fun a => a
   | LRT_FunClos A B => fun arg => tt
-  | LRT_Unit => fun bot => match bot with end
+  | LRT_Type A => fun bot => match bot with end
   | LRT_BinOp F A B => fun bot => match bot with end
   | LRT_Sigma A B => fun bot => match bot with end
   end.
@@ -496,7 +492,7 @@ Definition projLRTHeadC Arg lrt : LRTHead Arg lrt -> LRTClosHead Arg lrt :=
   | LRT_SpecM R => fun bot => match bot with end
   | LRT_FunDep A B => fun a => tt
   | LRT_FunClos A B => fun arg => arg
-  | LRT_Unit => fun bot => match bot with end
+  | LRT_Type A => fun bot => match bot with end
   | LRT_BinOp F A B => fun bot => match bot with end
   | LRT_Sigma A B => fun bot => match bot with end
   end.
@@ -507,7 +503,7 @@ Definition LRTTail lrt : LRTDepHead lrt -> LetRecType :=
   | LRT_SpecM R => fun bot => match bot with end
   | LRT_FunDep A B => fun a => B a
   | LRT_FunClos A B => fun _ => B
-  | LRT_Unit => fun bot => match bot with end
+  | LRT_Type A => fun bot => match bot with end
   | LRT_BinOp F A B => fun bot => match bot with end
   | LRT_Sigma A B => fun bot => match bot with end
   end.
@@ -637,7 +633,7 @@ Fixpoint LRTArgFConsClos Clos Closs argTp
   | LRT_SpecM R => ClosElemFConsClos Clos Closs _
   | LRT_FunDep A B => ClosElemFConsClos Clos Closs _
   | LRT_FunClos A B => ClosElemFConsClos Clos Closs _
-  | LRT_Unit => fun u => u
+  | LRT_Type A => fun a => a
   | LRT_BinOp F A B =>
       fmap2 _ _ _ _ (LRTArgFConsClos Clos Closs A) (LRTArgFConsClos Clos Closs B)
   | LRT_Sigma A B =>
@@ -653,7 +649,7 @@ Definition LRTClosHeadConsClos Clos Closs lrt
   | LRT_SpecM R => fun bot => match bot with end
   | LRT_FunDep A B => fun u => u
   | LRT_FunClos A B => fun arg => LRTArgFConsClos Clos Closs A arg
-  | LRT_Unit => fun bot => match bot with end
+  | LRT_Type A => fun bot => match bot with end
   | LRT_BinOp F A B => fun bot => match bot with end
   | LRT_Sigma A B => fun bot => match bot with end
   end.
@@ -793,7 +789,7 @@ Fixpoint LRTArgMax stk argTp
   | LRT_SpecM R => fun clos => LRTClosToClosElem stk _ clos
   | LRT_FunDep A B => fun clos => LRTClosToClosElem stk _ clos
   | LRT_FunClos A B => fun clos => LRTClosToClosElem stk _ clos
-  | LRT_Unit => fun u => existT _ 0 u
+  | LRT_Type A => fun a => existT _ 0 a
   | LRT_BinOp F A B =>
       fun x =>
         fmapMax2 (LRTArgLvl stk A) (LRTArgLvl stk B)
@@ -812,7 +808,7 @@ Fixpoint LRTArgMaxInv stk argTp lvl :
   | LRT_SpecM R => fun clos => LRTClosFromClosElem stk _ _ clos
   | LRT_FunDep A B => fun clos => LRTClosFromClosElem stk _ _ clos
   | LRT_FunClos A B => fun clos => LRTClosFromClosElem stk _ _ clos
-  | LRT_Unit => fun u => u
+  | LRT_Type A => fun a => a
   | LRT_BinOp F A B =>
       fmap2
         (LRTArgLvl stk A lvl) (LRTArg stk A) (LRTArgLvl stk B lvl) (LRTArg stk B)
@@ -863,7 +859,7 @@ Definition LRTArgHeadMax stk lrt :
   | LRT_SpecM R => fun bot => match bot with end
   | LRT_FunDep A B => fun u => existT _ 0 u
   | LRT_FunClos A B => fun arg => LRTArgMax stk _ arg
-  | LRT_Unit => fun bot => match bot with end
+  | LRT_Type A => fun bot => match bot with end
   | LRT_BinOp F A B => fun bot => match bot with end
   | LRT_Sigma A B => fun bot => match bot with end
   end.
@@ -874,7 +870,7 @@ Definition LRTArgHeadMaxInv stk lrt lvl :
   | LRT_SpecM R => fun bot => match bot with end
   | LRT_FunDep A B => fun u => u
   | LRT_FunClos A B => fun arg => LRTArgMaxInv stk A lvl arg
-  | LRT_Unit => fun bot => match bot with end
+  | LRT_Type A => fun bot => match bot with end
   | LRT_BinOp F A B => fun bot => match bot with end
   | LRT_Sigma A B => fun bot => match bot with end
   end.
@@ -987,7 +983,7 @@ Fixpoint applyLRTClosNType stk n lrt : Type@{entree_u} :=
       | LRT_SpecM R => void -> void
       | LRT_FunDep A B => forall a:A, applyLRTClosNType stk n' (B a)
       | LRT_FunClos A B => LRTArg stk A -> applyLRTClosNType stk n' B
-      | LRT_Unit => void -> void
+      | LRT_Type A => void -> void
       | LRT_BinOp F A B => void -> void
       | LRT_Sigma A B => void -> void
       end
@@ -1003,7 +999,7 @@ Fixpoint applyLRTClosN stk n lrt : LRTClos stk lrt -> applyLRTClosNType stk n lr
                             applyLRTClosN stk n' (B a) (applyLRTClosDep stk A B clos a)
       | LRT_FunClos A B => fun clos arg =>
                              applyLRTClosN stk n' B (applyLRTClosClos stk A B clos arg)
-      | LRT_Unit => fun _ bot => bot
+      | LRT_Type A => fun _ bot => bot
       | LRT_BinOp F A B => fun _ bot => bot
       | LRT_Sigma A B => fun _ bot => bot
       end
@@ -1050,7 +1046,7 @@ Definition LRTInputCons stk lrt :
   | LRT_SpecM R => fun bot => match bot with end
   | LRT_FunDep A B => fun a _ inps => existT _ a inps
   | LRT_FunClos A B => fun _ arg inps => (arg, inps)
-  | LRT_Unit => fun bot => match bot with end
+  | LRT_Type A => fun bot => match bot with end
   | LRT_BinOp F A B => fun bot => match bot with end
   | LRT_Sigma A B => fun bot => match bot with end
   end.
