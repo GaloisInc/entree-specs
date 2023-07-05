@@ -975,25 +975,25 @@ Definition applyLRTClosDep stk A B (clos: LRTClos stk (LRT_FunDep A B)) (a:A)
 Definition applyLRTClosClos stk A B (clos: LRTClos stk (LRT_FunClos A B))
   (arg: LRTArg stk A) : LRTClos stk B := applyLRTClos stk (LRT_FunClos A B) clos tt arg.
 
-Fixpoint applyLRTClosNType stk n lrt : Type@{entree_u} :=
+Fixpoint applyLRTClosNRet stk n lrt : Type@{entree_u} :=
   match n with
   | 0 => LRTClos stk lrt
   | S n' =>
       match lrt with
       | LRT_SpecM R => void -> void
-      | LRT_FunDep A B => forall a:A, applyLRTClosNType stk n' (B a)
-      | LRT_FunClos A B => LRTArg stk A -> applyLRTClosNType stk n' B
+      | LRT_FunDep A B => forall a:A, applyLRTClosNRet stk n' (B a)
+      | LRT_FunClos A B => LRTArg stk A -> applyLRTClosNRet stk n' B
       | LRT_Type A => void -> void
       | LRT_BinOp F A B => void -> void
       | LRT_Sigma A B => void -> void
       end
   end.
 
-Fixpoint applyLRTClosN stk n lrt : LRTClos stk lrt -> applyLRTClosNType stk n lrt :=
-  match n return LRTClos stk lrt -> applyLRTClosNType stk n lrt with
+Fixpoint applyLRTClosN stk n lrt : LRTClos stk lrt -> applyLRTClosNRet stk n lrt :=
+  match n return LRTClos stk lrt -> applyLRTClosNRet stk n lrt with
   | 0 => fun clos => clos
   | S n' =>
-      match lrt return LRTClos stk lrt -> applyLRTClosNType stk (S n') lrt with
+      match lrt return LRTClos stk lrt -> applyLRTClosNRet stk (S n') lrt with
       | LRT_SpecM R => fun _ bot => bot
       | LRT_FunDep A B => fun clos a =>
                             applyLRTClosN stk n' (B a) (applyLRTClosDep stk A B clos a)
