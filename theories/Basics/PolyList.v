@@ -141,14 +141,14 @@ Fixpoint isNth@{u} {A : Type@{u}} (xs : plist A) n (y : A) : Prop :=
 
 (* Build the right-nested tuple type of a list of types formed by mapping a
 function across a list *)
-Fixpoint mapTuple@{u v} {T:Type@{v}} (f : T -> Type@{u}) (xs : plist T) : Type@{u} :=
+Polymorphic Fixpoint mapTuple@{u v} {T:Type@{v}} (f : T -> Type@{u}) (xs : plist T) : Type@{u} :=
   match xs with
   | pnil => unit
   | pcons x xs' => f x * mapTuple f xs'
   end.
 
 (* Append two mapTuple tuples *)
-Fixpoint appMapTuple@{u v} {T:Type@{v}} (f : T -> Type@{u}) (xs ys : plist T) :
+Polymorphic Fixpoint appMapTuple@{u v} {T:Type@{v}} (f : T -> Type@{u}) (xs ys : plist T) :
   mapTuple f xs -> mapTuple f ys -> mapTuple f (papp xs ys) :=
   match xs return mapTuple f xs -> mapTuple f ys -> mapTuple f (papp xs ys) with
   | pnil => fun _ tup2 => tup2
@@ -157,7 +157,7 @@ Fixpoint appMapTuple@{u v} {T:Type@{v}} (f : T -> Type@{u}) (xs ys : plist T) :
   end.
 
 (* Project the nth element of a mapTuple *)
-Fixpoint nthProjDefault@{u v} {T:Type@{v}} (f : T -> Type@{u}) (dT:T) (d:f dT) xs
+Polymorphic Fixpoint nthProjDefault@{u v} {T:Type@{v}} (f : T -> Type@{u}) (dT:T) (d:f dT) xs
   : forall n, mapTuple f xs -> f (nth_default' dT xs n) :=
   match xs return forall n, mapTuple f xs -> f (nth_default' dT xs n) with
   | pnil => fun _ _ => d

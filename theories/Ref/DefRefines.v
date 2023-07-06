@@ -43,19 +43,19 @@ Local Open Scope entree_scope.
 (* One definition refines another iff for all extensions of the recursive
 functions of both sides, the bodies refine each other *)
 Definition def_refines {E1 E2} RPre RPost
-  (d1 : SpecDef E1) (d2 : SpecDef E2)
+  lrt1 lrt2 (d1 : SpecDef E1 lrt1) (d2 : SpecDef E2 lrt2)
   (Rin : forall stk1 stk2,
-      Rel (LRTInput stk1 (defLRT _ d1)) (LRTInput stk2 (defLRT _ d2)))
+      Rel (LRTInput stk1 lrt1) (LRTInput stk2 lrt2))
   (Rout : forall stk1 stk2,
-      PostRel (LRTInput stk1 (defLRT _ d1)) (LRTInput stk2 (defLRT _ d2))) : Prop :=
+      PostRel (LRTInput stk1 lrt1) (LRTInput stk2 lrt2)) : Prop :=
   forall stk1 incl1 stk2 incl2 funs1 funs2 args1 args2,
-    isTupleInst E1 _ stk1 incl1 (defFuns E1 d1) funs1 ->
-    isTupleInst E2 _ stk2 incl2 (defFuns E2 d2) funs2 ->
+    isTupleInst E1 _ stk1 incl1 (defFuns E1 lrt1 d1) funs1 ->
+    isTupleInst E2 _ stk2 incl2 (defFuns E2 lrt2 d2) funs2 ->
     Rin _ _ args1 args2 ->
     lr_refines funs1 funs2 (liftNilRel RPre) (liftNilPostRel RPost)
       (Rout stk1 stk2 args1 args2)
-      (lrtApply _ _ _ (defBody E1 d1 stk1 incl1) args1)
-      (lrtApply _ _ _ (defBody E2 d2 stk2 incl2) args2).
+      (lrtApply _ _ _ (defBody E1 lrt1 d1 stk1 incl1) args1)
+      (lrtApply _ _ _ (defBody E2 lrt2 d2 stk2 incl2) args2).
 
 (* An instantiation of a pair of polymorphic stack tuples *)
 Record TupsInst {E1 E2 stk1 stk2}
@@ -79,18 +79,18 @@ Definition lr_refines_poly {E1 E2 stk1 stk2}
 
 (* lr_refines_poly can be used to prove a def_refines *)
 Lemma lr_refines_poly_def_refines {E1 E2} RPre RPost
-  (d1 : SpecDef E1) (d2 : SpecDef E2)
+  lrt1 lrt2 (d1 : SpecDef E1 lrt1) (d2 : SpecDef E2 lrt2)
   (Rin : forall stk1 stk2,
-      Rel (LRTInput stk1 (defLRT _ d1)) (LRTInput stk2 (defLRT _ d2)))
+      Rel (LRTInput stk1 lrt1) (LRTInput stk2 lrt2))
   (Rout : forall stk1 stk2,
-      PostRel (LRTInput stk1 (defLRT _ d1)) (LRTInput stk2 (defLRT _ d2))) :
-  (forall (inst : TupsInst (defFuns E1 d1) (defFuns E2 d2)) args1 args2,
+      PostRel (LRTInput stk1 lrt1) (LRTInput stk2 lrt2)) :
+  (forall (inst : TupsInst (defFuns E1 lrt1 d1) (defFuns E2 lrt2 d2)) args1 args2,
       Rin _ _ args1 args2 ->
-      lr_refines_poly (defFuns E1 d1) (defFuns E2 d2) inst
+      lr_refines_poly (defFuns E1 lrt1 d1) (defFuns E2 lrt2 d2) inst
         (liftNilRel RPre) (liftNilPostRel RPost) (Rout _ _ args1 args2)
-        (lrtApply _ _ _ (defBody E1 d1 _ (tupsInst_incl1 _ _ inst)) args1)
-        (lrtApply _ _ _ (defBody E2 d2 _ (tupsInst_incl2 _ _ inst)) args2)) ->
-  def_refines RPre RPost d1 d2 Rin Rout.
+        (lrtApply _ _ _ (defBody E1 lrt1 d1 _ (tupsInst_incl1 _ _ inst)) args1)
+        (lrtApply _ _ _ (defBody E2 lrt2 d2 _ (tupsInst_incl2 _ _ inst)) args2)) ->
+  def_refines RPre RPost lrt1 lrt2 d1 d2 Rin Rout.
 Proof.
   unfold def_refines, lr_refines_poly. intros.
   apply (H (Build_TupsInst _ _ _ _ _ _ stk1 incl1 funs1 H0 stk2 incl2 funs2 H1)).
