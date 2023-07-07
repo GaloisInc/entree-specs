@@ -1615,12 +1615,11 @@ Record SpecDef E lrt : Type@{lrt_u} :=
     defBody : PolySpecFun E defStack lrt }.
 
 (* A trivial spec definition *)
-(* FIXME: why does this need to be in Program? *)
-Program Definition defaultSpecDef E : SpecDef E default_lrt :=
+Definition defaultSpecDef E : SpecDef E default_lrt :=
   {|
     defStack := pnil;
     defFuns := fun _ _ => tt;
-    defBody := fun _ _ (x:void) => match x with end;
+    defBody := fun stk' _ => defaultSpecFun E stk'
   |}.
 
 (* Complete a SpecDef to a SpecM computation *)
@@ -1668,31 +1667,6 @@ Fixpoint impsFuns E imps
 (* The combined function stack for defineSpec *)
 Definition defineSpecStack E stk (imps: impsList E) : FunStack :=
   papp stk (impsStack E imps).
-
-(* Get the nth spec import from an import list *)
-Definition nthImport E (imps: impsList E) n : SpecImp E :=
-  nth_default' (defaultSpecImp E) imps n.
-
-(* Build a stackIncl from the stack of an import to an impsStack containing it *)
-Fixpoint nthImpInclImpStack E imps n :
-  stackIncl (SpecImpStack E (nthImport E imps n)) (impsStack E imps) :=
-  match imps return
-        stackIncl (SpecImpStack E (nthImport E imps n)) (impsStack E imps) with
-  | pnil => nilStackIncl _
-  | pcons imp imps' =>
-      match n return
-            stackIncl (SpecImpStack E (nthImport E (pcons imp imps') n))
-              (impsStack E (pcons imp imps')) with
-      | 0 => weakenRightStackIncl _ _
-      | S n' => compStackIncl (nthImpInclImpStack E imps' n') (weakenLeftStackIncl _ _)
-      end
-  end.
-
-(* Build a stackIncl from the stack of an import to that of a spec that imports it *)
-Definition nthImpIncl E stk imps n :
-  stackIncl (SpecImpStack E (nthImport E imps n))
-    (defineSpecStack E stk imps) :=
-  compStackIncl (nthImpInclImpStack E imps n) (weakenLeftStackIncl _ _).
 
 (* Define a spec from: a list of imported spec definitions; a tuple of
 recursively-defined functions; and a body that can call into either *)
@@ -1748,6 +1722,31 @@ Definition mkLocalLRTClos E stk imps stk'
   (incl: stackIncl (defineSpecStack E stk imps) stk') n
   : LRTClos stk' (nthLRT stk n) :=
   mkLRTClosIncl stk stk' (compStackIncl (localIncl E stk imps) incl) n.
+
+(* Get the nth spec import from an import list *)
+Definition nthImport E (imps: impsList E) n : SpecImp E :=
+  nth_default' (defaultSpecImp E) imps n.
+
+(* Build a stackIncl from the stack of an import to an impsStack containing it *)
+Fixpoint nthImpInclImpStack E imps n :
+  stackIncl (SpecImpStack E (nthImport E imps n)) (impsStack E imps) :=
+  match imps return
+        stackIncl (SpecImpStack E (nthImport E imps n)) (impsStack E imps) with
+  | pnil => nilStackIncl _
+  | pcons imp imps' =>
+      match n return
+            stackIncl (SpecImpStack E (nthImport E (pcons imp imps') n))
+              (impsStack E (pcons imp imps')) with
+      | 0 => weakenRightStackIncl _ _
+      | S n' => compStackIncl (nthImpInclImpStack E imps' n') (weakenLeftStackIncl _ _)
+      end
+  end.
+
+(* Build a stackIncl from the stack of an import to that of a spec that imports it *)
+Definition nthImpIncl E stk imps n :
+  stackIncl (SpecImpStack E (nthImport E imps n))
+    (defineSpecStack E stk imps) :=
+  compStackIncl (nthImpInclImpStack E imps n) (weakenLeftStackIncl _ _).
 
 (* Call the body of the nth import *)
 Definition callNthImportS E stk imps stk'
