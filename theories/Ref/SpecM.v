@@ -1632,15 +1632,14 @@ Definition completeSpecDef E lrt (d : SpecDef E lrt)
     (lrtApply _ _ _ (defBody _ _ d (defStack _ _ d) (reflStackIncl _)) args).
 
 (* An import of a SpecDef is an lrt plus a SpecDef with that type *)
-Definition SpecImp E : Type@{lrt_u} := { lrt & SpecDef E lrt }.
+Record SpecImp E : Type@{lrt_u} :=
+  { SpecImpType : LetRecType;
+    SpecImpDef : SpecDef E SpecImpType; }.
 
 Definition defaultSpecImp E : SpecImp E :=
-  existT _ default_lrt (defaultSpecDef E).
-
-Definition SpecImpType E (imp : SpecImp E) : LetRecType := projT1 imp.
-
-Definition SpecImpDef E (imp : SpecImp E) : SpecDef E (SpecImpType E imp) :=
-  projT2 imp.
+  {|
+    SpecImpType := default_lrt;
+    SpecImpDef := defaultSpecDef E |}.
 
 Definition SpecImpStack E imp : FunStack := defStack E _ (SpecImpDef E imp).
 
