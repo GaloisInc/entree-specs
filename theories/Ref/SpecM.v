@@ -1631,79 +1631,81 @@ Definition completeSpecDef E lrt (d : SpecDef E lrt)
     (defFuns _ _ d (defStack _ _ d) (reflStackIncl _))
     (lrtApply _ _ _ (defBody _ _ d (defStack _ _ d) (reflStackIncl _)) args).
 
-(* A list of spec imports with the given LetRecTypes *)
-Definition impsList E imps_lrts : Type@{lrt_u} := mapTuple (SpecDef E) imps_lrts.
+(* An import of a SpecDef is an lrt plus a SpecDef with that type *)
+Definition SpecImp E : Type@{lrt_u} := { lrt & SpecDef E lrt }.
+
+Definition defaultSpecImp E : SpecImp E :=
+  existT _ default_lrt (defaultSpecDef E).
+
+Definition SpecImpType E (imp : SpecImp E) : LetRecType := projT1 imp.
+
+Definition SpecImpDef E (imp : SpecImp E) : SpecDef E (SpecImpType E imp) :=
+  projT2 imp.
+
+Definition SpecImpStack E imp : FunStack := defStack E _ (SpecImpDef E imp).
+
+(* A list of spec imports with their LetRecTypes *)
+Definition impsList E : Type@{lrt_u} := plist (SpecImp E).
 
 (* Build the concatenated FunStack for a list of imported spec defs *)
-Fixpoint impsStack E imps_lrts : impsList E imps_lrts -> FunStack :=
-  match imps_lrts return impsList E imps_lrts -> FunStack with
-  | pnil => fun _ => pnil
-  | pcons imp_lrt imps_lrts' =>
-      fun imps => papp (defStack _ _ (fst imps)) (impsStack E imps_lrts' (snd imps))
-  end.
+Definition impsStack E (imps:impsList E) : FunStack :=
+  pconcat (pmap (SpecImpStack E) imps).
 
 (* Build the list of recursive functions for a list of imported spec defs *)
-Fixpoint impsFuns E imps_lrts :
-  forall imps, PolyStackTuple E (impsStack E imps_lrts imps)
-                 (impsStack E imps_lrts imps) :=
-  match imps_lrts return forall imps, PolyStackTuple E (impsStack E imps_lrts imps)
-                                        (impsStack E imps_lrts imps) with
-  | pnil => fun _ _ _ => tt
-  | pcons lrt imps_lrts' =>
-      fun imps =>
-        appPolyStackTuple _ _ _ _
-          (inclPolyStackTuple _ _ _ _
-             (weakenRightStackIncl _ _)
-             (defFuns _ _ (fst imps)))
-          (inclPolyStackTuple _ _ _ _
-             (weakenLeftStackIncl _ _)
-             (impsFuns E imps_lrts' (snd imps)))
+Fixpoint impsFuns E imps
+  : PolyStackTuple E (impsStack E imps) (impsStack E imps) :=
+  match imps return PolyStackTuple E (impsStack E imps) (impsStack E imps) with
+  | pnil => fun _ _ => tt
+  | pcons imp imps' =>
+      appPolyStackTuple _ _ _ _
+        (inclPolyStackTuple _ _ _ _
+           (weakenRightStackIncl _ _)
+           (defFuns _ _ (SpecImpDef E imp)))
+        (inclPolyStackTuple _ _ _ _
+           (weakenLeftStackIncl _ _)
+           (impsFuns E imps'))
   end.
 
 (* The combined function stack for defineSpec *)
-Definition defineSpecStack E stk imps_lrts (imps: impsList E imps_lrts) : FunStack :=
-  papp stk (impsStack E imps_lrts imps).
+Definition defineSpecStack E stk (imps: impsList E) : FunStack :=
+  papp stk (impsStack E imps).
 
 (* Get the nth spec import from an import list *)
-Definition nthImport E imps_lrts (imps: impsList E imps_lrts) n
-  : SpecDef E (nthLRT imps_lrts n) :=
-  nthProjDefault (SpecDef E) default_lrt (defaultSpecDef E) imps_lrts n imps.
+Definition nthImport E (imps: impsList E) n : SpecImp E :=
+  nth_default' (defaultSpecImp E) imps n.
 
 (* Build a stackIncl from the stack of an import to an impsStack containing it *)
-Fixpoint nthImpInclImpStack E imps_lrts n :
-  forall imps, stackIncl (defStack E _ (nthImport E imps_lrts imps n))
-                 (impsStack E imps_lrts imps) :=
-  match imps_lrts return forall imps, stackIncl (defStack E _ (nthImport E imps_lrts imps n))
-                                        (impsStack E imps_lrts imps) with
-  | pnil => fun _ => nilStackIncl _
-  | pcons lrt imps_lrts' =>
-      match n return forall imps, stackIncl (defStack E _ (nthImport E _ imps n))
-                                    (impsStack E (pcons lrt imps_lrts') imps) with
-      | 0 => fun _ => weakenRightStackIncl _ _
-      | S n' => fun imps =>
-                  compStackIncl (nthImpInclImpStack E imps_lrts' n' (snd imps))
-                    (weakenLeftStackIncl _ _)
+Fixpoint nthImpInclImpStack E imps n :
+  stackIncl (SpecImpStack E (nthImport E imps n)) (impsStack E imps) :=
+  match imps return
+        stackIncl (SpecImpStack E (nthImport E imps n)) (impsStack E imps) with
+  | pnil => nilStackIncl _
+  | pcons imp imps' =>
+      match n return
+            stackIncl (SpecImpStack E (nthImport E (pcons imp imps') n))
+              (impsStack E (pcons imp imps')) with
+      | 0 => weakenRightStackIncl _ _
+      | S n' => compStackIncl (nthImpInclImpStack E imps' n') (weakenLeftStackIncl _ _)
       end
   end.
 
 (* Build a stackIncl from the stack of an import to that of a spec that imports it *)
-Definition nthImpIncl E stk imps_lrts imps n :
-  stackIncl (defStack E _ (nthImport E imps_lrts imps n))
-    (defineSpecStack E stk imps_lrts imps) :=
-  compStackIncl (nthImpInclImpStack E imps_lrts n imps) (weakenLeftStackIncl _ _).
+Definition nthImpIncl E stk imps n :
+  stackIncl (SpecImpStack E (nthImport E imps n))
+    (defineSpecStack E stk imps) :=
+  compStackIncl (nthImpInclImpStack E imps n) (weakenLeftStackIncl _ _).
 
 (* Define a spec from: a list of imported spec definitions; a tuple of
 recursively-defined functions; and a body that can call into either *)
-Definition defineSpec E stk imps_lrts lrt
-  (imps : impsList E imps_lrts)
-  (recs : PolyStackTuple E (defineSpecStack E stk imps_lrts imps) stk)
-  (body : PolySpecFun E (defineSpecStack E stk imps_lrts imps) lrt) : SpecDef E lrt :=
+Definition defineSpec E stk lrt (imps : impsList E)
+  (recs : PolyStackTuple E (defineSpecStack E stk imps) stk)
+  (body : PolySpecFun E (defineSpecStack E stk imps) lrt) : SpecDef E lrt :=
   {|
-    defStack := defineSpecStack E stk imps_lrts imps;
+    defStack := defineSpecStack E stk imps;
     defFuns :=
       appPolyStackTuple _ _ _ _
         recs (inclPolyStackTuple _ _ _ _
-                (weakenLeftStackIncl _ _) (impsFuns E imps_lrts imps));
+                (weakenLeftStackIncl _ _) (impsFuns E imps));
     defBody := body
   |}.
 
@@ -1727,8 +1729,7 @@ Fixpoint nthImportBody E imps n :
 *)
 
 (* The stack inclusion from the "local" stack to the defStack of a SpecDef *)
-Definition localIncl E stk imps_lrts imps
-  : stackIncl stk (defineSpecStack E stk imps_lrts imps) :=
+Definition localIncl E stk imps : stackIncl stk (defineSpecStack E stk imps) :=
   weakenRightStackIncl _ _.
 
 (* Build a closure using a stackIncl *)
@@ -1744,17 +1745,17 @@ Definition mkLRTClosIncl stk1 stk2 (incl : stackIncl stk1 stk2) n
          |}.
 
 (* Build a closure for a corecursive function that is local to the current def *)
-Definition mkLocalLRTClos E stk imps_lrts imps stk'
-  (incl: stackIncl (defineSpecStack E stk imps_lrts imps) stk') n
+Definition mkLocalLRTClos E stk imps stk'
+  (incl: stackIncl (defineSpecStack E stk imps) stk') n
   : LRTClos stk' (nthLRT stk n) :=
-  mkLRTClosIncl stk stk' (compStackIncl (localIncl E stk imps_lrts imps) incl) n.
+  mkLRTClosIncl stk stk' (compStackIncl (localIncl E stk imps) incl) n.
 
 (* Call the body of the nth import *)
-Definition callNthImportS E stk imps_lrts imps stk'
-  (incl: stackIncl (defineSpecStack E stk imps_lrts imps) stk') n
-  : SpecFun E stk' (nthLRT imps_lrts n) :=
-  defBody _ _ (nthImport E imps_lrts imps n) stk'
-    (compStackIncl (nthImpIncl E stk imps_lrts imps n) incl).
+Definition callNthImportS E stk imps stk'
+  (incl: stackIncl (defineSpecStack E stk imps) stk') n
+  : SpecFun E stk' (SpecImpType E (nthImport E imps n)) :=
+  defBody _ _ (SpecImpDef E (nthImport E imps n)) stk'
+    (compStackIncl (nthImpIncl E stk imps n) incl).
 
 (*
 FIXME HERE:
