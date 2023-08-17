@@ -618,6 +618,9 @@ Proof.
   - intros ? ? ? ? Hvn ? HcZ ? HcS ? ? ?. simp denote_comp.
     eapply rutt_bind; try eapply Hvn; eauto. intros n1 n2 Hn12. simp types_equiv in Hn12. subst.
     destruct n2; eauto. eapply HcS. split; auto. reflexivity.
+  - intros ? ? ? Hvn ? ? Hhyps. simp denote_comp.
+    eapply rutt_bind; try eapply Hvn; eauto. intros. apply rutt_Ret. simp types_equiv. simp types_equiv in H.
+    auto.
   - intros ? ? ? ? ? Hvl ? Hcnil ? Hccons ? ? ?. simp denote_comp.
     eapply rutt_bind; try eapply Hvl; eauto. intros l1 l2 Hl12. simp types_equiv in Hl12.
     dependent destruction Hl12; eauto. eapply Hccons. do 2 (split; auto).

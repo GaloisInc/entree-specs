@@ -44,6 +44,7 @@ Equations denote_bredex {t MR} (br : bredex t MR) : mtree (denote_mfix_ctx MR) (
   denote_bredex (bredex_match_nat n cZ cS) := match n with
                                               | 0 => denote_comp cZ tt
                                               | S m => denote_comp cS (m, tt) end;
+  denote_bredex (bredex_succ n) := ret (S n);
   denote_bredex (bredex_match_list val_nil cnil _) := denote_comp cnil tt;
   denote_bredex (bredex_match_list (val_cons vh vt) _ ccons) :=
     vvh <- denote_value vh tt;;
@@ -93,6 +94,7 @@ Proof.
     + apply types_equiv_comp_refl. constructor.
     + symmetry. apply subst_correct0. constructor.
       intros. rewrite denote_value_equation_1. reflexivity.
+  - simp denote_comp. apply rutt_Ret. simp types_equiv. auto.
   - red in vl. dependent destruction vl.
     + simp denote_bredex. simp step_bredex.
       apply types_equiv_comp_refl. constructor.
@@ -760,6 +762,9 @@ Proof.
     simp denote_eval_context. simp denote_bredex. 
     red. setoid_rewrite bind_ret_l. 
     destruct n; try eapply types_equiv_comp_refl; repeat constructor; auto.
+  - simp denote_comp. dependent destruction vn; try inversion x.
+    simp observe. simpl. simp denote_eval_context. simp denote_bredex. red. rewrite bind_ret_l.
+    simp types_equiv. apply rutt_Ret. auto.
   - dependent destruction vl; try inversion x.
     + simp denote_comp. simp observe. simpl denote_observed.
       simp denote_eval_context. simp denote_bredex. red.
@@ -861,6 +866,7 @@ Proof.
       inversion x.
     + dependent destruction vn; simp observe in Heq; try discriminate.
       inversion x.
+    + dependent destruction vn; try discriminate. inversion x.
     + dependent destruction vf; simp observe in Heq; try discriminate.
       inversion x.
   - unfold step. intros Hc. subst. simp observe. auto.

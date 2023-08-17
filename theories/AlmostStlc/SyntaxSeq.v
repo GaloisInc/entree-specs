@@ -16,6 +16,7 @@ with comp : vtype -> ctx -> mfix_ctx -> Type :=
     comp t2 Γ MR
   | comp_match_nat t Γ MR (vn : value Nat Γ) (cZ : comp t Γ MR) (cS : comp t (Nat :: Γ) MR) :
     comp t Γ MR
+  | comp_succ Γ MR (vn : value Nat Γ) : comp Nat Γ MR
   | comp_match_list t1 t2 Γ MR (vl : value (List t1) Γ) (cnil : comp t2 Γ MR)
                     (cS : comp t2 (t1 :: (List t1) :: Γ ) MR) :
     comp t2 Γ MR
@@ -50,6 +51,7 @@ Arguments val_var {_ _}.
 Arguments comp_ret {_ _ _}.
 Arguments comp_let {_ _ _ _}.
 Arguments comp_match_nat {_ _ _}.
+Arguments comp_succ {_ _}.
 Arguments comp_match_list {_ _ _ _}.
 Arguments comp_split {_ _ _ _ _}.
 Arguments comp_app {_ _ _ _}.

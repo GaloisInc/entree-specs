@@ -21,6 +21,7 @@ Equations comp_map {t : vtype} {Γ1 Γ2} {MR : mfix_ctx} (c : comp t Γ1 MR)
     comp_map (comp_let c1 c2) f := comp_let (comp_map c1 f) (comp_map c2 (var_map_skip f));
     comp_map (comp_match_nat vn cZ cS) f := 
       comp_match_nat (val_map vn f) (comp_map cZ f) (comp_map cS (var_map_skip f));
+    comp_map (comp_succ vn) f := comp_succ (val_map vn f);
     comp_map (comp_match_list vl cnil ccons) f :=
       comp_match_list (val_map vl f) (comp_map cnil f) (comp_map ccons (var_map_skip (var_map_skip f)));
     comp_map (comp_split vp cs) f :=
@@ -36,6 +37,7 @@ Equations comp_map {t : vtype} {Γ1 Γ2} {MR : mfix_ctx} (c : comp t Γ1 MR)
 where val_map {t : vtype} {Γ1 Γ2} (v : value t Γ1)
                (f : forall t', var t' Γ1 -> var t' Γ2) : value t Γ2 := {
     val_map (val_const n) f := val_const n;
+    (* val_map (val_succ vn) f := val_succ (val_map vn f); *)
     val_map val_nil f := val_nil;
     val_map (val_cons vh vt) f := val_cons (val_map vh f) (val_map vt f);
     val_map (val_pair v1 v2) f := val_pair (val_map v1 f) (val_map v2 f);
@@ -91,6 +93,8 @@ Equations subst_comp {t u Γ2 MR} Γ1 (c1 : comp u (Γ1 ++ [t] ++ Γ2) MR) (v : 
     subst_comp _ (comp_let c1 c2) v := comp_let (subst_comp _ c1 v) (subst_comp (_ :: _) c2 v);
     subst_comp _ (comp_match_nat vn cZ cS) v := 
       comp_match_nat (subst_value vn v) (subst_comp _ cZ v) (subst_comp (_ :: _) cS v);
+    subst_comp _ (comp_succ vn) v :=
+      comp_succ (subst_value vn v);
     subst_comp _ (comp_match_list vl cnil ccons) v :=
       comp_match_list (subst_value vl v) (subst_comp _ cnil v) (subst_comp (_ :: _ :: _) ccons v); 
     subst_comp _ (comp_split vp cs) v :=
@@ -107,6 +111,7 @@ Equations subst_comp {t u Γ2 MR} Γ1 (c1 : comp u (Γ1 ++ [t] ++ Γ2) MR) (v : 
 where subst_value {t u Γ1 Γ2} (v1 : value u (Γ1 ++ [t] ++ Γ2) ) (v : value t Γ2) :
   value u (Γ1 ++ Γ2) := {
     subst_value (val_const n) _ := val_const n;
+    (* subst_value (val_succ vn) v := val_succ (subst_value vn v); *)
     subst_value val_nil _ := val_nil;
     subst_value (val_cons vh vt) v := val_cons (subst_value vh v) (subst_value vt v);
     subst_value (val_pair v1 v2) v := val_pair (subst_value v1 v) (subst_value v2 v);
@@ -133,6 +138,7 @@ Inductive bredex : vtype -> mfix_ctx -> Type :=
   | bredex_let t1 t2 MR (v : closed_value t1) (c : comp t2 [t1] MR ) : bredex t2 MR
   | bredex_app t1 t2 MR (cbody : comp t2 [t1] MR) (varg : closed_value t1) : bredex t2 MR
   | bredex_match_nat t MR (n : nat) (cZ : comp t [] MR) (cS : comp t [Nat] MR) : bredex t MR
+  | bredex_succ MR (n : nat) : bredex Nat MR
   | bredex_match_list t1 t2 MR (vl : closed_value (List t1)) (cnil : comp t2 [] MR) (ccons : comp t2 [t1; List t1] MR) :
     bredex t2 MR
   | bredex_split t1 t2 t3 MR (vp : closed_value (Pair t1 t2)) (cs : comp t3 [t1; t2] MR) : 
@@ -144,6 +150,7 @@ Inductive bredex : vtype -> mfix_ctx -> Type :=
   | bredex_lift t MR1 MR2 (v : closed_value t) : 
     bredex t (MR1 ++ MR2)
 .
+Arguments bredex_succ {MR}.
 Arguments bredex_let {t1 t2 MR}.
 Arguments bredex_app {t1 t2 MR}.
 Arguments bredex_match_nat {t MR}.
@@ -199,7 +206,9 @@ Equations normalize_eval_context {t1 t2 MR1 MR2} (ca : call t2 MR2)
     let '(ca' && E') := normalize_eval_context ca E in
     ca' && (ev_let E' c).
 
+
 Equations step_bredex {t MR} (br : bredex t MR) : comp t [] MR :=
+  step_bredex (bredex_succ n) := comp_ret (val_const (S n));
   step_bredex (bredex_let v c) := subst_comp_cons c v;
   step_bredex (bredex_app cbody varg) := subst_comp_cons cbody varg;
   step_bredex (bredex_match_nat n cZ cS) := 
@@ -234,21 +243,6 @@ Equations subst_eval_context_ctx {b t1 t2 MR1 MR2 Γ} {r : bredex t2 MR2 + call 
   subst_eval_context_ctx (ev_lift _ E) c := comp_lift (subst_eval_context_ctx E c).
 
 
-(*TODO: see if this is necessary, shouldn't be too hard but may be that I don't really need it,
-  may make more sense to just define subst_eval_context in in terms of the second function, 
-   and then redo the other metatheory? *)
-Lemma subst_eval_context_ctx_exten b t1 t2 MR1 MR2 (r : bredex t2 MR2 + call t2 MR2)
-      (E : eval_context t1 MR1 r b) :
-  forall c, subst_eval_context E c = subst_eval_context_ctx E c.
-Proof.
-  dependent induction E; intros c'; simp subst_eval_context; simp subst_eval_context_ctx; 
-    try rewrite IHE; auto.
-  - enough (weaken_r_comp MR1 [t1] [] t2 c = c). rewrite H. auto. 
-    unfold weaken_r_comp. clear IHE E r c' MR2 b t3.
-    admit.
-  - enough (weaken_r_bodies bodies = bodies). rewrite H. auto.
-    unfold weaken_r_bodies. admit.
-Abort.
 (* weird error here *)
 Equations push_eval_context {t1 t2 MR1 MR2} (r : bredex t2 MR1 + call t2 MR1)
           (E : eval_context t1 MR1 r true)
@@ -344,6 +338,8 @@ Equations observe {t MR} (c : comp t [] MR) : boxed_eval_context t MR + closed_v
     end;
   observe (comp_match_nat (val_const n) cZ cS ) :=
     inl (bec_of_bredex (bredex_match_nat n cZ cS) );
+  observe (comp_succ (val_const n)) :=
+    inl (bec_of_bredex (bredex_succ n));
   observe (comp_match_list vl cnil ccons) :=
     inl (bec_of_bredex (bredex_match_list vl cnil ccons) );
   observe (comp_split vp cs) :=

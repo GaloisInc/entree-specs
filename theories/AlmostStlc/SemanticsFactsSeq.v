@@ -191,6 +191,9 @@ Proof.
     destruct r1; auto. rewrite <- var_map_weaken_skip with (t1 := Nat).
     eapply H1. constructor; auto. reflexivity.
   - simp comp_map. simp denote_comp.
+    eapply rutt_bind; eauto. intros. simp types_equiv in H0. subst.
+    apply rutt_Ret. simp types_equiv. auto.
+  - simp comp_map. simp denote_comp.
     eapply rutt_bind; eauto. intros. simp types_equiv in H2.
     dependent destruction H2; eauto.
     rewrite <- var_map_weaken_skip with (t1 := List t1).
@@ -551,8 +554,9 @@ Proof.
     specialize (H1 (Nat :: Γ1) t0 Γ2 v (r1, hyps11) (r1, hyps12) ). 
     setoid_rewrite hyps_app_equation_2 in H1. eapply H1; eauto.
     constructor; auto. reflexivity.
- - setoid_rewrite subst_comp_equation_4.
-   setoid_rewrite denote_comp_equation_4.
+ - simp subst_comp. simp denote_comp. eapply rutt_bind; try eapply H; eauto.
+   simp types_equiv. intros. subst. apply rutt_Ret. auto.
+ - simp subst_comp. simp denote_comp.
    eapply rutt_bind. eapply H; eauto. intros.
    simp types_equiv in H4. dependent destruction H4.
    eapply H0; eauto. clear H. clear H0.
@@ -561,8 +565,7 @@ Proof.
    setoid_rewrite hyps_app_equation_1 in H1. setoid_rewrite hyps_app_equation_2.
    setoid_rewrite hyps_app_equation_1.
    eapply H1; eauto. repeat constructor; auto.
- - setoid_rewrite subst_comp_equation_5.
-   setoid_rewrite denote_comp_equation_5.
+ - simp subst_comp. simp denote_comp.
    eapply rutt_bind. eapply H; eauto. intros.
    destruct r1 as [v1 v2]. destruct r2 as [v3 v4].
    simp types_equiv in H3. dependent destruction H3.
@@ -573,13 +576,11 @@ Proof.
    setoid_rewrite hyps_app_equation_1 in H0.
    setoid_rewrite hyps_app_equation_2. setoid_rewrite hyps_app_equation_1. 
    eapply H0; auto. repeat constructor; auto.
- - setoid_rewrite subst_comp_equation_6.
-   setoid_rewrite denote_comp_equation_6.
+ - simp subst_comp. simp denote_comp.
    eapply rutt_bind; eauto. eapply H; eauto.
    intros. eapply rutt_bind. eapply H0; eauto. intros. 
    simp types_equiv in H3.
- - setoid_rewrite subst_comp_equation_7.
-   setoid_rewrite denote_comp_equation_7.
+ - simp subst_comp. simp denote_comp.
    eapply rutt_bind. eapply H; eauto.
    intros. unfold call_term.
    destruct (call_mrec x xR r1) as [c1 f1] eqn : Heq1.
@@ -587,20 +588,17 @@ Proof.
    setoid_rewrite bind_trigger. apply rutt_Vis.
    eapply mfix_pre_call_mrec; eauto.
    intros. apply rutt_Ret. eapply mfix_post_equiv_types_equiv; eauto.
- - setoid_rewrite subst_comp_equation_8.
-   setoid_rewrite denote_comp_equation_8.
+ - simp subst_comp. simp denote_comp.
    eapply interp_mrec_rutt
      with (RPreInv := call_frame_pre_equiv R)
           (RPostInv := call_frame_post_equiv R);
      intros; try eapply H0; eauto.
- - setoid_rewrite subst_comp_equation_9.
-   setoid_rewrite denote_comp_equation_9.
+ - simp subst_comp. simp denote_comp.
    apply mapE_rutt.
    eapply rutt_mon; try eapply H; eauto.
    intros; eapply mfix_pre_equiv_lift_handler; eauto.
    intros; eapply mfix_post_equiv_lift_handler; eauto.
- - setoid_rewrite subst_comp_equation_10.
-   setoid_rewrite denote_comp_equation_10.
+ - simp subst_comp. simp denote_comp.
    apply mapE_rutt.
    eapply rutt_mon; try eapply H; eauto.
    intros; eapply mfix_pre_equiv_perm_handler; eauto.

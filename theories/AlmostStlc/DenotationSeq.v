@@ -31,6 +31,9 @@ Equations denote_comp {t Γ MR} (c : comp t Γ MR) (hyps : denote_ctx Γ) :
       | nil => denote_comp enil hyps
       | h :: t => denote_comp econs (h, (t, hyps))
       end;
+    denote_comp (comp_succ vn) hyps :=
+      n <- denote_value vn hyps;;
+      ret (S n);
     denote_comp (comp_split vp es) hyps :=
       '(v1,v2) <- denote_value vp hyps;;
       denote_comp es (v1, (v2, hyps));
