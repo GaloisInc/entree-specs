@@ -356,19 +356,26 @@ Definition lift_rel' {t MR} (R : forall t, denote_type t -> closed_value t -> Pr
               R (Arrow tc MR t) (denote_eval_context_cont _ E) (ctx_to_val E)).
 *)
 
-(* get it well typed and then swap order *)
+(* get it well typed and then swap order
+   could it possibly be 
+ *)
 
-Inductive approx_comp {t MR} (j : nat) (R : nat -> forall t, closed_value t -> denote_type t -> Prop) :
+
+Definition valid_denote {t} (vv : denote_type t) : Prop :=
+  types_equiv t vv vv.
+
+Inductive approx_comp {t MR} (j : nat) (R : nat -> forall t, denote_type t -> closed_value t -> Prop) :
            forall (m : mtree (denote_mfix_ctx MR) (denote_type t)) (c : comp t [] MR), Prop := 
   approx_comp_intro m c : (j > 0 ->
-                                (forall (vv : denote_type t), comp_equiv_rutt m (ret vv) -> exists v, eval_rel_stuck c (inl v) /\ R (j - 1) t v vv) /\
+                                (forall (vv : denote_type t), comp_equiv_rutt m (ret vv) -> exists v, eval_rel_stuck c (inl v) /\ R (j - 1) t vv v) /\
                                 (forall (tin tout : type) Rcall (xR : var Rcall MR) (x : var (tin, tout) Rcall) (vvcall : denote_type tin) k,
                                     comp_equiv_rutt m (vv <- call_term x xR vvcall;; k vv) ->
                                     exists (vcall : closed_value tin) (E : eval_context t MR (inr (SmallStepSeq.callv xR x vcall) ) true) (c' : comp t [] MR),
+                                      R (j - 1) tin vvcall vcall /\ 
                                       eval_rel_stuck c (inr c') /\ stuck_call c' ((SmallStepSeq.callv xR x vcall)) E /\
-                                        (forall (vvret : denote_type tout) (vret : closed_value tout), 
-                                          R (j - 1) tout vret vvret ->
-                                          approx_comp (j - 1) R (k vvret) (subst_eval_context E (comp_ret vret)))))
+                                        (forall j' (vvret : denote_type tout) (vret : closed_value tout), j' < j -> 
+                                          R j' tout vvret vret ->
+                                          approx_comp j' R (k vvret) (subst_eval_context E (comp_ret vret)))))
 
                                 -> approx_comp j R m c.
 
@@ -409,11 +416,11 @@ Inductive approx_comp {t MR} : forall (n : nat) (R : forall t, closed_value t ->
 *)
 (* maybe a bit more complicated *)
 
-Inductive log_rel_list {t} (R : Rel (closed_value t) (denote_type t)) : 
-   closed_value (List t) -> denote_type (List t) -> Prop := 
- | log_rel_list_nil : log_rel_list R val_nil nil
- | log_rel_list_cons vvh vh vvt vt : R vh vvh -> log_rel_list R vt vvt ->
-                                     log_rel_list R (val_cons vh vt) (cons vvh vvt)
+Inductive log_rel_list {t} (R : Rel (denote_type t) (closed_value t) ) : 
+   denote_type (List t) -> closed_value (List t)  -> Prop := 
+ | log_rel_list_nil : log_rel_list R nil val_nil
+ | log_rel_list_cons vvh vh vvt vt : R vvh vh -> log_rel_list R vvt vt ->
+                                     log_rel_list R (cons vvh vvt) (val_cons vh vt) 
 .
 
 (* well founded relation over nat * type *)
@@ -434,18 +441,15 @@ Proof.
   - apply well_founded_type_subterm.
 Qed.
 
-Definition valid_denote {t} (vv : denote_type t) : Prop :=
-  types_equiv t vv vv.
-
-Equations approx_val (n : nat) (t : type) (v : closed_value t) (vv : denote_type t) : Prop by wf (n,t) log_rel_dec := {
+Equations approx_val (n : nat) (t : type) (vv : denote_type t) (v : closed_value t) : Prop by wf (n,t) log_rel_dec := {
   approx_val 0 _ _ _ := True;
-  approx_val (S m') Nat (val_const m) n := n = m;
-  approx_val (S m) (Pair t1 t2) (val_pair v1 v2) (vv1, vv2) := approx_val (S m) t1 v1 vv1 /\ approx_val (S m) t2 v2 vv2;
-  approx_val (S m) (List t) vl l := log_rel_list (fun v vv => approx_val (S m) t v vv) vl l;
-  approx_val (S m) (Arrow t1 MR t2) (val_abs c) f := 
-    forall vv v m' (H : m' < S m), valid_denote vv -> approx_val m' t1 v vv -> 
-                              approx_comp m' (fun n t vv v => forall (H : n < S m), 
-                                                  approx_val n t vv v) (subst_comp_cons c v) (f vv)
+  approx_val (S m') Nat n (val_const m) := n = m;
+  approx_val (S m) (Pair t1 t2) (vv1, vv2) (val_pair v1 v2)  := approx_val (S m) t1 vv1 v1 /\ approx_val (S m) t2 vv2 v2;
+  approx_val (S m) (List t) l vl := log_rel_list (fun vv v => approx_val (S m) t vv v) l vl;
+  approx_val (S m) (Arrow t1 MR t2) f (val_abs c) := 
+    forall vv v m' (H : m' < S m), valid_denote vv -> approx_val m' t1 vv v -> 
+                              approx_comp m' (fun n t v vv => forall (H : n < S m), 
+                                                  approx_val n t v vv) (f vv) (subst_comp_cons c v) 
 }.
 Next Obligation. 
   right. constructor. constructor.
@@ -466,9 +470,9 @@ Qed.
 Lemma lower_approx_comp_aux1 : forall (P : nat -> Prop) n t MR c m R1 R2,
     P n ->
     (forall n m, n <= m -> P m -> P n) ->
-    (forall n' t v vv, P n' -> (R1 n' t v vv <-> R2 n' t v vv)) ->
-    approx_comp (t := t) (MR := MR) n R1 c m -> 
-    approx_comp n R2 c m.
+    (forall n' t vv v, P n' -> (R1 n' t vv v <-> R2 n' t vv v)) ->
+    approx_comp (t := t) (MR := MR) n R1 m c -> 
+    approx_comp n R2 m c.
 Proof.
   intros P n.
   induction n as [ n IHn ] using (well_founded_induction lt_wf).
@@ -481,16 +485,16 @@ Proof.
   split.
   - intros vv Hvv. apply Hret in Hvv. decompose record Hvv. eexists. split; eauto.
     apply HR; auto. eapply Hclosed. 2 : apply Hn. lia.
-  - intros tc ca k Hca. apply Hstuck in Hca. destruct Hca as [E [c' [H1 [H2 H3]]]].
-    exists E, c'. do 2 (split; auto). intros vv vc Hvvc.
-    cbn.
-    destruct n.
-    { cbn. constructor. intros. lia. }
-    eapply IHn; eauto. lia. eapply Hclosed; try apply Hn. lia.
-    apply H3. auto. apply HR; auto. eapply Hclosed; try apply Hn. lia.
+  - intros. apply Hstuck in H. destruct H as [vcall [E [c' [H1 [H2 [H3 H4]]]]]].
+    exists vcall, E, c'.
+    split; try split; try split; auto.
+    + apply HR; auto. apply Hclosed with (n := n-1) (m := n); auto. lia.
+    + intros j' vvret vret Hvret Hj'. destruct n; cbn. constructor. intros. lia.
+      eapply IHn; eauto. 
+      eapply H4. lia. eapply HR. eapply Hclosed; try apply Hn. lia. auto.
 Qed.
 
-Lemma lower_approx_val_aux : forall n t v vv, approx_val (S n) t v vv -> approx_val n t v vv.
+Lemma lower_approx_val_aux : forall n t v vv, approx_val (S n) t vv v -> approx_val n t vv v.
 Proof.
   intros n. induction n; intros.
   - simp approx_val. auto.
@@ -521,36 +525,35 @@ Lemma lower_approx_comp_aux2 : forall n t MR c m R,
     approx_comp (t := t) (MR := MR) (S n) R c m ->
     approx_comp n R c m.
 Proof.
-  intros n t MR c m R HR Hcm.
-  dependent destruction Hcm. constructor. intros j' Hj'.
-  assert (Hj'' : 0 < j' < S n). lia.
-  specialize (H j' Hj''). destruct H as [Hret Hstuck].
+  intros n. induction n.
+  { intros. constructor. intros. lia. }
+  intros t MR c m R HR Hcm.
+  dependent destruction Hcm. constructor. intros Hn.
+  assert (Hn' : S (S n) > 0). lia.
+  specialize (H Hn'). destruct H as [Hret Hstuck].
   split.
   - intros vv Hvv. eapply Hret in Hvv as [v [Hv1 Hv2]].
-    eexists. split; eauto. eapply HR with (m := S n - j'). lia. auto.
-  - intros tc ca k Hca. apply Hstuck in Hca.
-    destruct Hca as [E [c' [HE1 [HE2 HE3]]]].
-    eexists. eexists. do 2 (split; eauto). intros.
-    assert (Hsj'' : 0 < (j'' + 1) < S n - j'). lia.
-    specialize (HE3 vv vc (j'' + 1) Hsj'').
-    assert (n - j' - j'' = S n - j' - (j'' + 1)). lia. rewrite H1 in H0.
-    specialize (HE3 H0). rewrite <- H1 in HE3. auto.
+    eexists. split; eauto. eapply HR; try apply Hv2. lia.
+  - intros tin tout Rcall xR x vvcall k Hca. apply Hstuck in Hca.
+    destruct Hca as [vcall [E [c' [HE1 [HE2 [HE3 HE4]]]]]].
+    exists vcall, E, c'. repeat (split; auto).
+    eapply HR; try apply HE1. lia.
 Qed.
 
 Lemma lower_approx_comp_aux3 n j t MR c m : 
   n < j->
-  approx_comp n approx_val c m ->
+  approx_comp n approx_val m c ->
   approx_comp (t := t) (MR := MR) n
-              (fun n t vv v => forall (H : n < j), approx_val n t vv v) c m.
+              (fun n t vv v => forall (H : n < j), approx_val n t vv v) m c.
 Proof.
   intros. eapply lower_approx_comp_aux1 with (P := fun n => n < j); eauto.
   lia. intros. simpl. split; intros; auto.
 Qed.
 
-Lemma lower_approx_val : forall n m, n < m -> forall t v vv, approx_val m t v vv -> approx_val n t v vv.
+Lemma lower_approx_val : forall n m, n < m -> forall t vv v, approx_val m t vv v -> approx_val n t vv v.
 Proof.
   intros n m Hnm. red in Hnm. dependent induction Hnm.
-  - apply lower_approx_val_aux.
+  - intros. apply lower_approx_val_aux. auto.
   - intros. apply lower_approx_val_aux in H. auto.
 Qed.
 
