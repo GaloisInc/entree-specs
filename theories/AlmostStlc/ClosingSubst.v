@@ -587,7 +587,7 @@ Proof.
       apply
 *)
 (* may also need that vv is valid *)
-Inductive closing_subst_approx (n : nat) : forall Γ, closing_subst Γ -> denote_ctx Γ -> Prop :=
+Inductive closing_subst_approx (n : nat) : forall Γ, denote_ctx Γ -> closing_subst Γ ->  Prop :=
   | closing_subst_approx_nil : closing_subst_approx n nil tt tt
   | closing_subst_approx_cons t Γ v ρ vv hyps : 
     approx_val n t v vv -> closing_subst_approx n Γ ρ hyps ->
@@ -596,8 +596,8 @@ Inductive closing_subst_approx (n : nat) : forall Γ, closing_subst Γ -> denote
 
 Lemma lower_closing_subst_approx:
   forall (n m : nat) (Γ : ctx) (ρ : closing_subst Γ) (hyps : denote_ctx Γ),
-    closing_subst_approx n Γ ρ hyps ->
-    m < n -> closing_subst_approx m Γ ρ hyps.
+    closing_subst_approx n Γ hyps ρ ->
+    m < n -> closing_subst_approx m Γ hyps ρ.
 Proof.
   intros n m Γ ρ hyps H Hm.
   generalize dependent Γ. intros Γ. induction Γ.
@@ -608,18 +608,18 @@ Qed.
 
 
 Lemma proper_approx_aux : forall n,
-    (forall t v vv1 vv2, types_equiv t vv1 vv2 -> approx_val n t v vv1 -> approx_val n t v vv2) /\
+    (forall t v vv1 vv2, types_equiv t vv1 vv2 -> approx_val n t vv1 v -> approx_val n t vv2 v) /\
     (forall t MR c m1 m2, comp_equiv_rutt (t := t) (MR := MR) m1 m2 -> 
-       approx_comp n approx_val c m1 -> approx_comp n approx_val c m2).
+       approx_comp n approx_val m1 c -> approx_comp n approx_val m2 c).
 Proof.
   intros n. induction n as [ n IHn ] using (well_founded_induction lt_wf).
   assert (IHv : forall y, y < n -> 
            (forall (t : vtype) (v : closed_value t) (vv1 vv2 : denote_type t),
-         types_equiv t vv1 vv2 -> approx_val y t v vv1 -> approx_val y t v vv2)).
+         types_equiv t vv1 vv2 -> approx_val y t vv1 v -> approx_val y t vv2 v)).
   { intros. apply IHn in H. destruct H. eauto. }
   assert (IHc : forall y, y < n -> 
            (forall t MR c m1 m2, comp_equiv_rutt (t := t) (MR := MR) m1 m2 -> 
-       approx_comp y approx_val c m1 -> approx_comp y approx_val c m2)).
+       approx_comp y approx_val m1 c -> approx_comp y approx_val m2 c)).
   { intros. apply IHn in H. destruct H. eauto. }
   clear IHn.
   split; intros.
@@ -648,18 +648,18 @@ Proof.
       eapply IHc; eauto. simp approx_val in H0. 
       eapply lower_approx_comp_aux1 with (P := fun m' => m' < S n); eauto. lia.
       intros. simpl. split; intros; auto.
-  - destruct n. constructor. intros. lia. constructor. inversion H0. subst. intros j' Hj'. specialize (H1 j' Hj'). destruct H1 as [Hret Hstuck].
+  - constructor. intros. inversion H0. subst. specialize (H2 H1) as [Hret Hstuck].
     split.
-    + intros. rewrite <- H in H1. apply Hret in H1. auto.
-    + intros. rewrite <- H in H1. apply Hstuck in H1. eauto.
+    + intros. rewrite <- H in H2. eapply Hret. auto.
+    + intros. rewrite <- H in H2. apply Hstuck in H2. eauto.
 Qed.
 
-#[local] Instance proper_approx_val {n t} : Morphisms.Proper (eq ==> types_equiv t ==> Basics.flip Basics.impl) (approx_val n t).
+#[local] Instance proper_approx_val {n t} : Morphisms.Proper (types_equiv t ==> eq ==> Basics.flip Basics.impl) (approx_val n t).
 Proof.
-  repeat intro. subst. destruct (proper_approx_aux n). eapply H; eauto. symmetry. auto.
+  repeat intro. subst. destruct (proper_approx_aux n). eapply H0; eauto. symmetry. auto.
 Qed.
 
-#[local] Instance proper_approx_comp {n t MR} : Morphisms.Proper (eq ==> comp_equiv_rutt (t := t) (MR := MR)  ==> Basics.flip Basics.impl) (approx_comp n approx_val).
+#[local] Instance proper_approx_comp {n t MR} : Morphisms.Proper (comp_equiv_rutt (t := t) (MR := MR)  ==> eq ==> Basics.flip Basics.impl) (approx_comp n approx_val).
 Proof.
   repeat intro. subst. destruct (proper_approx_aux n). eapply H2; eauto. symmetry. auto.
 Qed.
@@ -678,7 +678,7 @@ Equations log_rel_bodies_step {MR R1 R2}
           (bodies : mfix_bodies [] MR R1 R2) : Prop :=
   log_rel_bodies_step _ f mfix_bodies_nil := True;
   log_rel_bodies_step n f (mfix_bodies_cons cbody bodies) :=
-   approx_val n (Arrow t1 (R1 :: MR) t2) (val_abs cbody) (fun vv => f (inl vv)) /\
+   approx_val n (Arrow t1 (R1 :: MR) t2) (fun vv => f (inl vv))(val_abs cbody) /\
       log_rel_bodies_step n (fun vv => f (inr vv)) bodies.
 
 (*
