@@ -258,6 +258,8 @@ Proof.
       *  simpl in H. injection H. intros. simp step_eval_context in H0. discriminate.
     + intros. dependent destruction vn; try inversion x. simp observe in H.
       simpl in H. injection H. intros. simp step_eval_context in H0. discriminate.
+    + dependent destruction vn; try inversion x. simp observe. cbn.
+      simp step_eval_context. simpl. intros. discriminate.
     + simp observe. simpl. intros. discriminate.
     + simp observe. simpl. intros. discriminate.
     + intros. dependent destruction vf; try inversion x. simp observe in H.
@@ -287,13 +289,13 @@ Proof.
     eapply eqit_bind. reflexivity. intros. subst. simp denote_eval_context_cont. reflexivity.
 Qed.
 
-Inductive eval_rel_stuck {t MR} : forall n : nat, Rel (comp t [] MR) (closed_value t + comp t [] MR) :=
-  | eval_rel_stuck_step n c1 c2 cv :
-    step_rel c1 c2 -> eval_rel_stuck n c2 cv -> eval_rel_stuck (S n) c1 cv
-  | eval_rel_stuck_val n c v : 
-    step c = inr v -> eval_rel_stuck n c (inl v)
-  | eval_rel_stuck_stuck t' n c ca E :
-    stuck_call (t2 := t') c ca E -> eval_rel_stuck n c (inr c)
+Inductive eval_rel_stuck {t MR} : Rel (comp t [] MR) (closed_value t + comp t [] MR) :=
+  | eval_rel_stuck_step c1 c2 cv :
+    step_rel c1 c2 -> eval_rel_stuck c2 cv -> eval_rel_stuck  c1 cv
+  | eval_rel_stuck_val c v : 
+    step c = inr v -> eval_rel_stuck c (inl v)
+  | eval_rel_stuck_stuck t' c ca E :
+    stuck_call (t2 := t') c ca E -> eval_rel_stuck c (inr c)
 .
 
 (* tomorrow write the logical relation, and the fundamental theorem type,
@@ -354,7 +356,23 @@ Definition lift_rel' {t MR} (R : forall t, denote_type t -> closed_value t -> Pr
               R (Arrow tc MR t) (denote_eval_context_cont _ E) (ctx_to_val E)).
 *)
 
+(* get it well typed and then swap order *)
 
+Inductive approx_comp {t MR} (j : nat) (R : nat -> forall t, closed_value t -> denote_type t -> Prop) :
+           forall (m : mtree (denote_mfix_ctx MR) (denote_type t)) (c : comp t [] MR), Prop := 
+  approx_comp_intro m c : (j > 0 ->
+                                (forall (vv : denote_type t), comp_equiv_rutt m (ret vv) -> exists v, eval_rel_stuck c (inl v) /\ R (j - 1) t v vv) /\
+                                (forall (tin tout : type) Rcall (xR : var Rcall MR) (x : var (tin, tout) Rcall) (vvcall : denote_type tin) k,
+                                    comp_equiv_rutt m (vv <- call_term x xR vvcall;; k vv) ->
+                                    exists (vcall : closed_value tin) (E : eval_context t MR (inr (SmallStepSeq.callv xR x vcall) ) true) (c' : comp t [] MR),
+                                      eval_rel_stuck c (inr c') /\ stuck_call c' ((SmallStepSeq.callv xR x vcall)) E /\
+                                        (forall (vvret : denote_type tout) (vret : closed_value tout), 
+                                          R (j - 1) tout vret vvret ->
+                                          approx_comp (j - 1) R (k vvret) (subst_eval_context E (comp_ret vret)))))
+
+                                -> approx_comp j R m c.
+
+(*
 (* needs to be changed to exists some j' ... *)
 Inductive approx_comp {t MR} (j : nat) (R : nat -> forall t, closed_value t -> denote_type t -> Prop) :
            forall (c : comp t [] MR) (m : mtree (denote_mfix_ctx MR) (denote_type t)), Prop := 
@@ -368,13 +386,10 @@ Inductive approx_comp {t MR} (j : nat) (R : nat -> forall t, closed_value t -> d
                                       eval_rel_stuck j' c (inr c') /\ stuck_call c' ca E /\
                                         (forall (vv : denote_type tc) (vc : closed_value tc), 
                                             forall j'', 0 < j'' < j - j' ->
-                                          (* this part of the definition breaks lowering of computations 
-                                             but I am not sure that I need that, maybe 
-                                             if I add potentially more steps here I will be fine *)
                                           R (j - j' - j'') tc vc vv ->
                                           approx_comp (j - j' - j'') R (subst_eval_context E (comp_ret vc)) (k vv))))
 
-                                -> approx_comp j R c m .
+                                -> approx_comp j R c m . *)
 (*
 (* consider making this more like the logical relations nick mentioned *)
 Inductive approx_comp {t MR} : forall (n : nat) (R : forall t, closed_value t -> denote_type t -> Prop)
@@ -461,13 +476,13 @@ Proof.
     econstructor. intros. lia. *)
   intros t MR c m R1 R2 Hn Hclosed HR Hcm.
   dependent induction Hcm.
-  constructor. intros j' Hj'. specialize (H j' Hj').
+  constructor. intros Hn'. specialize (H Hn').
   destruct H as [Hret Hstuck].
   split.
   - intros vv Hvv. apply Hret in Hvv. decompose record Hvv. eexists. split; eauto.
     apply HR; auto. eapply Hclosed. 2 : apply Hn. lia.
   - intros tc ca k Hca. apply Hstuck in Hca. destruct Hca as [E [c' [H1 [H2 H3]]]].
-    exists E, c'. do 2 (split; auto). intros vv vc j'' Hj'' HR2. simpl.
+    exists E, c'. do 2 (split; auto). intros vv vc Hvvc.
     cbn.
     destruct n.
     { cbn. constructor. intros. lia. }
@@ -890,7 +905,7 @@ Proof.
   - subst. red in v. dependent destruction v; try inversion x.
     exists n0. constructor. auto.
 Qed.
-(* this looks really weird, like I proved that c must step in 1 step to n which is clearly wrong,
+(* this looks really weird, I proved that c must step in 1 step to n which is clearly wrong,
    which suggests that my logical relation is wrong, need to talk
  *)
 

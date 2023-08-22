@@ -120,7 +120,7 @@ Proof.
     + intros. apply step_stable2 in H.
       assert (Hv : comp_equiv_rutt (denote_comp c2' tt) (denote_value v0 tt) ).
       etransitivity; eauto. symmetry. auto. clear - Hv.
-      red in Hv.
+      red in Hv. setoid_rewrite types_equiv_equation_1 in Hv.
       (* my concern is that the inductive hyp may require *) 
       assert ((exists v', eval_rel c2' v') \/ ~ exists v', eval_rel c2' v').
       admit. (* classical reasoning *)
