@@ -38,3 +38,8 @@ theories/AlmostStlc/TypesEquiv.v
 theories/AlmostStlc/SemanticsFactsSeq.v
 theories/AlmostStlc/CallMrecFacts.v
 theories/AlmostStlc/SemanticsFactsSeq2.v
+
+theories/AlmostStlc/ClosingSubst.v
+theories/AlmostStlc/LogicalApprox.v
+theories/AlmostStlc/Compatibility.v
+theories/AlmostStlc/Adequacy.v
