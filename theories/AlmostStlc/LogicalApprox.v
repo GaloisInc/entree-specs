@@ -19,24 +19,25 @@ Require Export SemanticsFactsSeq2.
 Require Import Lia.
 Require Import Coq.Classes.Morphisms.
 Require Export ClosingSubst.
-
+Require Export EnTreeStep.
 Definition valid_denote {t} (vv : denote_type t) : Prop :=
   types_equiv t vv vv.
 
+
 Inductive approx_comp {t MR} (j : nat) (R : nat -> forall t, denote_type t -> closed_value t -> Prop) :
            forall (m : mtree (denote_mfix_ctx MR) (denote_type t)) (c : comp t [] MR), Prop := 
-  approx_comp_intro m c : (j > 1 ->
-                                (forall (vv : denote_type t), comp_equiv_rutt m (ret vv) -> exists v, eval_rel_stuck c (inl v) /\ R j t vv v) /\
-                                (forall (tin tout : type) Rcall (xR : var Rcall MR) (x : var (tin, tout) Rcall) (vvcall : denote_type tin) k,
-                                    comp_equiv_rutt m (vv <- call_term x xR vvcall;; k vv) ->
-                                    exists (vcall : closed_value tin) (E : eval_context t MR (inr (SmallStepSeq.callv xR x vcall) ) true) (c' : comp t [] MR),
-                                      R j tin vvcall vcall /\ 
-                                      eval_rel_stuck c (inr c') /\ stuck_call c' ((SmallStepSeq.callv xR x vcall)) E /\
-                                        (forall j' (vvret : denote_type tout) (vret : closed_value tout), j' < j -> 
-                                          R j' tout vvret vret ->
-                                          approx_comp j' R (k vvret) (subst_eval_context E (comp_ret vret)))))
-
-                                -> approx_comp j R m c.
+  approx_comp_intro m c : 
+    (forall j', j' < j ->
+          (forall vv : denote_type t, multi_step j' m (ret vv) -> exists v, eval_rel_stuck c (inl v) /\ R (j - j') t vv v) /\
+          (forall (tin tout : type) Rcall (xR : var Rcall MR) (x : var (tin, tout) Rcall) (vvcall : denote_type tin) k,
+             multi_step j' m (vv <- call_term x xR vvcall;; k vv) ->
+             exists (vcall : closed_value tin) (E : eval_context t MR (inr (SmallStepSeq.callv xR x vcall) ) true) (c' : comp t [] MR),
+               R (j - j') tin vvcall vcall /\
+                 eval_rel_stuck c (inr c') /\ stuck_call c' (SmallStepSeq.callv xR x vcall) E /\
+                   forall j'' (vvret : denote_type tout) (vret : closed_value tout), j'' < j - j' -> 
+                       R j'' tout vvret vret ->
+                       approx_comp j'' R (k vvret) (subst_eval_context E (comp_ret vret))))
+            -> approx_comp j R m c.
 
 
 
@@ -105,18 +106,18 @@ Proof.
     econstructor. intros. lia. *)
   intros t MR c m R1 R2 Hn Hclosed HR Hcm.
   dependent induction Hcm.
-  constructor. intros Hn'. specialize (H Hn').
+  econstructor; eauto. intros j' Hj'. specialize (H _ Hj').
   destruct H as [Hret Hstuck].
   split.
   - intros vv Hvv. apply Hret in Hvv. decompose record Hvv. eexists. split; eauto.
-    apply HR; auto.
+    apply HR; auto. eapply Hclosed with (m := n);  eauto. lia.
   - intros. apply Hstuck in H. destruct H as [vcall [E [c' [H1 [H2 [H3 H4]]]]]].
     exists vcall, E, c'.
     split; try split; try split; auto.
-    + apply HR; auto. (* apply Hclosed with (n := n-1) (m := n); auto. lia. *)
-    + intros j' vvret vret Hvret Hj'. destruct n; cbn. constructor. intros. lia.
-      eapply IHn; eauto. 
-      eapply H4. lia. eapply HR. eapply Hclosed; try apply Hn. lia. auto.
+    + apply HR; auto. eapply Hclosed with (m := n);  eauto. lia. 
+    + intros j'' vvret vret Hvret Hj''.
+      eapply IHn; eauto. lia. eapply Hclosed with (m := n); auto. lia.
+      eapply H4; eauto. eapply HR; eauto. eapply Hclosed with (m := n); auto. lia.
 Qed.
 
 Lemma lower_approx_val_aux : forall n t v vv, approx_val (S n) t vv v -> approx_val n t vv v.
@@ -153,16 +154,18 @@ Proof.
   intros n. induction n.
   { intros. constructor. intros. lia. }
   intros t MR c m R HR Hcm.
-  dependent destruction Hcm. constructor. intros Hn.
-  assert (Hn' : S (S n) > 1). lia.
-  specialize (H Hn'). destruct H as [Hret Hstuck].
+  dependent destruction Hcm. constructor. intros j' Hj'.
+  assert (Hj'' : j' < S (S n) ). lia.
+  specialize (H j' Hj''). destruct H as [Hret Hstuck].
   split.
   - intros vv Hvv. eapply Hret in Hvv as [v [Hv1 Hv2]].
-    eexists. split; eauto. (* eapply HR; try apply Hv2. lia. *)
+    eexists. split; eauto. eapply HR; try apply Hv2. lia. 
   - intros tin tout Rcall xR x vvcall k Hca. apply Hstuck in Hca.
     destruct Hca as [vcall [E [c' [HE1 [HE2 [HE3 HE4]]]]]].
-    exists vcall, E, c'. repeat (split; auto).
-    eapply HR; try apply HE1. lia.
+    exists vcall, E, c'. split.
+    + eapply HR; try apply HE1. lia.
+    + do 2 (split; auto). intros.
+      eapply HE4; auto. lia.
 Qed.
 
 
@@ -213,7 +216,9 @@ Proof.
   constructor; auto. eapply lower_approx_val; eauto.
 Qed.
 
+(* notably properness is gone, that may make things more complicated
 
+   could presumably use 
 Lemma proper_approx_aux : forall n,
     (forall t v vv1 vv2, types_equiv t vv1 vv2 -> approx_val n t vv1 v -> approx_val n t vv2 v) /\
     (forall t MR c m1 m2, comp_equiv_rutt (t := t) (MR := MR) m1 m2 -> 
@@ -270,7 +275,7 @@ Qed.
 Proof.
   repeat intro. subst. destruct (proper_approx_aux n). eapply H2; eauto. symmetry. auto.
 Qed.
-
+*)
 
 (* needs to include this new bodies steps t *)
 Equations log_rel_bodies_step {MR R1 R2} 
@@ -294,7 +299,7 @@ Definition val_rel {t Γ MR}
            (v : value t Γ) : Prop :=
   forall n (hyps : denote_ctx Γ) (ρ : closing_subst Γ), 
     closing_subst_approx n Γ hyps ρ -> 
-    exists vv, vm hyps ≈ ret vv /\
+    exists vv, vm hyps ≅ ret vv /\
             approx_val n t vv (close_value Γ ρ v).
 
 

@@ -20,15 +20,23 @@ Require Import Lia.
 Require Import Coq.Classes.Morphisms.
 Require Export ClosingSubst.
 Require Export LogicalApprox.
+Require Export RecursionTrace.
 
 Definition denote_comp_type t Γ MR : Type :=
   denote_ctx Γ -> mtree (denote_mfix_ctx MR) (denote_type t).
+
+Definition denote_bodies_type Γ MR R1 R2 : Type :=
+  denote_ctx Γ -> forall arg : denote_call_frame R2, mtree (denote_mfix_ctx (R1 :: MR)) (encodes arg).
 
 Definition comp_bind {Γ MR t1 t2}
            (m1 : denote_comp_type t1 Γ MR)
            (m2 : denote_comp_type t2 (t1 :: Γ) MR) :
   denote_comp_type t2 Γ MR :=
   fun hyps => x <- m1 hyps;; m2 (x, hyps).
+
+Definition interp_mrec_bodies {t Γ MR R} (bodies : denote_bodies_type Γ MR R R) (m : denote_comp_type t Γ (R :: MR)) 
+           : denote_comp_type t Γ MR :=
+  fun hyps => interp_mrec (bodies hyps) (m hyps).
   
 (* 
 
@@ -85,13 +93,21 @@ Proof.
           perhaps close_comp is not general enough 
           needs to be a more general substitution?
 
+          morally
+          exists (ev_let E (close_comp Γ ρ c2)).
 
-          
+          need a substitution that uses ρ to turn c2 into
+          a comp t2 [t1] MR,
+
+          then I need theorems about the order of substitutions 
+
+          there is a lot of ugly theory about closing substitutions I need
+
         *) 
-      eexists. eexists. eexists. split; eauto. split; [ | split]; eauto.
+      eexists.  eexists. eexists. split; eauto. split; [ | split]; eauto.
       * admit.
       * admit.
-      * intros. apply HE3 in H0; auto.
+      * intros. apply HE3 in H0; auto. 
         (* concerned about this part 
            k vvret = k' vvret ;; m2 kyps
            use that to substitute in
@@ -101,6 +117,15 @@ Proof.
 
            also might be easier and sufficient to prove approx_comp composes with
            bind/let at a fixed j'
+
+
+           should reduce/rewrite to 
+           (vv1 <- k' vvret;; m2 (vv1, hyps)) <=j' (
+              let (E[vret]]) (close ρ c2)
+
+
+              and by H0 we know k' vvret <=j' E[vret] (for this specific j')
+              and by Hmc2 we know forall j, m2 (vv1, hyps) <=j (close ρ c2)
            
 
          *)
@@ -117,3 +142,68 @@ Proof.
      * admit.
      * auto.
 Admitted.
+
+
+
+Lemma mfix_compat t Γ R MR dbodies sbodies m (c : comp t Γ (R :: MR)):
+  bodies_rel dbodies sbodies ->
+  comp_rel m c ->
+  comp_rel (interp_mrec_bodies dbodies m) (comp_mfix _ sbodies c).
+Proof.
+  intros Hbodies Hmc n hyps ρ Hhρ.
+  constructor. intros. split.
+  - intros vv Hvv. apply recursion_trace_den_ret in Hvv.
+    destruct Hvv as [l Hrec]. 
+    assert (approx_comp (n + length l) approx_val (m hyps) (close_comp Γ ρ c)).
+    apply Hmc. 
+
+    (* this is a major problem in order to use Hmc at n + len lI need to know the contexts approx 
+                 each other at n + len l but I only know that for n
+                 maybe this is the wrong level of abstraction, could I prove some core part of this lemma 
+                 on closed terms and then use that to generalize?
+     *)
+    (* needs to be rutt, do that today?
+    eapply recursion_trace_den_ret in Hvv.
+    *)
+
+
+
+(*
+IH : forall m l vv, recursion_trace_den m l (ret vv) ->
+     forall c, m <=(n + len l) c ->
+       exists v, mfix bodies c ->* v /\ vv <=n v
+
+
+   Base case : 
+     m ≈ ret vv
+     which means (ret vv) <=(n + len l) c so
+     c ->* v where vv <=(n + len) v going the rest of the way is trivial assuming lemmas that should hold
+
+
+   Inductive case :
+    H1:m1 ≈ (vv <- call_term vvin;; k1 vv)
+    H2:recursion_trace (vv <- (apply_bodies x vvin);; k1 vv ) l m3
+    H3: m1 <=(n + len l + 1) c
+
+    using H1 and H3 can learn that c ->* E[ca] where vvin <=(n + len l + 1) ca
+
+
+    enough to show exists v, mfix bodies E[ca] ->* v /\ vv <=n v
+
+    which I can prove using IH and a proof that vv <- (apply_bodies x vvin);; k1 vv <=(n + len l) E[ca]
+
+    Intuitively this should be true and derivable from H1, H3 and the fact that c ->* E[ca]
+    is this the equivalent of the lemma nick suggested? I feel like it might be look into this carefully
+
+
+    two parts 
+    1 : m <=n c and c ->* E[ca] then m <=n E[ca] ( probably wrong generality)
+    2 : call_term vvin;; k <=n E[ca] ->
+
+                  forall j, bodies vvin <=j c -> 
+                         bodies vvin;; k <=(n - 1) let x = c1 in E[x]  (or is it at n + 1? that is strictly stronger)
+                         ??? probably bugs in this statement maybe it is backwards, but I think the idea that removing a call lowers a step index seems sound
+                         also might rely on bodies approximating a syntax at all levels
+
+
+*)

@@ -64,23 +64,6 @@ Fixpoint denote_ctx (Γ : ctx) : Type@{entree_u} :=
 Equations index_ctx {t : type} {Γ} (x : var t Γ) (hyps : denote_ctx Γ) : denote_type t :=
   index_ctx (@VarZ x Γ') (v, _) := v;
   index_ctx (@VarS _ v1 v2 Γ' y) (_, hyps) := index_ctx y hyps.
-(*
-Definition call_mrec {t1 t2 MR R} (x : var (t1,t2) R) (y : var R MR ) (v : denote_type t1) :
-          {d : denote_mrec_ctx (denote_mfix_ctx MR) & encodes d -> denote_type t2 }.
-induction y.
-- revert v.
-  enough ((denote_type (fst (t1,t2)) -> 
-           {d : denote_mrec_ctx (denote_mfix_ctx (a :: l)) & encodes d -> denote_type (snd (t1,t2))})).
-  auto. induction x.
-  + destruct a. simpl. intros v.
-    exact ((inl (inl v)) && id). 
-  + destruct a. destruct b. intros v. specialize (IHx v) as [v' f]. simpl.
-    destruct v'.
-    * exact (inl (inr d) && f).
-    * exact (inr d && f).
-- specialize (IHy x) as [v' f]. simpl. exact (inr v' && f).
-Defined.
-*)
 
 Equations call_mrec_call_frame {t1 t2 R} (x :  var (t1, t2) R) (v : denote_type t1) : 
   {d : denote_call_frame R & encodes d -> denote_type t2} :=
@@ -89,7 +72,6 @@ Equations call_mrec_call_frame {t1 t2 R} (x :  var (t1, t2) R) (v : denote_type 
     let '(d && f) := call_mrec_call_frame y v in
     (inr d && f).
 
-(* rewrite call_mrec in terms of call_mrec_call_frame *)
 Equations  call_mrec {t1 t2 MR R} (x : var (t1,t2) R) (y : var R MR ) (v : denote_type t1) :
           {d : denote_mrec_ctx (denote_mfix_ctx MR) & encodes d -> denote_type t2 } :=
   call_mrec x VarZ v := let '(d && f) := call_mrec_call_frame x v in

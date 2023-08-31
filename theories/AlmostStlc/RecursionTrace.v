@@ -26,13 +26,132 @@ From ITree Require Import
      Basics.Tacs
      Basics.HeterogeneousRelations
      Eq.Paco2.
-
+Require Export EnTreeStep.
 Section RecursionTrace.
 
 Context (D E : Type) `{EncodedType D} `{EncodedType E}.
 Context (bodies : forall (d : D), entree (D + E) (encodes d)).
 
-(* this is a little messy *)
+
+Inductive recursion_trace {A : Type} :
+  nat -> entree (D + E) A -> list D -> entree E A -> Prop := 
+  | recursion_trace_ret_in t r n t' : t' ≅ (ret r) -> t ≅ ret r -> recursion_trace n t [] t'
+  | recursion_trace_inr_in t (e : E) k n t' :
+    t' ≅ (Vis e (fun x => interp_mrec bodies (k x))) ->
+    t ≅ (Vis (inr e) k) -> recursion_trace n t [] t'
+  | recursion_trace_inl_in t1 (d : D) k1 t2 m l : 
+    t1 ≅ (Vis (inl d) k1) ->
+    recursion_trace m (bind (bodies d) k1) l t2 ->
+    recursion_trace (S m) t1 (d :: l) t2
+  | recursion_trace_multi_step n m t1 t2 t3 l :
+    multi_step n t1 t2 ->
+    recursion_trace m t2 l t3 ->
+    recursion_trace (n + m) t1 l t3.
+
+Lemma recursion_trace_len A n t1 d t2 : 
+  recursion_trace (A := A) n t1 d t2 -> n >= length d.
+Proof.
+  intros Hrec. induction Hrec; cbn; lia.
+Qed.
+
+Instance recursion_trace_eq_itree A : Proper (eq ==> eq_itree eq ==> eq ==> eq_itree eq ==> Basics.flip Basics.impl) (@recursion_trace A).
+Proof.
+  repeat intro. subst. 
+  generalize dependent x0. generalize dependent x2. induction H5; intros.
+  - eapply recursion_trace_ret_in; eauto. rewrite H4. eauto. rewrite H3. auto.
+  - eapply recursion_trace_inr_in. rewrite H4. eauto. rewrite H3. auto.
+  - econstructor; eauto. rewrite H2. eauto. eapply IHrecursion_trace; eauto.
+    reflexivity.
+  - econstructor; eauto. 2 : eapply IHrecursion_trace; eauto; try reflexivity.
+    rewrite H2. auto.
+Qed.
+
+
+Lemma recurstion_trace_ret R (t : entree (D + E) R) r n :
+  multi_step n (interp_mrec bodies t) (ret r) ->
+  exists d, recursion_trace n t d (ret r).
+Proof.
+  intros Hstep.
+  remember (interp_mrec bodies t) as x.
+  assert (x ≅ interp_mrec bodies t). subst. reflexivity.
+  clear Heqx. rename H1 into Heqx.
+  remember (ret r) as y.
+  assert (y ≅ ret r). subst. reflexivity.
+  clear Heqy. rename H1 into Heqy. generalize dependent t.
+  generalize dependent r. induction Hstep; intros.
+  - setoid_rewrite Heqy. exists [].
+    destruct (eq_itree_case t) as [ | [ | ]].
+    + destruct H2 as [r' Hr']. rewrite Hr' in Heqx. rewrite interp_mrec_ret in Heqx.
+      rewrite H1 in Heqx. rewrite Heqy in Heqx.
+      apply eqit_Ret_inv in Heqx. subst. rewrite Hr'. econstructor; reflexivity. 
+    + destruct H2 as [t'' Ht'']. rewrite Ht'' in Heqx.
+      rewrite interp_mrec_tau in Heqx. rewrite H1, Heqy in Heqx.
+      pinversion Heqx; inversion CHECK.
+    + destruct H2 as [e [k Hek]]. rewrite Hek in Heqx.
+      destruct e. rewrite interp_mrec_vis_inl in Heqx. 
+      rewrite H1, Heqy in Heqx.
+      pinversion Heqx; inversion CHECK.
+      rewrite interp_mrec_vis_inr in Heqx. rewrite H1, Heqy in Heqx. pinversion Heqx.
+  - destruct H1. rewrite H1 in Heqx. destruct (eq_itree_case t) as [ | [ | ]].
+    + destruct H2 as [r' Hr']. rewrite Hr' in Heqx. rewrite interp_mrec_ret in Heqx.
+      pinversion Heqx; inversion CHECK.
+    + destruct H2 as [t' Ht']. rewrite Ht' in Heqx. rewrite interp_mrec_tau in Heqx.
+      apply eqit_inv_Tau in Heqx. eapply IHHstep in Heqx; eauto.
+      destruct Heqx as [d Hd]. exists d. assert (S n = 1 + n). auto. rewrite H2.
+      econstructor; eauto. econstructor. constructor. reflexivity. constructor. auto.
+    + destruct H2 as [ [d | e] [Hk] ].
+      * rewrite H2 in Heqx. rewrite interp_mrec_vis_inl in Heqx.
+        apply eqit_inv_Tau in Heqx. eapply IHHstep in Heqx; eauto.
+        destruct Heqx as [l Hl]. exists (d :: l). econstructor; eauto.
+      * rewrite H2 in Heqx. rewrite interp_mrec_vis_inr in Heqx. pinversion Heqx; inversion CHECK.
+Qed.
+
+Lemma recurstion_trace_vis R (t : entree (D + E) R) (e : E) k n :
+  multi_step n (interp_mrec bodies t) (Vis e (fun x => interp_mrec bodies (k x))) ->
+  exists d, recursion_trace n t d (Vis e (fun x => interp_mrec bodies (k x))).
+Proof.
+  intros Hstep.
+  remember (interp_mrec bodies t) as x.
+  assert (x ≅ interp_mrec bodies t). subst. reflexivity.
+  clear Heqx. rename H1 into Heqx.
+  remember ( (Vis e (fun x => interp_mrec bodies (k x)))) as y.
+  assert (y ≅  (Vis e (fun x => interp_mrec bodies (k x)))). subst. reflexivity.
+  clear Heqy. rename H1 into Heqy. generalize dependent t.
+  generalize dependent e. induction Hstep; intros.
+  - setoid_rewrite Heqy. exists [].
+    destruct (eq_itree_case t) as [ | [ | ]].
+    + destruct H2 as [r' Hr']. rewrite Hr' in Heqx. rewrite interp_mrec_ret in Heqx.
+      rewrite H1 in Heqx. rewrite Heqy in Heqx. pinversion Heqx.
+    + destruct H2 as [t'' Ht'']. rewrite Ht'' in Heqx.
+      rewrite interp_mrec_tau in Heqx. rewrite H1, Heqy in Heqx.
+      pinversion Heqx; inversion CHECK.
+    + destruct H2 as [[d | e'] [k' Hk']]; rewrite Hk' in Heqx.
+      * rewrite H1, Heqy in Heqx.
+        rewrite interp_mrec_vis_inl in Heqx.  pinversion Heqx; inversion CHECK.
+      * rewrite H1, Heqy in Heqx. rewrite interp_mrec_vis_inr in Heqx.
+        econstructor 2; eauto.
+  - destruct H1. rewrite H1 in Heqx. destruct (eq_itree_case t) as [ | [ | ]].
+    + destruct H2 as [r' Hr']. rewrite Hr' in Heqx. rewrite interp_mrec_ret in Heqx.
+      pinversion Heqx; inversion CHECK.
+    + destruct H2 as [t' Ht']. rewrite Ht' in Heqx. rewrite interp_mrec_tau in Heqx.
+      apply eqit_inv_Tau in Heqx. eapply IHHstep in Heqx; eauto.
+      destruct Heqx as [d Hd]. exists d. assert (S n = 1 + n). auto. rewrite H2.
+      econstructor; eauto. econstructor. constructor. reflexivity. constructor. auto.
+    + destruct H2 as [ [d | e'] [Hk] ].
+      * rewrite H2 in Heqx. rewrite interp_mrec_vis_inl in Heqx.
+        apply eqit_inv_Tau in Heqx. eapply IHHstep in Heqx; eauto.
+        destruct Heqx as [l Hl]. exists (d :: l). econstructor; eauto.
+      * rewrite H2 in Heqx. rewrite interp_mrec_vis_inr in Heqx. pinversion Heqx; inversion CHECK.
+Qed.
+
+
+End RecursionTrace.
+(* need lemmas relating bind call_term and vis*)
+(*
+(* I think this needs to be changed to rutt for some event transitive relations
+   rutt_trans' rutt_proper
+
+ *)
 Inductive recursion_trace {A : Type} : 
   entree (D + E) A -> list D -> entree E A -> Prop := 
   | recursion_trace_ret_in t vv : t ≈ ret vv -> recursion_trace t [] (ret vv)
@@ -153,4 +272,59 @@ Proof.
     exists R', (VarS xR), t1, t2, x, vin. simp call_mrec. destruct (call_mrec x xR vin).
     cbn in H. subst. auto.
 Qed.
-(* did I already prove this somewhere else?*)
+(* did I already prove this somewhere else?
+
+   should these turn into rutts?
+ *)
+
+
+Section RecursionTraceDen.
+  Context (R : call_frame) (MR : mfix_ctx).
+  Context (bodies : forall arg : denote_call_frame R, mtree (denote_mfix_ctx (R :: MR)) (encodes arg)).
+
+  Inductive call_den :=
+    | call_den_in (tin tout : type) (x : var (tin, tout) R)
+                  (vvin : denote_type tin).
+
+  Definition apply_bodies {tin tout : type} (x : var (tin, tout) R) (vvin : denote_type tin) : mtree (denote_mfix_ctx (R :: MR)) (denote_type tout) :=
+    let '(d && f) := call_mrec_call_frame x vvin in
+    Functor.fmap f (bodies d).
+
+  Inductive recursion_trace_den {t : type} :
+    mtree (denote_mfix_ctx (R :: MR)) (denote_type t) -> list call_den -> mtree (denote_mfix_ctx MR) (denote_type t) -> Prop := 
+    | recursion_trace_den_ret_in m vv : comp_equiv_rutt m (ret vv) -> recursion_trace_den m [] (ret vv)
+    | recursion_trace_den_inr m R tin tout (x : var (tin, tout) R) (xR : var R MR)
+                              (vvin : denote_type tin) k1 k2 :
+      comp_equiv_rutt m (vv <- call_term x (VarS xR) vvin;; k1 vv) ->
+      (forall x, interp_mrec bodies (k1 x) ≈ interp_mrec bodies (k2 x)) ->
+      recursion_trace_den m [] (vv <- call_term x xR vvin;; (interp_mrec bodies (k2 vv)))
+    | recursion_trace_den_inl m1 tin tout (x : var (tin, tout) R) (xR : var R MR)
+                              (vvin : denote_type tin) k1 m2 l m3 : 
+      comp_equiv_rutt m1 (vv <- call_term x VarZ vvin;; k1 vv) ->
+      comp_equiv_rutt m2 (vv <- (apply_bodies x vvin);; k1 vv) ->
+      recursion_trace_den m2 l m3 ->
+      recursion_trace_den m1 (call_den_in tin tout x vvin :: l) m3
+  .
+
+  Lemma recursion_trace_den_ret t (m : mtree (denote_mfix_ctx (R :: MR)) (denote_type t)) (vv : denote_type t) :
+    comp_equiv_rutt (interp_mrec bodies m) (ret vv) -> exists l, recursion_trace_den m l (ret vv).
+  Admitted.
+
+  Lemma recursion_trace_den_call t (m : mtree (denote_mfix_ctx (R :: MR)) _) R' tin tout
+        (x : var (tin, tout) R') (xR' : var R' MR) vvin (k : denote_type tout -> mtree (denote_mfix_ctx (R :: MR)) (denote_type t)):
+    comp_equiv_rutt (interp_mrec bodies m) (vv <- call_term x xR' vvin;; interp_mrec bodies (k vv)) ->
+    exists l, recursion_trace_den m l (vv <- call_term x xR' vvin;; interp_mrec bodies (k vv)).
+  Admitted.
+
+(* wts that interp_mrec bodies (apply_bodies vvin) ≈ interp_mrec bodies (call_term x VarZ vvin)
+   I think there might be more needed for this to be used though
+   this is key for the inductive hypothesis
+
+
+   
+ 
+
+*)
+
+End RecursionTraceDen.
+*)

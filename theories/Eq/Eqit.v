@@ -467,6 +467,8 @@ Proof. apply entree_eta_. Qed.
 Lemma entree_eta' (ot : entree' E R) : ot = observe (go _ _ ot).
 Proof. auto. Qed.
 
+
+
 End eqit_eq.
 
 (** ** Equations for core combinators *)
@@ -618,6 +620,15 @@ Lemma simpobs {E R} `{EncodedType E} ot (t : entree E R) :
 Proof.
   intros. pstep. red. rewrite <- H0. rewrite entree_eta'. pstep_reverse.
   apply Reflexive_eqit. auto.
+Qed.
+
+Lemma eq_itree_case {E R} `{EncodedType E} (t : entree E R) : 
+  (exists r, t ≅ Ret r) \/ (exists t', t ≅ Tau t') \/ (exists e k, t ≅ Vis e k).
+Proof.
+  destruct (observe t) eqn : Heq; symmetry in Heq; eapply simpobs in Heq; setoid_rewrite <- Heq.
+  - left. exists r. reflexivity.
+  - right. left. exists t0. reflexivity.
+  - right. right. exists e. exists k. reflexivity.
 Qed.
 
 (** *** Transitivity properties *)

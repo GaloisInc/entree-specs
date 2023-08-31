@@ -47,6 +47,8 @@ Equations close_value_app {t Γ2} Γ1 (ρ : open_subst Γ1 Γ2) (v : value t (Γ
   close_value_app [] _ v := v;
   close_value_app (t0 :: Γ) (v0, ρ) v := close_value_app Γ ρ (subst_value_cons v (weaken_l_value _ v0) ).
 Arguments close_value_app {_ _ _}.
+(* need more ways to apply a substitution*)
+
 
 (* Γ1 ++ [] = Γ1 *)
 
