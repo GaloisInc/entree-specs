@@ -333,6 +333,44 @@ Next Obligation.
   simpl. f_equal; [ apply elimLevelMaxR | apply elimLevelMaxL ]; assumption.
 Defined.
 
+
+(* The sum functor preserves colimits (FIXME: implement this!) *)
+#[global]
+Program Instance Sum_ColimFunctor2 : ColimFunctor2 (fun A B => sum A B) :=
+  {|
+    fmap2 := fun _ _ _ _ f g s =>
+               match s with | inl a => inl (f a) | inr b => inr (g b) end;
+  |}.
+Next Obligation.
+Admitted.
+Next Obligation.
+Admitted.
+Next Obligation.
+Admitted.
+Next Obligation.
+Admitted.
+Next Obligation.
+Admitted.
+
+
+(* The Vector functor preserves colimits (FIXME: implement this!) *)
+#[global]
+Program Instance Vec_ColimFunctor2 n : ColimFunctor2 (fun A _ => VectorDef.t A n) :=
+  {| 
+    fmap2 := fun _ _ _ _ f _ v => VectorDef.map f v;
+  |}.
+Next Obligation.
+Admitted.
+Next Obligation.
+Admitted.
+Next Obligation.
+Admitted.
+Next Obligation.
+Admitted.
+Next Obligation.
+Admitted.
+
+
 #[global]
 Program Instance Compose_ColimFunctor2 F G H
   `{ColimFunctor2 F} `{ColimFunctor2 G} `{ColimFunctor2 H}
@@ -418,15 +456,15 @@ Definition FunStack : Type@{lrt_u} := plist LetRecType.
 
 (* A trivially inhabited "default" LetRecType *)
 Definition default_lrt : LetRecType :=
-  LRT_FunDep void (fun _ => LRT_SpecM (LRT_Type void)).
+  LRT_FunDep Empty_set (fun _ => LRT_SpecM (LRT_Type Empty_set)).
 
-(* Get the nth element of a FunStack list, or void -> void if n is too big *)
+(* Get the nth element of a FunStack list, or Empty_set -> Empty_set if n is too big *)
 Definition nthLRT (stk : FunStack) n : LetRecType :=
   nth_default' default_lrt stk n.
 
 Definition nthClos (Closs : plist (LetRecType -> Type@{entree_u})) n
   : LetRecType -> Type@{entree_u} :=
-  nth_default' (A:=LetRecType -> Type@{entree_u}) (fun _ => void) Closs n.
+  nth_default' (A:=LetRecType -> Type@{entree_u}) (fun _ => Empty_set) Closs n.
 
 (* An argument to a recursive function call, which is a decoding of a LetRecType
 to its corresponding Coq type except that functions are interpreted using the
@@ -450,34 +488,34 @@ Fixpoint LRTArgF (Clos : LetRecType -> Type@{entree_u}) (argTp : LetRecType)
 (* The head input type of a monadic function type described by a LetRecType *)
 Definition LRTHead (Arg: LetRecType -> Type@{entree_u}) lrt : Type@{entree_u} :=
   match lrt with
-  | LRT_SpecM R => void
+  | LRT_SpecM R => Empty_set
   | LRT_FunDep A B => A
   | LRT_FunClos A B => Arg A
-  | LRT_Type A => void
-  | LRT_BinOp F A B => void
-  | LRT_Sigma A B => void
+  | LRT_Type A => Empty_set
+  | LRT_BinOp F A B => Empty_set
+  | LRT_Sigma A B => Empty_set
   end.
 
 (* The dependent part of the LRTHead type *)
 Definition LRTDepHead lrt : Type@{entree_u} :=
   match lrt with
-  | LRT_SpecM R => void
+  | LRT_SpecM R => Empty_set
   | LRT_FunDep A B => A
   | LRT_FunClos A B => unit
-  | LRT_Type A => void
-  | LRT_BinOp F A B => void
-  | LRT_Sigma A B => void
+  | LRT_Type A => Empty_set
+  | LRT_BinOp F A B => Empty_set
+  | LRT_Sigma A B => Empty_set
   end.
 
 (* The closure part of the LRTHead type *)
 Definition LRTClosHead (Arg: LetRecType -> Type@{entree_u}) lrt : Type@{entree_u} :=
   match lrt with
-  | LRT_SpecM R => void
+  | LRT_SpecM R => Empty_set
   | LRT_FunDep A B => unit
   | LRT_FunClos A B => Arg A
-  | LRT_Type A => void
-  | LRT_BinOp F A B => void
-  | LRT_Sigma A B => void
+  | LRT_Type A => Empty_set
+  | LRT_BinOp F A B => Empty_set
+  | LRT_Sigma A B => Empty_set
   end.
 
 (* Project the dependent part of an LRTHead *)
@@ -985,12 +1023,12 @@ Fixpoint applyLRTClosNRet stk n lrt : Type@{entree_u} :=
   | 0 => LRTClos stk lrt
   | S n' =>
       match lrt with
-      | LRT_SpecM R => void -> void
+      | LRT_SpecM R => Empty_set -> Empty_set
       | LRT_FunDep A B => forall a:A, applyLRTClosNRet stk n' (B a)
       | LRT_FunClos A B => LRTArg stk A -> applyLRTClosNRet stk n' B
-      | LRT_Type A => void -> void
-      | LRT_BinOp F A B => void -> void
-      | LRT_Sigma A B => void -> void
+      | LRT_Type A => Empty_set -> Empty_set
+      | LRT_BinOp F A B => Empty_set -> Empty_set
+      | LRT_Sigma A B => Empty_set -> Empty_set
       end
   end.
 
@@ -1018,13 +1056,13 @@ Fixpoint applyLRTClosN stk n lrt : LRTClos stk lrt -> applyLRTClosNRet stk n lrt
 (* A dependent tuple type of all the inputs of a LetRecType, i.e., return the
    type { x:A & { y:B & ... { z:C & unit } ...}} from a LetRecType that
    represents forall a b c..., SpecM ... (R a b c ...). A LetRectype that is not
-   a function type just becomes the void type. *)
+   a function type just becomes the Empty_set type. *)
 Fixpoint LRTInput stack lrt : Type@{entree_u} :=
   match lrt with
   | LRT_SpecM _ => unit
   | LRT_FunDep A rest => {a : A & LRTInput stack (rest a) }
   | LRT_FunClos A rest => LRTArg stack A * LRTInput stack rest
-  | _ => void
+  | _ => Empty_set
   end.
 
 (* The output type (R a b c ...) of a LetRecType that represents the function
@@ -1092,7 +1130,7 @@ Qed.
 
 (* Build the type forall a b c ..., F (a, (b, (c, ...))) for an arbitrary type
    function F over an LRTInput. A LetRecType that is not a function type turns
-   into a function from v:void to F v *)
+   into a function from v:Empty_set to F v *)
 Fixpoint lrtPi stack lrt : (LRTInput stack lrt -> Type) -> Type :=
   match lrt return (LRTInput stack lrt -> Type) -> Type with
   | LRT_SpecM _ => fun F => F tt
@@ -1100,7 +1138,7 @@ Fixpoint lrtPi stack lrt : (LRTInput stack lrt -> Type) -> Type :=
       fun F => forall a, lrtPi stack (lrtF a) (fun args => F (existT _ a args))
   | LRT_FunClos A lrt' =>
       fun F => forall a, lrtPi stack lrt' (fun args => F (a, args))
-  | _ => fun F => forall v:void, F v
+  | _ => fun F => forall v:Empty_set, F v
   end.
 
 (* Build an lrtPi function from a unary function on an LRTInput *)
@@ -1195,7 +1233,7 @@ Global Instance EncodingType_StackCall stack : EncodingType (StackCall stack) :=
 Inductive ErrorE : Set :=
 | mkErrorE : string -> ErrorE.
 
-Global Instance EncodingType_ErrorE : EncodingType ErrorE := fun _ => void.
+Global Instance EncodingType_ErrorE : EncodingType ErrorE := fun _ => Empty_set.
 
 (* Create an event type for either an event in E or a recursive call in a stack
    Γ of recursive functions in scope *)
@@ -1292,7 +1330,7 @@ Definition ExistsS {E} {Γ} (A : Type) `{QuantType A} : SpecM E Γ A :=
   exists_spec A.
 Definition TriggerS {E:EvType} {Γ} (e : E) : SpecM E Γ (encodes e) := trigger e.
 Definition ErrorS {E} {Γ} A (str : string) : SpecM E Γ A :=
-  bind (trigger (mkErrorE str)) (fun (x:void) => match x with end).
+  bind (trigger (mkErrorE str)) (fun (x:Empty_set) => match x with end).
 
 Global Instance SpecM_Monad {E} Γ : Monad (SpecM E Γ) :=
   {|
@@ -1320,7 +1358,7 @@ Definition SpecFun E stack lrt : Type@{entree_u} :=
 
 (* A trivially inhabited "default" SpecFun of type default_lrt *)
 Definition defaultSpecFun E stack : SpecFun E stack default_lrt :=
-  fun (v:void) => match v with end.
+  fun (v:Empty_set) => match v with end.
 
 (* A dependent pair of an LRT and a SpecFun with that LRT *)
 Definition SpecFunSig E stack : Type@{lrt_u} :=
