@@ -1,4 +1,4 @@
--R . EnTree
+-R theories EnTree
 
 theories/Basics/HeterogeneousRelations.v
 theories/Basics/QuantType.v
