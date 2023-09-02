@@ -114,61 +114,65 @@ Fixpoint interpSType (d : SimpleDesc) : Type@{entree_u} :=
   end.
 
 (* General type descriptions *)
-Inductive FunTpDesc : Type@{entree_u} :=
-| FunTp_M (R : TpDesc) : FunTpDesc
-| FunTp_FunDep (A : SimpleDesc) (B : interpSType A -> FunTpDesc) : FunTpDesc
-| FunTp_Fun (A : TpDesc) (B : FunTpDesc) : FunTpDesc
-with TpDesc : Type@{entree_u} :=
-| Tp_Fun (FT:FunTpDesc) : TpDesc
+Inductive TpDesc : Type@{entree_u} :=
+| Tp_M (R : TpDesc) : TpDesc
+| Tp_FunDep (A : SimpleDesc) (B : interpSType A -> TpDesc) : TpDesc
+| Tp_Fun (A : TpDesc) (B : TpDesc) : TpDesc
 | Tp_SType (A : SimpleDesc) : TpDesc
 | Tp_Pair (A : TpDesc) (B : TpDesc) : TpDesc
 | Tp_Sum (A : TpDesc) (B : TpDesc) : TpDesc
 | Tp_Sigma (A : SimpleDesc) (B : interpSType A -> TpDesc) : TpDesc
 .
 
-Definition FunStack := list FunTpDesc.
+Definition FunStack := list TpDesc.
 
 (* A trivially inhabited "default" function type *)
-Definition default_fun_tp : FunTpDesc :=
-  FunTp_FunDep SimpTp_Void (fun _ => FunTp_M (Tp_SType SimpTp_Void)).
+Definition default_tp : TpDesc :=
+  Tp_FunDep SimpTp_Void (fun _ => Tp_M (Tp_SType SimpTp_Void)).
 
 (* Get the nth element of a list of function types, or default_fun_tp if n is too big *)
-Definition nthFunTp (stk : FunStack) n : FunTpDesc :=
-  nth_default' default_fun_tp stk n.
+Definition nthTp (stk : FunStack) n : TpDesc :=
+  nth_default' default_tp stk n.
 
-Inductive Clos stk : FunTpDesc -> Type@{entree_u} :=
-| MkClos (n:nat) : Clos stk (nthFunTp stk n).
+Inductive Clos stk : TpDesc -> Type@{entree_u} :=
+| MkClos (n:nat) : Clos stk (nthTp stk n).
 
 Fixpoint interpType stk (T : TpDesc) : Type@{entree_u} :=
   match T with
-  | Tp_Fun FT => Clos stk FT
+  | Tp_M R => Clos stk (Tp_M R)
+  | Tp_FunDep A B => Clos stk (Tp_FunDep A B)
+  | Tp_Fun A B => Clos stk (Tp_Fun A B)
   | Tp_SType A => interpSType A
   | Tp_Pair A B => interpType stk A * interpType stk B
   | Tp_Sum A B => interpType stk A + interpType stk B
   | Tp_Sigma A B => { a:interpSType A & interpType stk (B a) }
   end.
 
-Fixpoint FTInput stk (FT : FunTpDesc) : Type@{entree_u} :=
-  match FT with
-  | FunTp_M M => unit
-  | FunTp_FunDep A B => { a : interpSType A & FTInput stk (B a) }
-  | FunTp_Fun A B => interpType stk A * FTInput stk B
+Fixpoint FunInput stk T : Type@{entree_u} :=
+  match T with
+  | Tp_M _ => unit
+  | Tp_FunDep A B => { a : interpSType A & FunInput stk (B a) }
+  | Tp_Fun A B => interpType stk A * FunInput stk B
+  | _ => Empty_set
   end.
 
-Fixpoint FTOutput stk FT : FTInput stk FT -> Type@{entree_u} :=
-  match FT return FTInput stk FT -> Type@{entree_u} with
-  | FunTp_M R => fun _ => interpType stk R
-  | FunTp_FunDep A B => fun args => FTOutput stk (B (projT1 args)) (projT2 args)
-  | FunTp_Fun A B => fun args => FTOutput stk B (snd args)
+Fixpoint FunOutput stk T : FunInput stk T -> Type@{entree_u} :=
+  match T return FunInput stk T -> Type@{entree_u} with
+  | Tp_M R => fun _ => interpType stk R
+  | Tp_FunDep A B => fun args => FunOutput stk (B (projT1 args)) (projT2 args)
+  | Tp_Fun A B => fun args => FunOutput stk B (snd args)
+  | _ => fun v => match v with end
   end.
 
+Definition FunInterp M stk T : Type@{entree_u} :=
+  forall args:FunInput stk T, M stk (FunOutput stk T args).
 
 Inductive StackCall stk : Type@{entree_u} :=
-| MkStackCall (FT : FunTpDesc) (clos : Clos stk FT) (args : FTInput stk FT).
+| MkStackCall (T : TpDesc) (clos : Clos stk T) (args : FunInput stk T).
 
 Definition StackCallRet stk (call: StackCall stk) :=
   match call with
-  | MkStackCall _ FT _ args => FTOutput stk FT args
+  | MkStackCall _ FT _ args => FunOutput stk FT args
   end.
 
 Global Instance EncodingType_StackCall stk : EncodingType (StackCall stk) :=
@@ -186,11 +190,11 @@ Variant lrtreeF (F : FunStack -> Type@{entree_u} -> Type@{entree_u})
   | LR_RetF (r : R)
   | LR_TauF (t : F stk R)
   | LR_VisF (e : E) (k : encodes e -> F stk R)
-  | LR_Call (call : StackCall stk) (k : StackCallRet stk call -> F stk R)
-  | LR_LetRec (FT : FunTpDesc) (R' : TpDesc)
-      (f : forall (args:FTInput (cons FT stk) FT),
-          F (cons FT stk) (FTOutput _ FT args))
-      (body : Clos (cons FT stk) FT -> F (cons FT stk) (interpType (cons FT stk) R'))
+  | LR_CallF (call : StackCall stk) (k : StackCallRet stk call -> F stk R)
+  | LR_LetRecF stk' (R':TpDesc)
+      (fdefs : forall n (args:FunInput (app stk stk') (nthTp stk' n)),
+          FunOutput (app stk stk') (nthTp stk' n) args)
+      (body : F (app stk stk') (interpType (app stk stk') R'))
       (k : interpType stk R' -> F stk R)
 .
 
@@ -204,8 +208,8 @@ End lrtree.
 Arguments LR_RetF {_ _ _ _} _.
 Arguments LR_TauF {_ _ _ _} _.
 Arguments LR_VisF {_ _ _ _} _ _.
-Arguments LR_Call {_ _ _ _} _ _.
-Arguments LR_LetRec {_ _ _ _} _ _ _.
+Arguments LR_CallF {_ _ _ _} _ _.
+Arguments LR_LetRecF {_ _ _ _} _ _ _.
 Notation lrtree' E stk R := (lrtreeF E (lrtree E) stk R).
 Notation LR_Tau t := {| _observe := LR_TauF t |}.
 Notation LR_Ret r := {| _observe := LR_RetF r |}.
@@ -332,7 +336,7 @@ Definition SpecMEventRet E (ev:SpecMEvent E) : Type@{entree_u} :=
   | SpecMEv_E e => evRetType e
   | SpecMEv_Err _ => Empty_set
   | SpecMEv_Call call => StackCallRet call
-  | SpecMEv_LetFun FT => FTInput FT + Clos FT
+  | SpecMEv_LetFun FT => FunInput FT + Clos FT
   | SpecMEv_LetRec FTs => { n & 
   end.
 
@@ -365,7 +369,7 @@ Global Instance ReSumRet_FunStackE_Error (E : EvType) stk :
 
 (* An interpretation of a FunType with corecursive call events *)
 Definition FunTypeInterp (E:EvType) stk ftp : Type@{entree_u} :=
-  forall (args:FTInput E ftp), entree_spec (FunStackE E stk) (FTOutput E ftp args).
+  forall (args:FunInput E ftp), entree_spec (FunStackE E stk) (FunOutput E ftp args).
 
 (* An interpretation for all the functions in a FunStack *)
 Definition FunStackInterp (E:EvType) stk : Type@{entree_u} :=
