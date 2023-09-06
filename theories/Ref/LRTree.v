@@ -135,6 +135,7 @@ descriptions extensible and/or instantiatable *)
 Inductive SimpleDesc : Type@{entree_u} :=
 | SimpTp_Void : SimpleDesc
 | SimpTp_Unit : SimpleDesc
+| SimpTp_Prop (P:Prop) : SimpleDesc
 | SimpTp_Nat : SimpleDesc
 | SimpTp_Sum (A B : SimpleDesc) : SimpleDesc
 .
@@ -144,6 +145,7 @@ Fixpoint decodeSType (d : SimpleDesc) : Type@{entree_u} :=
   match d with
   | SimpTp_Void => Empty_set
   | SimpTp_Unit => unit
+  | SimpTp_Prop P => P
   | SimpTp_Nat => nat
   | SimpTp_Sum A B => decodeSType A + decodeSType B
   end.
@@ -154,9 +156,9 @@ Inductive TpDesc : bool -> Type@{entree_u} :=
 | Tp_M (R : TpDesc false) : TpDesc true
 | Tp_Pi (A : SimpleDesc) (B : decodeSType A -> TpDesc true) : TpDesc true
 | Tp_Arr (A : TpDesc false) (B : TpDesc true) : TpDesc true
-| Tp_Fun (A : TpDesc true) : TpDesc false
 
 (* First-order types *)
+| Tp_Fun (A : TpDesc true) : TpDesc false
 | Tp_SType (A : SimpleDesc) : TpDesc false
 | Tp_Pair (A : TpDesc false) (B : TpDesc false) : TpDesc false
 | Tp_Sum (A : TpDesc false) (B : TpDesc false) : TpDesc false
@@ -164,7 +166,7 @@ Inductive TpDesc : bool -> Type@{entree_u} :=
 .
 
 Definition MonTp := TpDesc true.
-Definition PureTp := TpDesc false.
+Definition ValTp := TpDesc false.
 
 Definition FunStack := list MonTp.
 
@@ -289,8 +291,48 @@ Fixpoint substLiftDecoding E stk U (I : MonInterp E (cons U stk) true U) isM T :
                               (snd (substLiftDecoding E stk U I false A) arg)))
           end)
         ,
-        _
-      )
+        (fun elem =>
+          match elem with
+          | inl clos => inl (liftClos stk U (Tp_Arr A B) clos)
+          | inr f =>
+              inr (fun arg =>
+                         snd (substLiftDecoding E stk U I true B)
+                           (f
+                              (fst (substLiftDecoding E stk U I false A) arg)))
+          end))
+  | Tp_Fun A =>
+      (fst (substLiftDecoding E stk U I true A),
+        snd (substLiftDecoding E stk U I true A))
+  | Tp_SType A =>
+      (id, id)
+  | Tp_Pair A B =>
+      ((fun elem =>
+          (fst (substLiftDecoding E stk U I false A) (fst elem),
+            fst (substLiftDecoding E stk U I false B) (snd elem)))
+        ,
+        (fun elem =>
+           (snd (substLiftDecoding E stk U I false A) (fst elem),
+             snd (substLiftDecoding E stk U I false B) (snd elem))))
+  | Tp_Sum A B =>
+      ((fun elem =>
+          match elem with
+          | inl x => inl (fst (substLiftDecoding E stk U I false A) x)
+          | inr y => inr (fst (substLiftDecoding E stk U I false B) y)
+          end)
+        ,
+        (fun elem =>
+          match elem with
+          | inl x => inl (snd (substLiftDecoding E stk U I false A) x)
+          | inr y => inr (snd (substLiftDecoding E stk U I false B) y)
+          end))
+  | Tp_Sigma A B =>
+      ((fun elem =>
+          existT _ (projT1 elem)
+            (fst (substLiftDecoding E stk U I false (B (projT1 elem))) (projT2 elem)))
+        ,
+        (fun elem =>
+           existT _ (projT1 elem)
+             (snd (substLiftDecoding E stk U I false (B (projT1 elem))) (projT2 elem))))
   end.
 
 
