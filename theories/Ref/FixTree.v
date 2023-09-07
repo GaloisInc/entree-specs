@@ -141,27 +141,27 @@ Inductive SimpleDesc : Type@{entree_u} :=
 .
 
 (* Decode a simple type description to a type *)
-Fixpoint decodeSType (d : SimpleDesc) : Type@{entree_u} :=
+Fixpoint stpElem (d : SimpleDesc) : Type@{entree_u} :=
   match d with
   | SimpTp_Void => Empty_set
   | SimpTp_Unit => unit
   | SimpTp_Prop P => P
   | SimpTp_Nat => nat
-  | SimpTp_Sum A B => decodeSType A + decodeSType B
+  | SimpTp_Sum A B => stpElem A + stpElem B
   end.
 
 (* General type descriptions, parameterized by whether they are a monadic type *)
 Inductive TpDesc : Type@{entree_u} :=
 (* Monadic function types *)
 | Tp_M (R : TpDesc) : TpDesc
-| Tp_Pi (A : SimpleDesc) (B : decodeSType A -> TpDesc) : TpDesc
+| Tp_Pi (A : SimpleDesc) (B : stpElem A -> TpDesc) : TpDesc
 | Tp_Arr (A : TpDesc) (B : TpDesc) : TpDesc
 
 (* First-order types *)
 | Tp_SType (A : SimpleDesc) : TpDesc
 | Tp_Pair (A : TpDesc) (B : TpDesc) : TpDesc
 | Tp_Sum (A : TpDesc) (B : TpDesc) : TpDesc
-| Tp_Sigma (A : SimpleDesc) (B : decodeSType A -> TpDesc) : TpDesc
+| Tp_Sigma (A : SimpleDesc) (B : stpElem A -> TpDesc) : TpDesc
 .
 
 Definition FunStack := list TpDesc.
@@ -191,35 +191,96 @@ Definition liftStkFun stk U T (clos : StkFun stk T) : StkFun (cons U stk) T :=
   | MkStkFun _ n pf => MkStkFun (cons U stk) (S n) (lt_n_S _ _ pf)
   end.
 
-Fixpoint decodeType (E:EvType) stk (T : TpDesc) : Type@{entree_u} :=
+Fixpoint tpElem (E:EvType) stk (T : TpDesc) : Type@{entree_u} :=
   match T with
-  | Tp_M R => StkFun stk (Tp_M R) + entree E (decodeType E stk R)
-  | Tp_Pi A B => StkFun stk (Tp_Pi A B) + forall a, decodeType E stk (B a)
+  | Tp_M R => StkFun stk (Tp_M R) + entree E (tpElem E stk R)
+  | Tp_Pi A B => StkFun stk (Tp_Pi A B) + forall a, tpElem E stk (B a)
   | Tp_Arr A B =>
-      StkFun stk (Tp_Arr A B) + (decodeType E stk A -> decodeType E stk B)
-  | Tp_SType A => decodeSType A
-  | Tp_Pair A B => decodeType E stk A * decodeType E stk B
-  | Tp_Sum A B => decodeType E stk A + decodeType E stk B
-  | Tp_Sigma A B => { a:decodeSType A & decodeType E stk (B a) }
+      StkFun stk (Tp_Arr A B) + (tpElem E stk A -> tpElem E stk B)
+  | Tp_SType A => stpElem A
+  | Tp_Pair A B => tpElem E stk A * tpElem E stk B
+  | Tp_Sum A B => tpElem E stk A + tpElem E stk B
+  | Tp_Sigma A B => { a:stpElem A & tpElem E stk (B a) }
   end.
 
-(* The same as a decoding but the top-level constructor cannot be a closure *)
+
+(* An interpretation of a monadic function type *)
+(* NOTE: this treats a non-monadic return type as M Empty_set *)
 Fixpoint FunInterp (E:EvType) stk (T : TpDesc) : Type@{entree_u} :=
   match T with
-  | Tp_M R => entree E (decodeType E stk R)
+  | Tp_M R => entree E (tpElem E stk R)
   | Tp_Pi A B => forall a, FunInterp E stk (B a)
-  | Tp_Arr A B => (decodeType E stk A -> FunInterp E stk B)
-  | _ => Empty_set
+  | Tp_Arr A B => (tpElem E stk A -> FunInterp E stk B)
+  | _ => entree E Empty_set
   end.
 
-Definition FunInterpToElem E stk T : FunInterp E stk T -> decodeType E stk T.
+Definition defaultFunInterp E stk : FunInterp E stk default_tp :=
+  fun v => match v with end.
+
+Definition FunInterpToElem E stk T : FunInterp E stk T -> tpElem E stk T.
 Admitted.
 
 (*
-Fixpoint FunInterpToElem E stk T : FunInterp E stk T -> decodeType E stk T :=
-  match T return FunInterp E stk T -> decodeType E stk T with
+Fixpoint FunInterpToElem E stk T : FunInterp E stk T -> tpElem E stk T :=
+  match T return FunInterp E stk T -> tpElem E stk T with
   end.
 *)
+
+Fixpoint FunInput E stk (T:TpDesc) : Type@{entree_u} :=
+  match T with
+  | Tp_M _ => unit
+  | Tp_Pi A B => { a : stpElem A & FunInput E stk (B a) }
+  | Tp_Arr A B => tpElem E stk A * FunInput E stk B
+  | _ => unit
+  end.
+
+Fixpoint FunOutput E stk T : FunInput E stk T -> Type@{entree_u} :=
+  match T return FunInput E stk T -> Type@{entree_u} with
+  | Tp_M R => fun _ => tpElem E stk R
+  | Tp_Pi A B => fun args => FunOutput E stk (B (projT1 args)) (projT2 args)
+  | Tp_Arr A B => fun args => FunOutput E stk B (snd args)
+  | _ => fun _ => Empty_set
+  end.
+
+Fixpoint applyFunInterp {E stk T} :
+  FunInterp E stk T -> forall args:FunInput E stk T, entree E (FunOutput E stk T args) :=
+  match T return FunInterp E stk T ->
+                 forall args:FunInput E stk T, entree E (FunOutput E stk T args)
+  with
+  | Tp_M R => fun m _ => m
+  | Tp_Pi A B =>
+      fun f args =>
+        @applyFunInterp E stk (B (projT1 args)) (f (projT1 args)) (projT2 args)
+  | Tp_Arr A B =>
+      fun f args =>
+        @applyFunInterp E stk B (f (fst args)) (snd args)
+  | Tp_SType A => fun m _ => m
+  | Tp_Pair A B => fun m _ => m
+  | Tp_Sum A B => fun m _ => m
+  | Tp_Sigma A B => fun m _ => m
+  end.
+
+Fixpoint lambdaFunInterp E stk T :
+  (forall args:FunInput E stk T,
+      entree E (FunOutput E stk T args)) -> FunInterp E stk T :=
+  match T return (forall args:FunInput E stk T,
+                     entree E (FunOutput E stk T args)) -> FunInterp E stk T
+  with
+  | Tp_M R => fun f => f tt
+  | Tp_Pi A B =>
+      fun f a => lambdaFunInterp E stk (B a) (fun args => f (existT _ a args))
+  | Tp_Arr A B =>
+      fun f arg => lambdaFunInterp E stk B (fun args => f (arg, args))
+  | Tp_SType A => fun f => f tt
+  | Tp_Pair A B => fun f => f tt
+  | Tp_Sum A B => fun f => f tt
+  | Tp_Sigma A B => fun f => f tt
+  end.
+
+
+(**
+ ** Substitution and Lifting for tpElem
+ **)
 
 Definition substStkFun E stk U (I : FunInterp E (cons U stk) U)
   T (clos : StkFun (cons U stk) T) : StkFun stk T + FunInterp E (cons U stk) T :=
@@ -229,12 +290,12 @@ Definition substStkFun E stk U (I : FunInterp E (cons U stk) U)
   end.
 
 
-Fixpoint substLiftDecoding E stk U (I : FunInterp E (cons U stk) U) T :
-  (decodeType E (cons U stk) T -> decodeType E stk T)
-  * (decodeType E stk T -> decodeType E (cons U stk) T) :=
+Fixpoint substLiftTpElem E stk U (I : FunInterp E (cons U stk) U) T :
+  (tpElem E (cons U stk) T -> tpElem E stk T)
+  * (tpElem E stk T -> tpElem E (cons U stk) T) :=
   match T in TpDesc
-        return (decodeType E (cons U stk) T -> decodeType E stk T)
-               * (decodeType E stk T -> decodeType E (cons U stk) T)
+        return (tpElem E (cons U stk) T -> tpElem E stk T)
+               * (tpElem E stk T -> tpElem E (cons U stk) T)
   with
   | Tp_M R =>
       ((fun elem =>
@@ -243,16 +304,16 @@ Fixpoint substLiftDecoding E stk U (I : FunInterp E (cons U stk) U) T :
               match substStkFun E stk U I _ clos with
               | inl clos' => inl clos'
               | inr m =>
-                  inr (fmap (fst (substLiftDecoding E stk U I R)) m)
+                  inr (fmap (fst (substLiftTpElem E stk U I R)) m)
               end
           | inr m =>
-              inr (fmap (fst (substLiftDecoding E stk U I R)) m)
+              inr (fmap (fst (substLiftTpElem E stk U I R)) m)
           end)
         ,
         (fun elem =>
            match elem with
            | inl clos => inl (liftStkFun stk U (Tp_M R) clos)
-           | inr m => inr (fmap (snd (substLiftDecoding E stk U I R)) m)
+           | inr m => inr (fmap (snd (substLiftTpElem E stk U I R)) m)
            end))
   | Tp_Pi A B =>
       ((fun elem =>
@@ -261,17 +322,17 @@ Fixpoint substLiftDecoding E stk U (I : FunInterp E (cons U stk) U) T :
               match substStkFun E stk U I (Tp_Pi A B) clos with
               | inl clos' => inl clos'
               | inr f =>
-                  inr (fun a => fst (substLiftDecoding E stk U I (B a))
+                  inr (fun a => fst (substLiftTpElem E stk U I (B a))
                                   (FunInterpToElem E _ _ (f a)))
               end
           | inr f =>
-              inr (fun a => fst (substLiftDecoding E stk U I (B a)) (f a))
+              inr (fun a => fst (substLiftTpElem E stk U I (B a)) (f a))
           end)
         ,
         (fun elem =>
            match elem with
            | inl clos => inl (liftStkFun stk U (Tp_Pi A B) clos)
-           | inr f => inr (fun a => snd (substLiftDecoding E stk U I (B a)) (f a))
+           | inr f => inr (fun a => snd (substLiftTpElem E stk U I (B a)) (f a))
            end))
   | Tp_Arr A B =>
       ((fun elem =>
@@ -281,16 +342,16 @@ Fixpoint substLiftDecoding E stk U (I : FunInterp E (cons U stk) U) T :
               | inl clos' => inl clos'
               | inr f =>
                   inr (fun arg =>
-                         fst (substLiftDecoding E stk U I B)
+                         fst (substLiftTpElem E stk U I B)
                              (FunInterpToElem E _ _
                                 (f
-                                   (snd (substLiftDecoding E stk U I A) arg))))
+                                   (snd (substLiftTpElem E stk U I A) arg))))
               end
           | inr f =>
               inr (fun arg =>
-                         fst (substLiftDecoding E stk U I B)
+                         fst (substLiftTpElem E stk U I B)
                            (f
-                              (snd (substLiftDecoding E stk U I A) arg)))
+                              (snd (substLiftTpElem E stk U I A) arg)))
           end)
         ,
         (fun elem =>
@@ -298,77 +359,78 @@ Fixpoint substLiftDecoding E stk U (I : FunInterp E (cons U stk) U) T :
           | inl clos => inl (liftStkFun stk U (Tp_Arr A B) clos)
           | inr f =>
               inr (fun arg =>
-                         snd (substLiftDecoding E stk U I B)
+                         snd (substLiftTpElem E stk U I B)
                            (f
-                              (fst (substLiftDecoding E stk U I A) arg)))
+                              (fst (substLiftTpElem E stk U I A) arg)))
           end))
   | Tp_SType A =>
       (id, id)
   | Tp_Pair A B =>
       ((fun elem =>
-          (fst (substLiftDecoding E stk U I A) (fst elem),
-            fst (substLiftDecoding E stk U I B) (snd elem)))
+          (fst (substLiftTpElem E stk U I A) (fst elem),
+            fst (substLiftTpElem E stk U I B) (snd elem)))
         ,
         (fun elem =>
-           (snd (substLiftDecoding E stk U I A) (fst elem),
-             snd (substLiftDecoding E stk U I B) (snd elem))))
+           (snd (substLiftTpElem E stk U I A) (fst elem),
+             snd (substLiftTpElem E stk U I B) (snd elem))))
   | Tp_Sum A B =>
       ((fun elem =>
           match elem with
-          | inl x => inl (fst (substLiftDecoding E stk U I A) x)
-          | inr y => inr (fst (substLiftDecoding E stk U I B) y)
+          | inl x => inl (fst (substLiftTpElem E stk U I A) x)
+          | inr y => inr (fst (substLiftTpElem E stk U I B) y)
           end)
         ,
         (fun elem =>
           match elem with
-          | inl x => inl (snd (substLiftDecoding E stk U I A) x)
-          | inr y => inr (snd (substLiftDecoding E stk U I B) y)
+          | inl x => inl (snd (substLiftTpElem E stk U I A) x)
+          | inr y => inr (snd (substLiftTpElem E stk U I B) y)
           end))
   | Tp_Sigma A B =>
       ((fun elem =>
           existT _ (projT1 elem)
-            (fst (substLiftDecoding E stk U I (B (projT1 elem))) (projT2 elem)))
+            (fst (substLiftTpElem E stk U I (B (projT1 elem))) (projT2 elem)))
         ,
         (fun elem =>
            existT _ (projT1 elem)
-             (snd (substLiftDecoding E stk U I (B (projT1 elem))) (projT2 elem))))
+             (snd (substLiftTpElem E stk U I (B (projT1 elem))) (projT2 elem))))
+  end.
+
+Definition substTpElem E stk U (I : FunInterp E (cons U stk) U) T :
+  tpElem E (cons U stk) T -> tpElem E stk T :=
+  fst (substLiftTpElem E stk U I T).
+
+Definition liftTpElem E stk U (I : FunInterp E (cons U stk) U) T :
+  tpElem E stk T -> tpElem E (cons U stk) T :=
+  snd (substLiftTpElem E stk U I T).
+
+Fixpoint liftFunInput E stk U (I : FunInterp E (cons U stk) U) T :
+  FunInput E stk T -> FunInput E (cons U stk) T.
+Admitted.
+
+Fixpoint substFunOutput E stk U (I : FunInterp E (cons U stk) U) T :
+  forall args:FunInput E stk T, FunOutput E stk T args ->
+                                FunOutput E (cons U stk) T (liftFunInput E stk U I T args).
+Admitted.
+
+Fixpoint liftFunInterp E stk U (I : FunInterp E (cons U stk) U) T :
+  FunInterp E stk T -> FunInterp E (cons U stk) T :=
+  match T return FunInterp E stk T -> FunInterp E (cons U stk) T with
+  | Tp_M R => fun m => fmap (liftTpElem E stk U I R) m
+  | Tp_Pi A B => fun f a => liftFunInterp E stk U I (B a) (f a)
+  | Tp_Arr A B => fun f arg =>
+                    liftFunInterp E stk U I B (f (substTpElem E stk U I A arg))
+  | _ => fun m => m
   end.
 
 
-Fixpoint FunInput E stk (T:TpDesc) : Type@{entree_u} :=
-  match T with
-  | Tp_M _ => unit
-  | Tp_Pi A B => { a : decodeSType A & FunInput E stk (B a) }
-  | Tp_Arr A B => decodeType E stk A * FunInput E stk B
-  | _ => unit
-  end.
+Definition StackInterp E stk : Type@{entree_u} := mapTuple (FunInterp E stk) stk.
 
-Fixpoint FunOutput E stk T : FunInput E stk T -> Type@{entree_u} :=
-  match T return FunInput E stk T -> Type@{entree_u} with
-  | Tp_M R => fun _ => decodeType E stk R
-  | Tp_Pi A B => fun args => FunOutput E stk (B (projT1 args)) (projT2 args)
-  | Tp_Arr A B => fun args => FunOutput E stk B (snd args)
-  | _ => fun _ => Empty_set
-  end.
+Definition consStackInterp E stk T (Is : StackInterp E stk)
+  (I : FunInterp E (cons T stk) T) : StackInterp E (cons T stk) :=
+  (I, mapMapTuple _ _ (liftFunInterp E stk T I) _ Is).
 
-
-Fixpoint applyFunInterp E stk T :
-  FunInterp E stk T -> forall arg:FunInput E stk T, entree E (FunOutput E stk T arg) :=
-  match T return FunInterp E stk T ->
-                 forall arg:FunInput E stk T, entree E (FunOutput E stk T arg)
-  with
-  | Tp_M R => fun m _ => m
-  | Tp_Pi A B =>
-      fun f args =>
-        applyFunInterp E stk (B (projT1 args)) (f (projT1 args)) (projT2 args)
-  | Tp_Arr A B =>
-      fun f args =>
-        applyFunInterp E stk B (f (fst args)) (snd args)
-  | Tp_SType A => fun v => match v with end
-  | Tp_Pair A B => fun v => match v with end
-  | Tp_Sum A B => fun v => match v with end
-  | Tp_Sigma A B => fun v => match v with end
-  end.
+Definition nthFunInterp E stk n (Is : StackInterp E stk) : FunInterp E stk (nthTp stk n) :=
+  nthProjDefault _ default_tp (defaultFunInterp E stk) stk n Is.
 
 
 Inductive StackCall E stk : Type@{entree_u} :=
@@ -383,138 +445,9 @@ Global Instance EncodingType_StackCall E stk : EncodingType (StackCall E stk) :=
  StackCallRet E stk.
 
 
-
-(* Create an event type for either an event in E or a recursive call in a stack
-   stk of recursive functions in scope *)
-Definition FunStackE (E : EvType@{entree_u}) (stack : FunStack) : Type@{entree_u} :=
-  StackCall E stack + (ErrorE + E).
-
-(* The return type for a FunStackE effect in a SpecM computation *)
-Definition FunStackERet E stack (e:FunStackE E stack) : Type@{entree_u} :=
-  encodes e.
-
-Global Instance EncodingType_FunStackE E stack : EncodingType (FunStackE E stack) :=
-  FunStackERet E stack.
-
-Global Instance ReSum_FunStackE_E (E : EvType) (stk : FunStack) : ReSum E (FunStackE E stk) :=
-  fun e => inr (inr e).
-
-Global Instance ReSumRet_FunStackE_E (E : EvType) stk :
-  ReSumRet E (FunStackE E stk) :=
-  fun _ r => r.
-
-Global Instance ReSum_FunStackE_Error (E : EvType) (stk : FunStack) : ReSum ErrorE (FunStackE E stk) :=
-  fun e => inr (inl e).
-
-Global Instance ReSumRet_FunStackE_Error (E : EvType) stk :
-  ReSumRet ErrorE (FunStackE E stk) :=
-  fun _ r => r.
-
-
-(* Embed a call in the top level of the FunStack into a FunStackE *)
-Global Instance ReSum_StackCall_FunStackE (E : EvType) (stack : FunStack) :
-  ReSum (StackCall E stack) (FunStackE E stack) :=
-  fun args => inl args.
-
-(* Map the return value for embedding a call in the top level to a FunStackE *)
-Global Instance ReSumRet_StackCall_FunStackE E stack :
-  ReSumRet (StackCall E stack) (FunStackE E stack) :=
-  fun _ r => r.
-
-Global Instance ReSum_Error_E_FunStack (E : EvType) (stack : FunStack) :
-  ReSum (SpecEvent (ErrorE + E)) (SpecEvent (FunStackE E stack)) :=
-  fun e => match e with
-           | Spec_vis e => Spec_vis (resum e)
-           | Spec_forall T => Spec_forall T
-           | Spec_exists T => Spec_exists T
-           end.
-
-Global Instance ReSumRet_Error_E_FunStack (E : EvType) (stack : FunStack) :
-  ReSumRet (SpecEvent (ErrorE + E)) (SpecEvent (FunStackE E stack)) :=
-  fun e =>
-    match e with
-    | Spec_vis e => fun x => resum_ret e x
-    | Spec_forall T => fun x => x
-    | Spec_exists T => fun x => x
-    end.
-
-
-
 (**
- ** The SpecM monad
+ ** The definition of fixtrees
  **)
-
-(* The SpecM monad is an entree spec over FunStackE events *)
-Definition SpecM (E:EvType) stack A : Type :=
-  entree_spec (FunStackE E stack) A.
-
-(* The observation / unfolding of a SpecM computation tree *)
-Definition SpecM' (E:EvType) stack A : Type :=
-  entree_spec' (FunStackE E stack) A.
-
-(* The monadic operations on SpecM *)
-Definition RetS {E} {stk A} (a : A) : SpecM E stk A := ret a.
-Definition BindS {E} {stk A B} (m : SpecM E stk A) (k : A -> SpecM E stk B) :=
-  bind m k.
-Definition IterS {E} {stk A B} (body : A -> SpecM E stk (A + B)) :
-  A -> SpecM E stk B := EnTree.iter body.
-Definition AssumeS {E} {stk} (P : Prop) : SpecM E stk unit :=
-  assume_spec P.
-Definition AssertS {E} {stk} (P : Prop) : SpecM E stk unit :=
-  assert_spec P.
-Definition ForallS {E} {stk} (A : Type) `{QuantType A} : SpecM E stk A :=
-  forall_spec A.
-Definition ExistsS {E} {stk} (A : Type) `{QuantType A} : SpecM E stk A :=
-  exists_spec A.
-Definition TriggerS {E:EvType} {stk} (e : E) : SpecM E stk (encodes e) := trigger e.
-Definition ErrorS {E} {stk} A (str : string) : SpecM E stk A :=
-  bind (trigger (mkErrorE str)) (fun (x:Empty_set) => match x with end).
-
-Global Instance SpecM_Monad {E} stk : Monad (SpecM E stk) :=
-  {|
-    ret := fun A a => RetS a;
-    bind := fun A B m k => BindS m k;
-  |}.
-
-(*
-Definition CallS {E stk R} (clos: Clos stk (LRT_SpecM R))
-  : SpecM E stk (LRTArg stk R) :=
-  eq_rect
-    (StackCallRet stk (LRTClosToCall stk R clos))
-    (SpecM E stk)
-    (trigger (LRTClosToCall stk R clos))
-    (LRTArg stk R)
-    (LRTClosToCallRet stk R clos).
-*)
-
-
-CoFixpoint interp_top_call' {E stk U R} (I : FunInterp E (cons U stk) U)
-  (ot : SpecM' E (cons U stk) R) : SpecM E stk R :=
-  match ot with
-  | RetF r => Ret r
-  | TauF t => Tau (interp_top_call' I (observe t))
-  | VisF (Spec_vis (inl (MkStackCall _ _ 0 _ args))) k =>
-      Tau (interp_top_call'
-             (observe (EnTree.bind (applyFunInterp E _ _ I args) k)))
-  end.
-Definition interp_mrec {R} (t : entree (D + E) R) : entree E R :=
-  interp_mrec' (observe t).
-Definition mrec (d : D) := interp_mrec (bodies d).
-
-End mrec.
-
-Locate interp_mrec.
-
-
-
-
-
-
-
-
-
-
-(*** The definition of fixtrees ***)
 Section fixtree.
 
 Context (E : EvType).
@@ -522,39 +455,39 @@ Context (E : EvType).
 (* The functor defining a single constructor of a fixtree *)
 Variant fixtreeF (F : FunStack -> Type@{entree_u} -> Type@{entree_u})
   (stk:FunStack) (R:Type@{entree_u}) : Type@{entree_u} :=
-  | FxTr_RetF (r : R)
-  | FxTr_TauF (t : F stk R)
-  | FxTr_VisF (e : E) (k : encodes e -> F stk R)
-  | FxTr_CallF (call : StackCall stk) (k : StackCallRet stk call -> F stk R)
-  | FxTr_FixF (T : TpDesc)
-      (body : forall stk' (args:FunInput (app stk' (cons T stk)) T),
-          F (app stk' (cons T stk)) (FunOutput (app stk' (cons T stk)) T args))
-      (args : FunInput (cons T stk) T)
-      (k : FunOutput stk T args -> F stk R)
+  | Fx_RetF (r : R)
+  | Fx_TauF (t : F stk R)
+  | Fx_VisF (e : E) (k : encodes e -> F stk R)
+  | Fx_CallF (call : StackCall E stk) (k : StackCallRet E stk call -> F stk R)
+  | Fx_FixF (T : TpDesc)
+      (body : forall (args:FunInput E (cons T stk) T),
+          F (cons T stk) (FunOutput E (cons T stk) T args))
+      (args : FunInput E stk T)
+      (k : FunOutput E stk T args -> F stk R)
 .
 
 (* "Tying the knot" by defining entrees as the greatest fixed-point of fixtreeF *)
 CoInductive fixtree stk R : Type@{entree_u} :=
-  go { _fobserve : fixtreeF fixtree stk R }.
+  go { _fxobserve : fixtreeF fixtree stk R }.
 
 End fixtree.
 
 (* Implicit arguments and helpful notations for fixtrees *)
-Arguments FxTr_RetF {_ _ _ _} _.
-Arguments FxTr_TauF {_ _ _ _} _.
-Arguments FxTr_VisF {_ _ _ _} _ _.
-Arguments FxTr_CallF {_ _ _ _} _ _.
-Arguments FxTr_FixF {_ _ _ _ _} _ _ _.
+Arguments Fx_RetF {_ _ _ _} _.
+Arguments Fx_TauF {_ _ _ _} _.
+Arguments Fx_VisF {_ _ _ _} _ _.
+Arguments Fx_CallF {_ _ _ _} _ _.
+Arguments Fx_FixF {_ _ _ _ _} _ _ _.
 Notation fixtree' E stk R := (fixtreeF E (fixtree E) stk R).
-Notation FxTr_Tau t := {| _fobserve := FxTr_TauF t |}.
-Notation FxTr_Ret r := {| _fobserve := FxTr_RetF r |}.
-Notation FxTr_Vis e k := {| _fobserve := FxTr_VisF e k |}.
-Notation FxTr_Call call k := {| _fobserve := FxTr_CallF call k |}.
-Notation FxTr_Fix body args k := {| _fobserve := FxTr_FixF body args k |}.
+Notation Fx_Tau t := {| _fxobserve := Fx_TauF t |}.
+Notation Fx_Ret r := {| _fxobserve := Fx_RetF r |}.
+Notation Fx_Vis e k := {| _fxobserve := Fx_VisF e k |}.
+Notation Fx_Call call k := {| _fxobserve := Fx_CallF call k |}.
+Notation Fx_Fix body args k := {| _fxobserve := Fx_FixF body args k |}.
 
 (* "Observe" the top-most constructor of an fixtree by unwrapping it one step *)
-Definition fobserve {E stk R} (t : fixtree E stk R) : fixtree' E stk R :=
-  _fobserve _ _ _ t.
+Definition fxobserve {E stk R} (t : fixtree E stk R) : fixtree' E stk R :=
+  _fxobserve _ _ _ t.
 
 
 (*** The basic operations on fixtrees ***)
@@ -568,17 +501,17 @@ Definition subst' {E : EvType} {stk} {R S : Type@{entree_u}}
            (k : R -> fixtree E stk S) : fixtree' E stk R -> fixtree E stk S  :=
   cofix _subst (ot : fixtree' E stk R) :=
     match ot with
-    | FxTr_RetF r => k r
-    | FxTr_TauF t => FxTr_Tau (_subst (fobserve t))
-    | FxTr_VisF e k => FxTr_Vis e (fun x => _subst (fobserve (k x)))
-    | FxTr_CallF call k => FxTr_Call call (fun x => _subst (fobserve (k x)))
-    | FxTr_FixF body args k => FxTr_Fix body args (fun x => _subst (fobserve (k x)))
+    | Fx_RetF r => k r
+    | Fx_TauF t => Fx_Tau (_subst (fxobserve t))
+    | Fx_VisF e k => Fx_Vis e (fun x => _subst (fxobserve (k x)))
+    | Fx_CallF call k => Fx_Call call (fun x => _subst (fxobserve (k x)))
+    | Fx_FixF body args k => Fx_Fix body args (fun x => _subst (fxobserve (k x)))
     end.
 
 (* Wrap up subst' so it operates on an fixtree instead of an fixtree' *)
 Definition subst {E : EvType} {stk} {R S : Type@{entree_u}}
            (k : R -> fixtree E stk S) : fixtree E stk R -> fixtree E stk S :=
-  fun t => subst' k (fobserve t).
+  fun t => subst' k (fxobserve t).
 
 (* Monadic bind for fixtrees is just subst *)
 Definition bind {E stk} {R S : Type@{entree_u}} 
@@ -590,49 +523,53 @@ Definition iter {E stk} {I R : Type@{entree_u}}
            (body : I -> fixtree E stk (I + R)) : I -> fixtree E stk R :=
   cofix _iter i :=
     bind (body i) (fun ir => match ir with
-                          | inl i' => FxTr_Tau (_iter i')
-                          | inr r => FxTr_Ret r
+                          | inl i' => Fx_Tau (_iter i')
+                          | inr r => Fx_Ret r
                           end).
 
 (* Map a pure function over the return value(s) of an entree *)
 Definition map {E stk} {R S} (f : R -> S) (t : fixtree E stk R) :=
-  bind t (fun r => FxTr_Ret (f r)).
+  bind t (fun r => Fx_Ret (f r)).
 
 (* Build a computation tree that performs a single event / effect in E *)
 Definition trigger {E:EvType} {stk} (e : E) : fixtree E stk (encodes e) :=
-  FxTr_Vis e (fun x => FxTr_Ret x).
+  Fx_Vis e (fun x => Fx_Ret x).
 
 (* The nonterminating computation that spins forever and never does anything *)
-CoFixpoint spin {E stk R} : fixtree E stk R := FxTr_Tau spin.
+CoFixpoint spin {E stk R} : fixtree E stk R := Fx_Tau spin.
 
 (* NOTE: cannot lift the stack of a fixtree, because the continuation for a call
 expects the output of that call to be in the original, not the lifted, stack *)
 (*
 CoFixpoint liftFixTree' {E stk R} T (ot : fixtree' E stk R) : fixtree E (cons T stk) R :=
   match ot with
-  | FxTr_RetF r => FxTr_Ret r
-  | FxTr_TauF t => FxTr_Tau (liftFixTree' T (fobserve t))
-  | FxTr_VisF e k => FxTr_Vis e (fun x => liftFixTree' T (fobserve (k x)))
-  | FxTr_CallF call k =>
-      FxTr_Call (liftStackCall stk T call) (fun x => liftFixTree' T (fobserve (k x))) end.
-  | FxTr_FixF body args k => FxTr_Fix body args (fun x => _subst (fobserve (k x)))
+  | Fx_RetF r => Fx_Ret r
+  | Fx_TauF t => Fx_Tau (liftFixTree' T (fxobserve t))
+  | Fx_VisF e k => Fx_Vis e (fun x => liftFixTree' T (fxobserve (k x)))
+  | Fx_CallF call k =>
+      Fx_Call (liftStackCall stk T call) (fun x => liftFixTree' T (fxobserve (k x))) end.
+  | Fx_FixF body args k => Fx_Fix body args (fun x => _subst (fxobserve (k x)))
   end.
 *)
+
+FIXME: the StackInterp has to contain fixtree interps, not entree interps
 
 CoFixpoint interp_fixtree' {E stk R} (defs : StackInterp E stk) (ot : fixtree' E stk R)
   : entree E R :=
   match ot with
-  | FxTr_RetF r => Ret r
-  | FxTr_TauF t => Tau (interp_fixtree' defs (fobserve t))
-  | FxTr_VisF e k => Vis e (fun x => interp_fixtree' defs (fobserve (k x)))
-  | FxTr_CallF (MkStackCall _ n args) k =>
-      Tau (interp_fixtree' defs
-             (fobserve (FixTree.bind (nthStackInterp E stk n defs nil args) k)))
-  | FxTr_FixF body args k =>
+  | Fx_RetF r => Ret r
+  | Fx_TauF t => Tau (interp_fixtree' defs (fxobserve t))
+  | Fx_VisF e k => Vis e (fun x => interp_fixtree' defs (fxobserve (k x)))
+  | Fx_CallF (MkStackCall _ _ n _ args) k =>
+      Tau (EnTree.bind
+             (applyFunInterp (nthFunInterp E stk n defs) args)
+             (fun x =>
+                interp_fixtree' defs (fxobserve (k x))))
+  | Fx_FixF body args k =>
       Tau (EnTree.bind
              (interp_fixtree' (consStackInterp E stk _ body defs)
                 (body args))
-             (fun x => interp_fixtree' defs (fobserve (k x))))
+             (fun x => interp_fixtree' defs (fxobserve (k x))))
   end.
   
 
@@ -681,15 +618,15 @@ End FixTreeNotations.
 
 #[global] Instance Applicative_entree {E stk} : Applicative (fixtree E stk) :=
   {
-    pure := fun _  x => FxTr_Ret x;
+    pure := fun _  x => Fx_Ret x;
     ap := fun _ _ f x =>
-            FixTree.bind f (fun f => FixTree.bind x (fun x => FxTr_Ret (f x)) );
+            FixTree.bind f (fun f => FixTree.bind x (fun x => Fx_Ret (f x)) );
 
   }.
 
 #[global] Instance Monad_entree {E stk} : Monad (fixtree E stk) :=
   {
-    ret := fun _ x => FxTr_Ret x;
+    ret := fun _ x => Fx_Ret x;
     bind := @FixTree.bind E _;
   }.
 
