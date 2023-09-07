@@ -83,20 +83,6 @@ Proof.
   - simpl. setoid_rewrite H0. auto.
   - cbn. intros t4 m Ht4. apply IHHn in Ht4. econstructor; eauto.
 Qed.
-(*
-Lemma eqit_bind_ret_inv E R S b1 b2 `{EncodedType E} (t : entree E R) (k : R -> entree E S) s :
-  eqit eq b1 b2  (r <- t;; k r) (ret s) -> 
-  exists r, eqit eq b1 b2 t (ret r) /\ eqit eq b1 b2 (k r) (ret s).
-Proof. 
-  intros Hret. remember (observe (r <- t;; k r)) as x. remember (observe (ret s)) as y.
-  assert (go _ _ x ≅ r <- t;; k r). subst. rewrite <- entree_eta. reflexivity. clear Heqx. rename H0 into Heqx.
-  assert (go _ _ y ≅ ret s). subst. rewrite <- entree_eta. reflexivity. clear Heqy. rename H0 into Heqy.
-  rewrite <- Heqx, <- Heqy in Hret. punfold Hret. red in Hret. cbn in *.
-  generalize dependent t. generalize dependent s.
-  hinduction Hret before H; intros.
-  - admit.
-  - pclearbot.
-*)
 
 Ltac remember_eq_itree t1 n :=
   let H1 := fresh in

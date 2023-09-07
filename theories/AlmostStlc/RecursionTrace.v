@@ -67,7 +67,7 @@ Proof.
 Qed.
 
 
-Lemma recurstion_trace_ret R (t : entree (D + E) R) r n :
+Lemma recursion_trace_ret R (t : entree (D + E) R) r n :
   multi_step n (interp_mrec bodies t) (ret r) ->
   exists d, recursion_trace n t d (ret r).
 Proof.

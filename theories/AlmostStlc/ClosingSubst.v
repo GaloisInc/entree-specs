@@ -45,7 +45,7 @@ Equations weaken_subst Γ1 {Γ2} (ρ : closing_subst Γ1) : open_subst Γ1 Γ2 :
 Equations close_value_app {t Γ2} Γ1 (ρ : open_subst Γ1 Γ2) (v : value t (Γ1 ++ Γ2))  :
   value t Γ2 := 
   close_value_app [] _ v := v;
-  close_value_app (t0 :: Γ) (v0, ρ) v := close_value_app Γ ρ (subst_value_cons v (weaken_l_value _ v0) ).
+  close_value_app (t0 :: Γ) (v0, ρ) v := close_value_app Γ ρ (subst_value_cons v (weaken_l_value Γ v0) ).
 Arguments close_value_app {_ _ _}.
 (* need more ways to apply a substitution*)
 
@@ -72,19 +72,35 @@ Equations close_bodies_app {MR R1 R2 Γ2} Γ1 (ρ : open_subst Γ1 Γ2)
 Arguments close_bodies_app {_ _ _ _ _}.
 
 
-Equations close_value {t} Γ (vs : closing_subst Γ) (v : value t Γ)  : closed_value t := 
+Equations close_value {t} Γ (vs : closing_subst Γ) (v : value t Γ)  : value t [] := 
   close_value [] _ v := v;
-  close_value (t0 :: Γ) (v0, vs) v := close_value Γ vs (subst_value_cons v (weaken_r_value Γ v0) ).
+  close_value (t0 :: Γ1) (v0, vs) v := close_value _ vs (subst_value_cons v (weaken_r_value _ v0) ).
 
 Equations close_comp {t MR} Γ (vs : closing_subst Γ) (c : comp t Γ MR) : comp t [] MR :=
   close_comp [] _ c := c;
-  close_comp (t0 :: Γ) (v0, vs) c := close_comp Γ vs (subst_comp_cons c (weaken_r_value Γ v0)).
+  close_comp (t0 :: Γ1) (v0, vs) c := close_comp Γ1 vs (subst_comp_cons c (weaken_r_value Γ1 v0)).
 
 Equations close_bodies {MR R1 R2} Γ (ρ : closing_subst Γ) (bodies : mfix_bodies Γ MR R1 R2) :
   mfix_bodies [] MR R1 R2 :=
   close_bodies [] _ bodies := bodies;
   close_bodies (t :: Γ) (v,ρ) bodies := close_bodies Γ ρ (subst_bodies_cons bodies (weaken_r_value Γ v)).
 
+
+(*
+Equations close_value {t Γ2} Γ1(vs : open_subst Γ1 Γ2) (v : value t (Γ1 ++ Γ2))  : value t Γ2 := 
+  close_value [] _ v := v;
+  close_value (t0 :: Γ1) (v0, vs) v := close_value Γ1 vs (subst_value_cons v (weaken_l_value Γ1 v0) ).
+
+Equations close_comp {t MR Γ2} Γ1 (vs : open_subst Γ1 Γ2) (c : comp t (Γ1 ++ Γ2) MR) : comp t Γ2 MR :=
+  close_comp [] _ c := c;
+  close_comp (t0 :: Γ1) (v0, vs) c := close_comp Γ1 vs (subst_comp_cons c (weaken_l_value Γ1 v0)).
+
+Equations close_bodies {MR R1 R2 Γ2} Γ1 (ρ : open_subst Γ1 Γ2) (bodies : mfix_bodies (Γ1 ++ Γ2) MR R1 R2) :
+  mfix_bodies Γ2 MR R1 R2 :=
+  close_bodies [] _ bodies := bodies;
+  close_bodies (t :: Γ1) (v,ρ) bodies := close_bodies Γ1 ρ (subst_bodies_cons bodies (weaken_l_value Γ1 v)).
+*)
+(*
 Inductive closing_subst_equiv : forall Γ, closing_subst Γ -> denote_ctx Γ -> Prop :=
   | closing_subst_equiv_nil : closing_subst_equiv [] tt tt 
   | closing_subst_equiv_cons t Γ (v : closed_value t) (vs : closing_subst Γ)
@@ -107,6 +123,7 @@ Proof.
   apply rutt_inv_Ret in H1. auto.
 Qed.
 
+(*do I need these *)
 Theorem close_value_correct t Γ MR (vs : closing_subst Γ) (hyps : denote_ctx Γ) (v : value t Γ) :
   closing_subst_equiv Γ vs hyps ->
   comp_equiv_rutt (MR := MR) (denote_value v hyps) (denote_value (close_value Γ vs v) tt).
@@ -138,7 +155,7 @@ Proof.
     eapply types_equiv_comp_refl; auto.
     setoid_rewrite val_map_correct with (hyps2 := hyps); auto.
 Qed.
-
+*)
 (*
   with comp : vtype -> ctx -> mfix_ctx -> Type :=
     comp_ret : forall (t : vtype) (Γ : ctx) (MR : mfix_ctx),
@@ -306,21 +323,18 @@ Proof.
     dependent destruction e. auto.
   - intros [v ρ]. simp close_value.
 Qed.
-(*
-Lemma subst_comp_comm:
-  forall (a : vtype) (Γ : ctx) (t1 t2 : vtype) (MR : mfix_ctx) (cbody : comp t2 (t1 :: a :: Γ) MR) (v1 : value a [])
-    (v2 : closed_value t1),
-    subst_comp (subst_comp cbody (weaken_r_value Γ v1)) (weaken_r_value Γ v2) =
-      subst_comp (subst_comp cbody (weaken_r_value (a :: Γ) v2)) (weaken_r_value Γ v1).
-Proof.
-  intros a Γ t1 t2 MR cbody v1 v2.
-*)
-(* TODO: finish proof *)
 
-(*
-Lemma var_map_id (f : forall t', var )
-comp_value_mutind
-*)
+Lemma close_comp_let : forall (t1 t2 : vtype) (Γ : ctx) (MR : mfix_ctx)
+                       (c1 : comp t1 Γ MR) (c2 : comp t2 (t1 :: Γ) MR)
+                       (ρ : closing_subst Γ),
+      close_comp Γ ρ (comp_let c1 c2) = comp_let (close_comp Γ ρ c1) (close_comp_app (Γ1 := [t1]) ρ c2).
+Proof.
+  intros t1 t2 Γ MR c1 c2.
+  induction Γ.
+  - intros []. simp close_comp. simp close_comp_app. unfold comp_app_nil.
+    simpl. cbn. cbv. remember (List.app_nil_r [t1]) as e. clear Heqe. dependent destruction e. auto.
+  - intros [v ρ]. simp close_comp. unfold subst_comp_cons at 1. simp subst_comp.
+Qed.
 
 Lemma var_map_skip_id Γ (t : type) (f : forall t', var t' Γ -> var t' Γ) :
   (forall t' (x : var t' Γ), f _ x = x) ->
@@ -330,7 +344,7 @@ Proof.
   simp var_map_skip; auto. rewrite H. auto.
 Qed.
 
-Lemma var_map_id  :
+Lemma var_map_id_mutind  :
   (forall t Γ MR (c : comp t Γ MR) (f : forall t', var t' Γ -> var t' Γ), 
       (forall t' (x : var t' Γ), f _ x = x) ->
       comp_map c f = c) /\
@@ -352,6 +366,54 @@ Proof.
   - rewrite H, H0; auto. repeat apply var_map_skip_id; auto.
   - rewrite H, H0; auto. apply var_map_skip_id; auto.
 Qed.
+
+Lemma val_map_id:  forall t Γ (v : value t Γ) (f : forall t', var t' Γ -> var t' Γ), 
+      (forall t' (x : var t' Γ), f _ x = x) -> val_map v f = v.
+Proof.
+  specialize var_map_id_mutind. tauto.
+Qed.
+
+(* issue with associativity here, uggh *)
+(*
+Definition comp_assoc {Γ1 Γ2 Γ3 t MR} (c : comp t (Γ1 ++ Γ2 ++ Γ3) MR) : comp t ((Γ1 ++ Γ2) ++ Γ3) MR.
+Admitted.
+
+Lemma subst_comp_comm Γ1 Γ2 t1 t2 t3 MR (cbody : comp t3 (Γ1 ++ [t1] ++ [t2] ++ Γ2) MR)
+      (v1 : closed_value t1) (v2 : closed_value t2) : 
+  subst_comp (subst_comp cbody (weaken_r_value _ v1)) (weaken_r_value _ v2) =
+    subst_comp (subst_comp (comp_assoc (Γ1 := Γ1) (Γ2 := [t1]) (Γ3 := [t2] ++ Γ2) cbody) (weaken_r_value _ v2)) (weaken_r_value _ v1).
+*)
+Lemma close_comp_open : forall Γ t1 t2 MR (c : comp t2 (t1 :: Γ) MR) (v : value t1 []) (ρ : closing_subst Γ),
+    close_comp (t1 :: Γ) (v, ρ) c = subst_comp_cons (close_comp_app (Γ1 := [t1]) ρ c) v.
+Proof.
+  intros Γ. induction Γ.
+  - intros. simp close_comp. destruct ρ. simp close_comp_app.
+    unfold comp_app_nil. simpl. remember ((List.app_nil_r [t1])) as e. dependent destruction e. simpl.
+    unfold weaken_r_value. rewrite val_map_id; auto. cbn. intros. inversion x0.
+  - intros t1 t2 MR c v [v0 ρ]. simp close_comp. simp close_comp_app. rewrite <- IHΓ.
+    simp close_comp. f_equal.
+    (* the remaining goal is commutativity for subst_comp, probably need *)
+Admitted.
+
+(* ideally would have close_comp ρ c = subst_comp_con (close_comp_app ρ c)  but proving that may be difficult *)
+
+(*
+Lemma subst_comp_comm:
+  forall (a : vtype) (Γ : ctx) (t1 t2 : vtype) (MR : mfix_ctx) (cbody : comp t2 (t1 :: a :: Γ) MR) (v1 : value a [])
+    (v2 : closed_value t1),
+    subst_comp (subst_comp cbody (weaken_r_value Γ v1)) (weaken_r_value Γ v2) =
+      subst_comp (subst_comp cbody (weaken_r_value (a :: Γ) v2)) (weaken_r_value Γ v1).
+Proof.
+  intros a Γ t1 t2 MR cbody v1 v2.
+*)
+(* TODO: finish proof *)
+
+(*
+Lemma var_map_id (f : forall t', var )
+comp_value_mutind
+*)
+
+
 (*
 Lemma subst_comp_const_close:
   forall (t1 t2 : vtype) (Γ : ctx) (MR : mfix_ctx)
@@ -376,13 +438,7 @@ Lemma subst_comm :
   ()
 *)
 
-(* issue with associativity here, uggh *)
-(*
-Lemma subst_comp_comm Γ1 Γ2 t1 t2 t3 MR (cbody : comp t3 ((Γ1 ++ [t1]) ++ [t2] ++ Γ2) MR)
-      (v1 : closed_value t1) (v2 : closed_value t2) : 
-  subst_comp (subst_comp cbody (weaken_r_value _ v1)) (weaken_r_value _ v2) =
-    subst_comp (subst_comp (Γ1 := Γ1 ++ [t1]) (Γ2 := Γ2) cbody (weaken_r_value _ v2)) (weaken_r_value _ v1).
-*)
+
 
 (*
   maybe useful to have a relational def of substitution,

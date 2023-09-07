@@ -66,13 +66,15 @@ Proof.
   - apply well_founded_type_subterm.
 Qed.
 
+
+(* should the function case assume types_equiv vv vv for argument?*)
 Equations approx_val (n : nat) (t : type) (vv : denote_type t) (v : closed_value t) : Prop by wf (n,t) log_rel_dec := {
   approx_val 0 _ _ _ := True;
   approx_val (S m') Nat n (val_const m) := n = m;
   approx_val (S m) (Pair t1 t2) (vv1, vv2) (val_pair v1 v2)  := approx_val (S m) t1 vv1 v1 /\ approx_val (S m) t2 vv2 v2;
   approx_val (S m) (List t) l vl := log_rel_list (fun vv v => approx_val (S m) t vv v) l vl;
   approx_val (S m) (Arrow t1 MR t2) f (val_abs c) := 
-    forall vv v m' (H : m' < S m), valid_denote vv -> approx_val m' t1 vv v -> 
+    forall vv v m' (H : m' < S m), approx_val m' t1 vv v -> 
                               approx_comp m' (fun n t v vv => forall (H : n < S m), 
                                                   approx_val n t v vv) (f vv) (subst_comp_cons c v) 
 }.
@@ -140,7 +142,7 @@ Proof.
       destruct H. split; auto.
     + red in v. dependent destruction v; try inversion x.
       rename vv into f. simp approx_val in H. simp approx_val.
-      intros vv v m' Hm' Hvv Hv. eapply H in Hv; eauto.
+      intros vv v m' Hm' Hv. eapply H in Hv; eauto.
       eapply lower_approx_comp_aux1 with (P := fun m' => m' < S n); intros; eauto.
       lia. simpl.
       split; intros; apply H1; lia.
@@ -196,6 +198,45 @@ Proof.
   - intros. apply lower_approx_comp_aux2 in H0; auto.
 Qed.
 
+(* 
+   wait this seems weird,
+
+   example j=0 e1 has a number of steps to eval to a value
+
+   e1'<=0 e2 is just true, how can that be enough
+
+   e1 = (1 + 2) e1' = 3
+
+   e2 = 4
+
+   (1 + 2) --> 3
+   3 <=0 4
+   ~(1 + 2 <=1 4) ?????
+
+   lets bring this up to nick tomorrow
+   Lemma that is typically true according to nick
+   e1 --> e1' => e1' <=j e2 => e1 <=(j+1) e2
+
+   think about if this makes sense, especially in light of
+   whether you decrement steps in the ret case 
+
+*)
+
+Lemma approx_comp_multi_step t MR c m1 m2 j1 j2 :
+  multi_step j1 m1 m2 ->
+  approx_comp (t := t) (MR := MR) j2 approx_val m2 c ->
+  approx_comp (j1 + j2) approx_val m1 c.
+Proof.
+  intros Hstep Happrox.
+  inversion Happrox. subst. clear Happrox. rename H into Happrox.
+  constructor. intros j' Hj'12.
+  split.
+  - intros vv Hstepj'.
+    assert (j2 >0). admit.
+    assert (j' - j1 < j2). admit. specialize (Happrox (j' - j1) H0).
+    destruct Happrox as [Hret _].
+    (* here is a *)
+Abort.
 (* may also need that vv is valid *)
 Inductive closing_subst_approx (n : nat) : forall Γ, denote_ctx Γ -> closing_subst Γ ->  Prop :=
   | closing_subst_approx_nil : closing_subst_approx n nil tt tt
@@ -216,9 +257,13 @@ Proof.
   constructor; auto. eapply lower_approx_val; eauto.
 Qed.
 
+
+
+
+
 (* notably properness is gone, that may make things more complicated
 
-   could presumably use 
+   might cause complications especially in the value cases
 Lemma proper_approx_aux : forall n,
     (forall t v vv1 vv2, types_equiv t vv1 vv2 -> approx_val n t vv1 v -> approx_val n t vv2 v) /\
     (forall t MR c m1 m2, comp_equiv_rutt (t := t) (MR := MR) m1 m2 -> 
@@ -276,6 +321,17 @@ Proof.
   repeat intro. subst. destruct (proper_approx_aux n). eapply H2; eauto. symmetry. auto.
 Qed.
 *)
+#[global] Instance proper_approx_comp {n t MR} : 
+  Proper (eq_itree (R1 := denote_type t) eq ==> eq ==> Basics.flip Basics.impl)
+         (approx_comp (MR := MR) n approx_val).
+Proof. 
+  do 2 red. intros m1 m2 Hm12 c1 c2 Hc12 Happrox. subst.
+  constructor. intros. inversion Happrox. subst. specialize (H0 j' H).
+  destruct H0 as [Hret Hstuck].
+  split. 
+  - intros. setoid_rewrite Hm12 in H0. eauto.
+  - intros. setoid_rewrite Hm12 in H0. eauto.
+Qed.
 
 (* needs to include this new bodies steps t *)
 Equations log_rel_bodies_step {MR R1 R2} 
@@ -293,6 +349,13 @@ Definition comp_rel {t Γ MR}
            (c : comp t Γ MR) : Prop :=
   forall n (hyps : denote_ctx Γ) (ρ : closing_subst Γ), 
     closing_subst_approx n Γ hyps ρ -> approx_comp n approx_val (m hyps) (close_comp Γ ρ c).
+
+Definition bounded_comp_rel {t Γ MR} n
+           (m : denote_ctx Γ -> mtree (denote_mfix_ctx MR) (denote_type t))
+           (c : comp t Γ MR) : Prop :=
+  forall j (hyps : denote_ctx Γ) (ρ : closing_subst Γ), 
+    j <= n ->
+    closing_subst_approx j Γ hyps ρ -> approx_comp j approx_val (m hyps) (close_comp Γ ρ c).
 
 Definition val_rel {t Γ MR}
            (vm : denote_ctx Γ -> mtree (denote_mfix_ctx MR) (denote_type t))
