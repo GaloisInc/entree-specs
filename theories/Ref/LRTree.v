@@ -151,384 +151,367 @@ Fixpoint decodeSType (d : SimpleDesc) : Type@{entree_u} :=
   end.
 
 (* General type descriptions, parameterized by whether they are a monadic type *)
-Inductive TpDesc : bool -> Type@{entree_u} :=
+Inductive TpDesc : Type@{entree_u} :=
 (* Monadic function types *)
-| Tp_M (R : TpDesc false) : TpDesc true
-| Tp_Pi (A : SimpleDesc) (B : decodeSType A -> TpDesc true) : TpDesc true
-| Tp_Arr (A : TpDesc false) (B : TpDesc true) : TpDesc true
+| Tp_M (R : TpDesc) : TpDesc
+| Tp_Pi (A : SimpleDesc) (B : decodeSType A -> TpDesc) : TpDesc
+| Tp_Arr (A : TpDesc) (B : TpDesc) : TpDesc
 
 (* First-order types *)
-| Tp_Fun (A : TpDesc true) : TpDesc false
-| Tp_SType (A : SimpleDesc) : TpDesc false
-| Tp_Pair (A : TpDesc false) (B : TpDesc false) : TpDesc false
-| Tp_Sum (A : TpDesc false) (B : TpDesc false) : TpDesc false
-| Tp_Sigma (A : SimpleDesc) (B : decodeSType A -> TpDesc false) : TpDesc false
+| Tp_SType (A : SimpleDesc) : TpDesc
+| Tp_Pair (A : TpDesc) (B : TpDesc) : TpDesc
+| Tp_Sum (A : TpDesc) (B : TpDesc) : TpDesc
+| Tp_Sigma (A : SimpleDesc) (B : decodeSType A -> TpDesc) : TpDesc
 .
 
-Definition MonTp := TpDesc true.
-Definition ValTp := TpDesc false.
-
-Definition FunStack := list MonTp.
+Definition FunStack := list TpDesc.
 
 (* A trivially inhabited "default" function type *)
-Definition default_tp : MonTp :=
+Definition default_tp : TpDesc :=
   Tp_Pi SimpTp_Void (fun _ => Tp_M (Tp_SType SimpTp_Void)).
 
 (* Get the nth element of a list of function types, or default_fun_tp if n is too big *)
-Definition nthTp (stk : FunStack) n : MonTp :=
+Definition nthTp (stk : FunStack) n : TpDesc :=
   nth_default' default_tp stk n.
 
-Inductive Clos stk : MonTp -> Type@{entree_u} :=
-| MkClos (n:nat) (pf:n < length stk) : Clos stk (nthTp stk n).
+Inductive StkFun stk : TpDesc -> Type@{entree_u} :=
+| MkStkFun (n:nat) (pf:n < length stk) : StkFun stk (nthTp stk n).
 
 (*
-Inductive Clos stk (T:MonTp) : Type@{entree_u} :=
-| MkClos (n:nat) (pf: isNth T n stk) : Clos stk T.
+Inductive StkFun stk (T:TpDesc) : Type@{entree_u} :=
+| MkStkFun (n:nat) (pf: isNth T n stk) : StkFun stk T.
 *)
 
-Lemma noNilClos T (clos : Clos nil T) : False.
+Lemma noNilStkFun T (clos : StkFun nil T) : False.
   destruct clos. inversion pf.
 Qed.
 
-Definition liftClos stk U T (clos : Clos stk T) : Clos (cons U stk) T :=
+Definition liftStkFun stk U T (clos : StkFun stk T) : StkFun (cons U stk) T :=
   match clos with
-  | MkClos _ n pf => MkClos (cons U stk) (S n) (lt_n_S _ _ pf)
+  | MkStkFun _ n pf => MkStkFun (cons U stk) (S n) (lt_n_S _ _ pf)
   end.
 
-Fixpoint decodeType (E:EvType) stk isM (T : TpDesc isM) : Type@{entree_u} :=
+Fixpoint decodeType (E:EvType) stk (T : TpDesc) : Type@{entree_u} :=
   match T with
-  | Tp_M R => Clos stk (Tp_M R) + entree E (decodeType E stk false R)
-  | Tp_Pi A B => Clos stk (Tp_Pi A B) + forall a, decodeType E stk true (B a)
+  | Tp_M R => StkFun stk (Tp_M R) + entree E (decodeType E stk R)
+  | Tp_Pi A B => StkFun stk (Tp_Pi A B) + forall a, decodeType E stk (B a)
   | Tp_Arr A B =>
-      Clos stk (Tp_Arr A B) + (decodeType E stk false A -> decodeType E stk true B)
-  | Tp_Fun A => decodeType E stk true A
-  | Tp_SType A => decodeSType A
-  | Tp_Pair A B => decodeType E stk false A * decodeType E stk false B
-  | Tp_Sum A B => decodeType E stk false A + decodeType E stk false B
-  | Tp_Sigma A B => { a:decodeSType A & decodeType E stk false (B a) }
-  end.
-
-(* The same as a decoding but the top-level constructor cannot be a closure *)
-Definition MonInterp (E:EvType) stk isM (T : TpDesc isM) : Type@{entree_u} :=
-  match T with
-  | Tp_M R => entree E (decodeType E stk false R)
-  | Tp_Pi A B => forall a, decodeType E stk true (B a)
-  | Tp_Arr A B => (decodeType E stk false A -> decodeType E stk true B)
-  | Tp_Fun A => decodeType E stk true A
-  | Tp_SType A => decodeSType A
-  | Tp_Pair A B => decodeType E stk false A * decodeType E stk false B
-  | Tp_Sum A B => decodeType E stk false A + decodeType E stk false B
-  | Tp_Sigma A B => { a:decodeSType A & decodeType E stk false (B a) }
-  end.
-
-Definition substClos E stk U (I : MonInterp E (cons U stk) true U)
-  T (clos : Clos (cons U stk) T) : Clos stk T + MonInterp E (cons U stk) true T :=
-  match clos with
-  | MkClos _ 0 _ => inr I
-  | MkClos _ (S n) pf => inl (MkClos _ n (lt_S_n _ _ pf))
-  end.
-
-
-Fixpoint substLiftDecoding E stk U (I : MonInterp E (cons U stk) true U) isM T :
-  (decodeType E (cons U stk) isM T -> decodeType E stk isM T)
-  * (decodeType E stk isM T -> decodeType E (cons U stk) isM T) :=
-  match T in TpDesc isM
-        return (decodeType E (cons U stk) isM T -> decodeType E stk isM T)
-               * (decodeType E stk isM T -> decodeType E (cons U stk) isM T)
-  with
-  | Tp_M R =>
-      ((fun elem =>
-          match elem with
-          | inl clos =>
-              match substClos E stk U I _ clos with
-              | inl clos' => inl clos'
-              | inr m =>
-                  inr (fmap (fst (substLiftDecoding E stk U I false R)) m)
-              end
-          | inr m =>
-              inr (fmap (fst (substLiftDecoding E stk U I false R)) m)
-          end)
-        ,
-        (fun elem =>
-           match elem with
-           | inl clos => inl (liftClos stk U (Tp_M R) clos)
-           | inr m => inr (fmap (snd (substLiftDecoding E stk U I false R)) m)
-           end))
-  | Tp_Pi A B =>
-      ((fun elem =>
-          match elem with
-          | inl clos =>
-              match substClos E stk U I (Tp_Pi A B) clos with
-              | inl clos' => inl clos'
-              | inr f =>
-                  inr (fun a => fst (substLiftDecoding E stk U I true (B a)) (f a))
-              end
-          | inr f =>
-              inr (fun a => fst (substLiftDecoding E stk U I true (B a)) (f a))
-          end)
-        ,
-        (fun elem =>
-           match elem with
-           | inl clos => inl (liftClos stk U (Tp_Pi A B) clos)
-           | inr f => inr (fun a => snd (substLiftDecoding E stk U I true (B a)) (f a))
-           end))
-  | Tp_Arr A B =>
-      ((fun elem =>
-          match elem with
-          | inl clos =>
-              match substClos E stk U I (Tp_Arr A B) clos with
-              | inl clos' => inl clos'
-              | inr f =>
-                  inr (fun arg =>
-                         fst (substLiftDecoding E stk U I true B)
-                           (f
-                              (snd (substLiftDecoding E stk U I false A) arg)))
-              end
-          | inr f =>
-              inr (fun arg =>
-                         fst (substLiftDecoding E stk U I true B)
-                           (f
-                              (snd (substLiftDecoding E stk U I false A) arg)))
-          end)
-        ,
-        (fun elem =>
-          match elem with
-          | inl clos => inl (liftClos stk U (Tp_Arr A B) clos)
-          | inr f =>
-              inr (fun arg =>
-                         snd (substLiftDecoding E stk U I true B)
-                           (f
-                              (fst (substLiftDecoding E stk U I false A) arg)))
-          end))
-  | Tp_Fun A =>
-      (fst (substLiftDecoding E stk U I true A),
-        snd (substLiftDecoding E stk U I true A))
-  | Tp_SType A =>
-      (id, id)
-  | Tp_Pair A B =>
-      ((fun elem =>
-          (fst (substLiftDecoding E stk U I false A) (fst elem),
-            fst (substLiftDecoding E stk U I false B) (snd elem)))
-        ,
-        (fun elem =>
-           (snd (substLiftDecoding E stk U I false A) (fst elem),
-             snd (substLiftDecoding E stk U I false B) (snd elem))))
-  | Tp_Sum A B =>
-      ((fun elem =>
-          match elem with
-          | inl x => inl (fst (substLiftDecoding E stk U I false A) x)
-          | inr y => inr (fst (substLiftDecoding E stk U I false B) y)
-          end)
-        ,
-        (fun elem =>
-          match elem with
-          | inl x => inl (snd (substLiftDecoding E stk U I false A) x)
-          | inr y => inr (snd (substLiftDecoding E stk U I false B) y)
-          end))
-  | Tp_Sigma A B =>
-      ((fun elem =>
-          existT _ (projT1 elem)
-            (fst (substLiftDecoding E stk U I false (B (projT1 elem))) (projT2 elem)))
-        ,
-        (fun elem =>
-           existT _ (projT1 elem)
-             (snd (substLiftDecoding E stk U I false (B (projT1 elem))) (projT2 elem))))
-  end.
-
-
-
-
-
-
-
-
-
-Lemma neq_true_false : false <> true.
-  intro. inversion H.
-Qed.
-
-Print TpDesc_rect. Print eq_rect. Print eq.
-
-Definition MonTp_case (P : forall (T:MonTp), Type)
-  (f : forall R, P (Tp_M R))
-  (g : forall A B, (forall (a:decodeSType A), P (B a)) -> P (Tp_Pi A B))
-  (h : forall A B, P B -> P (Tp_Arr A B)) :
-  forall T, P T.
-Proof.
-  unfold MonTp. remember true as b.
-
-Definition MonTp_case (P : forall (T:MonTp), Type)
-  (f : forall R, P (Tp_M R))
-  (g : forall A B, (forall (a:decodeSType A), P (B a)) -> P (Tp_Pi A B))
-  (h : forall A B, P B -> P (Tp_Arr A B)) :
-  forall T, P T :=
-  TpDesc_rect
-    (fun b U => forall (e:b=true), P (eq_rect b TpDesc U true e))
-    (fun R _ _ => f R)
-    (fun A B rec _ => g A B (fun a => rec a (eq_refl true)))
-    (fun A _ B rec _ => h A B (rec (eq_refl true)))
-    (fun _ _ e => neq_true_false e)
-    (fun _ _ _ _ e => neq_true_false e)
-    (fun _ _ _ _ e => neq_true_false e)
-    (fun _ _ _ e => neq_true_false e).
-
-Definition MonInterp E stk (T : MonTp) : Type@{entree_u} :=
-  match T with
-  end.
-
-  forall (args:FunInput E stk T), entree E (FunOutput E stk T args).
-
-Definition default_interp E stk : FunInterp E stk default_tp :=
-  fun v => match projT1 v with end.
-
-Definition StackInterp E stk : Type@{entree_u} :=
-  mapTuple (FunInterp E stk) stk.
-
-(* FIXME: this would be straightforward if we used reverse-append in the def of FunInterp *)
-Definition liftFunInterp E stk U T (interp : FunInterp E stk T) : FunInterp E (cons U stk) T.
-Admitted.
-
-Definition consStackInterp E stk T (f : FunInterp E (cons T stk) T)
-  (interps : StackInterp E stk) : StackInterp E (cons T stk) :=
-  (f, mapMapTuple _ _ (liftFunInterp E stk T) stk interps).
-
-(* Get the nth function in a StackInterp *)
-Definition nthStackInterp E stk T n (isn : isNth T n stk) (defs : StackInterp E stk)
-  : FunInterp E stk T :=
-  nthProj (FunInterp E stk) T n stk isn.
-
-
-Fixpoint substLiftDecoding E stk (defs : StackInterp E stk) T :
-  (decodeType E stk T -> decodeType E nil T) * (decodeType E nil T -> decodeType E stk T) :=
-  match T return (decodeType E stk T -> decodeType E nil T)
-                 * (decodeType E nil T -> decodeType E stk T) with
-  | Tp_M R =>
-      ((fun elem =>
-          match elem with
-          | inl (MkClos _ _ n pf) =>
-            inr (fmap (fst (substLiftDecoding E stk defs R))
-                   (nthStackInterp E stk (Tp_M R) n pf defs tt))
-          | inr m =>
-              inr (fmap (fst (substLiftDecoding E stk defs R)) m)
-          end)
-        ,
-        (fun elem =>
-           match elem with
-           | inl clos => match noNilClos _ clos with end
-           | inr m => inr (fmap (snd (substLiftDecoding E stk defs R)) m)
-           end))
-  | Tp_FunDep A B =>
-      ((fun elem =>
-          match elem with
-          | inl (MkClos _ _ n pf) =>
-          end))
-  end.
-
-
-  | Tp_M R => Clos stk (Tp_M R) + entree E (decodeType E stk R)
-  | Tp_FunDep A B => Clos stk (Tp_FunDep A B) + forall a, decodeType E stk (B a)
-  | Tp_Fun A B => Clos stk (Tp_Fun A B) + (decodeType E stk A -> decodeType E stk B)
+      StkFun stk (Tp_Arr A B) + (decodeType E stk A -> decodeType E stk B)
   | Tp_SType A => decodeSType A
   | Tp_Pair A B => decodeType E stk A * decodeType E stk B
   | Tp_Sum A B => decodeType E stk A + decodeType E stk B
   | Tp_Sigma A B => { a:decodeSType A & decodeType E stk (B a) }
   end.
 
+(* The same as a decoding but the top-level constructor cannot be a closure *)
+Fixpoint FunInterp (E:EvType) stk (T : TpDesc) : Type@{entree_u} :=
+  match T with
+  | Tp_M R => entree E (decodeType E stk R)
+  | Tp_Pi A B => forall a, FunInterp E stk (B a)
+  | Tp_Arr A B => (decodeType E stk A -> FunInterp E stk B)
+  | _ => Empty_set
+  end.
+
+Definition FunInterpToElem E stk T : FunInterp E stk T -> decodeType E stk T.
+Admitted.
+
+(*
+Fixpoint FunInterpToElem E stk T : FunInterp E stk T -> decodeType E stk T :=
+  match T return FunInterp E stk T -> decodeType E stk T with
+  end.
+*)
+
+Definition substStkFun E stk U (I : FunInterp E (cons U stk) U)
+  T (clos : StkFun (cons U stk) T) : StkFun stk T + FunInterp E (cons U stk) T :=
+  match clos with
+  | MkStkFun _ 0 _ => inr I
+  | MkStkFun _ (S n) pf => inl (MkStkFun _ n (lt_S_n _ _ pf))
+  end.
 
 
+Fixpoint substLiftDecoding E stk U (I : FunInterp E (cons U stk) U) T :
+  (decodeType E (cons U stk) T -> decodeType E stk T)
+  * (decodeType E stk T -> decodeType E (cons U stk) T) :=
+  match T in TpDesc
+        return (decodeType E (cons U stk) T -> decodeType E stk T)
+               * (decodeType E stk T -> decodeType E (cons U stk) T)
+  with
+  | Tp_M R =>
+      ((fun elem =>
+          match elem with
+          | inl clos =>
+              match substStkFun E stk U I _ clos with
+              | inl clos' => inl clos'
+              | inr m =>
+                  inr (fmap (fst (substLiftDecoding E stk U I R)) m)
+              end
+          | inr m =>
+              inr (fmap (fst (substLiftDecoding E stk U I R)) m)
+          end)
+        ,
+        (fun elem =>
+           match elem with
+           | inl clos => inl (liftStkFun stk U (Tp_M R) clos)
+           | inr m => inr (fmap (snd (substLiftDecoding E stk U I R)) m)
+           end))
+  | Tp_Pi A B =>
+      ((fun elem =>
+          match elem with
+          | inl clos =>
+              match substStkFun E stk U I (Tp_Pi A B) clos with
+              | inl clos' => inl clos'
+              | inr f =>
+                  inr (fun a => fst (substLiftDecoding E stk U I (B a))
+                                  (FunInterpToElem E _ _ (f a)))
+              end
+          | inr f =>
+              inr (fun a => fst (substLiftDecoding E stk U I (B a)) (f a))
+          end)
+        ,
+        (fun elem =>
+           match elem with
+           | inl clos => inl (liftStkFun stk U (Tp_Pi A B) clos)
+           | inr f => inr (fun a => snd (substLiftDecoding E stk U I (B a)) (f a))
+           end))
+  | Tp_Arr A B =>
+      ((fun elem =>
+          match elem with
+          | inl clos =>
+              match substStkFun E stk U I (Tp_Arr A B) clos with
+              | inl clos' => inl clos'
+              | inr f =>
+                  inr (fun arg =>
+                         fst (substLiftDecoding E stk U I B)
+                             (FunInterpToElem E _ _
+                                (f
+                                   (snd (substLiftDecoding E stk U I A) arg))))
+              end
+          | inr f =>
+              inr (fun arg =>
+                         fst (substLiftDecoding E stk U I B)
+                           (f
+                              (snd (substLiftDecoding E stk U I A) arg)))
+          end)
+        ,
+        (fun elem =>
+          match elem with
+          | inl clos => inl (liftStkFun stk U (Tp_Arr A B) clos)
+          | inr f =>
+              inr (fun arg =>
+                         snd (substLiftDecoding E stk U I B)
+                           (f
+                              (fst (substLiftDecoding E stk U I A) arg)))
+          end))
+  | Tp_SType A =>
+      (id, id)
+  | Tp_Pair A B =>
+      ((fun elem =>
+          (fst (substLiftDecoding E stk U I A) (fst elem),
+            fst (substLiftDecoding E stk U I B) (snd elem)))
+        ,
+        (fun elem =>
+           (snd (substLiftDecoding E stk U I A) (fst elem),
+             snd (substLiftDecoding E stk U I B) (snd elem))))
+  | Tp_Sum A B =>
+      ((fun elem =>
+          match elem with
+          | inl x => inl (fst (substLiftDecoding E stk U I A) x)
+          | inr y => inr (fst (substLiftDecoding E stk U I B) y)
+          end)
+        ,
+        (fun elem =>
+          match elem with
+          | inl x => inl (snd (substLiftDecoding E stk U I A) x)
+          | inr y => inr (snd (substLiftDecoding E stk U I B) y)
+          end))
+  | Tp_Sigma A B =>
+      ((fun elem =>
+          existT _ (projT1 elem)
+            (fst (substLiftDecoding E stk U I (B (projT1 elem))) (projT2 elem)))
+        ,
+        (fun elem =>
+           existT _ (projT1 elem)
+             (snd (substLiftDecoding E stk U I (B (projT1 elem))) (projT2 elem))))
+  end.
 
-Fixpoint FunInput E stk (T:MonTp) : Type@{entree_u} :=
+
+Fixpoint FunInput E stk (T:TpDesc) : Type@{entree_u} :=
   match T with
   | Tp_M _ => unit
   | Tp_Pi A B => { a : decodeSType A & FunInput E stk (B a) }
-  | Tp_Arr A B => decodeType E stk false A * FunInput E stk B
+  | Tp_Arr A B => decodeType E stk A * FunInput E stk B
+  | _ => unit
   end.
 
-(* FIXME: dependent pattern-matching on a MonTp *)
-Fixpoint FunOutput E stk (T:MonTp) : FunInput E stk T -> Type@{entree_u} :=
-  match T as MonTp return FunInput E stk T -> Type@{entree_u} with
-  | Tp_M R => fun _ => decodeType E stk false R
+Fixpoint FunOutput E stk T : FunInput E stk T -> Type@{entree_u} :=
+  match T return FunInput E stk T -> Type@{entree_u} with
+  | Tp_M R => fun _ => decodeType E stk R
   | Tp_Pi A B => fun args => FunOutput E stk (B (projT1 args)) (projT2 args)
   | Tp_Arr A B => fun args => FunOutput E stk B (snd args)
+  | _ => fun _ => Empty_set
   end.
 
 
-
-
-Definition FunInterp E stk T : Type@{entree_u} :=
-  forall stk' (args:FunInput E (app stk' stk) T),
-    entree E (FunOutput E (app stk' stk) T args).
-
-Definition default_interp E stk : FunInterp E stk default_tp :=
-  fun _ v => match projT1 v with end.
-
-Definition StackInterp E stk : Type@{entree_u} :=
-  mapTuple (FunInterp E stk) stk.
-
-(* FIXME: this would be straightforward if we used reverse-append in the def of FunInterp *)
-Definition liftFunInterp E stk U T (interp : FunInterp E stk T) : FunInterp E (cons U stk) T.
-Admitted.
-
-Definition consStackInterp E stk T (f : FunInterp E (cons T stk) T)
-  (interps : StackInterp E stk) : StackInterp E (cons T stk) :=
-  (f, mapMapTuple _ _ (liftFunInterp E stk T) stk interps).
-
-(* Get the nth function in a StackInterp *)
-Definition nthStackInterp E stk T n (isn : isNth T n stk) (defs : StackInterp E stk)
-  : FunInterp E stk T :=
-  nthProj (FunInterp E stk) T n stk isn.
-
-Lemma noNilMClos R (clos : Clos nil (Tp_M R)) : False.
-  remember (Tp_M R) as T. destruct clos. induction n; inversion HeqT.
-Qed.
-
-Lemma noNilFunClos A B (clos : Clos nil (Tp_Fun A B)) : False.
-  remember (Tp_Fun A B) as T. destruct clos. induction n; inversion HeqT.
-Qed.
-
-Definition liftNilClos T stk (clos : Clos nil T) : Clos stk T.
-Admitted.
-
-Fixpoint liftNilTpElem E stk T : decodeType E nil T -> decodeType E stk T :=
-  match T return decodeType E nil T -> decodeType E stk T with
-  | Tp_M R =>
-      fun elem => match elem with
-                  | inl clos => inl (liftNilClos (Tp_M R) stk clos)
-                  | inr m => inr (fmap (liftNilTpElem E stk R) m)
-                  end
-  | Tp_FunDep A B =>
-      fun elem => match elem with
-                  | inl clos => inl (liftNilClos (Tp_FunDep A B) stk clos)
-                  | inr f => inr (fun a => liftNilTpElem E stk (B a) (f a))
-                  end
-  | Tp_Fun A B =>
-      fun elem => match elem with
-                  | inl clos => inl (liftNilClos (Tp_Fun A B) stk clos)
-                  | inr f => inr (fun a => liftNilTpElem E stk (B a) (f a))
-                  end
-  | Tp_SType A => fun elem => elem
-  | Tp_Pair A B => fun p => (liftNilTpElem E stk A (fst p), liftNilTpElem E stk B (snd p))
-  | Tp_Sum A B => fun elem =>
-                    match elem with
-                    | inl x => inl (liftNilTpElem E stk A x)
-                    | inr y => inr (liftNilTpElem E stk B y)
-                    end
-  | Tp_Sigma A B =>
-      fun elem => existT _ (projT1 elem) (liftNilTpElem E stk (B (projT1 elem)) (projT2 elem))
+Fixpoint applyFunInterp E stk T :
+  FunInterp E stk T -> forall arg:FunInput E stk T, entree E (FunOutput E stk T arg) :=
+  match T return FunInterp E stk T ->
+                 forall arg:FunInput E stk T, entree E (FunOutput E stk T arg)
+  with
+  | Tp_M R => fun m _ => m
+  | Tp_Pi A B =>
+      fun f args =>
+        applyFunInterp E stk (B (projT1 args)) (f (projT1 args)) (projT2 args)
+  | Tp_Arr A B =>
+      fun f args =>
+        applyFunInterp E stk B (f (fst args)) (snd args)
+  | Tp_SType A => fun v => match v with end
+  | Tp_Pair A B => fun v => match v with end
+  | Tp_Sum A B => fun v => match v with end
+  | Tp_Sigma A B => fun v => match v with end
   end.
-
 
 
 Inductive StackCall E stk : Type@{entree_u} :=
-| MkStackCall n (args : FunInput E stk (nthTp stk n)).
+| MkStackCall n (pf : n < length stk) (args : FunInput E stk (nthTp stk n)).
 
 Definition StackCallRet E stk (call: StackCall E stk) :=
   match call with
-  | MkStackCall _ _ n args => FunOutput E stk (nthTp stk n) args
+  | MkStackCall _ _ n _ args => FunOutput E stk (nthTp stk n) args
   end.
 
 Global Instance EncodingType_StackCall E stk : EncodingType (StackCall E stk) :=
  StackCallRet E stk.
+
+
+
+(* Create an event type for either an event in E or a recursive call in a stack
+   stk of recursive functions in scope *)
+Definition FunStackE (E : EvType@{entree_u}) (stack : FunStack) : Type@{entree_u} :=
+  StackCall E stack + (ErrorE + E).
+
+(* The return type for a FunStackE effect in a SpecM computation *)
+Definition FunStackERet E stack (e:FunStackE E stack) : Type@{entree_u} :=
+  encodes e.
+
+Global Instance EncodingType_FunStackE E stack : EncodingType (FunStackE E stack) :=
+  FunStackERet E stack.
+
+Global Instance ReSum_FunStackE_E (E : EvType) (stk : FunStack) : ReSum E (FunStackE E stk) :=
+  fun e => inr (inr e).
+
+Global Instance ReSumRet_FunStackE_E (E : EvType) stk :
+  ReSumRet E (FunStackE E stk) :=
+  fun _ r => r.
+
+Global Instance ReSum_FunStackE_Error (E : EvType) (stk : FunStack) : ReSum ErrorE (FunStackE E stk) :=
+  fun e => inr (inl e).
+
+Global Instance ReSumRet_FunStackE_Error (E : EvType) stk :
+  ReSumRet ErrorE (FunStackE E stk) :=
+  fun _ r => r.
+
+
+(* Embed a call in the top level of the FunStack into a FunStackE *)
+Global Instance ReSum_StackCall_FunStackE (E : EvType) (stack : FunStack) :
+  ReSum (StackCall E stack) (FunStackE E stack) :=
+  fun args => inl args.
+
+(* Map the return value for embedding a call in the top level to a FunStackE *)
+Global Instance ReSumRet_StackCall_FunStackE E stack :
+  ReSumRet (StackCall E stack) (FunStackE E stack) :=
+  fun _ r => r.
+
+Global Instance ReSum_Error_E_FunStack (E : EvType) (stack : FunStack) :
+  ReSum (SpecEvent (ErrorE + E)) (SpecEvent (FunStackE E stack)) :=
+  fun e => match e with
+           | Spec_vis e => Spec_vis (resum e)
+           | Spec_forall T => Spec_forall T
+           | Spec_exists T => Spec_exists T
+           end.
+
+Global Instance ReSumRet_Error_E_FunStack (E : EvType) (stack : FunStack) :
+  ReSumRet (SpecEvent (ErrorE + E)) (SpecEvent (FunStackE E stack)) :=
+  fun e =>
+    match e with
+    | Spec_vis e => fun x => resum_ret e x
+    | Spec_forall T => fun x => x
+    | Spec_exists T => fun x => x
+    end.
+
+
+
+(**
+ ** The SpecM monad
+ **)
+
+(* The SpecM monad is an entree spec over FunStackE events *)
+Definition SpecM (E:EvType) stack A : Type :=
+  entree_spec (FunStackE E stack) A.
+
+(* The observation / unfolding of a SpecM computation tree *)
+Definition SpecM' (E:EvType) stack A : Type :=
+  entree_spec' (FunStackE E stack) A.
+
+(* The monadic operations on SpecM *)
+Definition RetS {E} {stk A} (a : A) : SpecM E stk A := ret a.
+Definition BindS {E} {stk A B} (m : SpecM E stk A) (k : A -> SpecM E stk B) :=
+  bind m k.
+Definition IterS {E} {stk A B} (body : A -> SpecM E stk (A + B)) :
+  A -> SpecM E stk B := EnTree.iter body.
+Definition AssumeS {E} {stk} (P : Prop) : SpecM E stk unit :=
+  assume_spec P.
+Definition AssertS {E} {stk} (P : Prop) : SpecM E stk unit :=
+  assert_spec P.
+Definition ForallS {E} {stk} (A : Type) `{QuantType A} : SpecM E stk A :=
+  forall_spec A.
+Definition ExistsS {E} {stk} (A : Type) `{QuantType A} : SpecM E stk A :=
+  exists_spec A.
+Definition TriggerS {E:EvType} {stk} (e : E) : SpecM E stk (encodes e) := trigger e.
+Definition ErrorS {E} {stk} A (str : string) : SpecM E stk A :=
+  bind (trigger (mkErrorE str)) (fun (x:Empty_set) => match x with end).
+
+Global Instance SpecM_Monad {E} stk : Monad (SpecM E stk) :=
+  {|
+    ret := fun A a => RetS a;
+    bind := fun A B m k => BindS m k;
+  |}.
+
+(*
+Definition CallS {E stk R} (clos: Clos stk (LRT_SpecM R))
+  : SpecM E stk (LRTArg stk R) :=
+  eq_rect
+    (StackCallRet stk (LRTClosToCall stk R clos))
+    (SpecM E stk)
+    (trigger (LRTClosToCall stk R clos))
+    (LRTArg stk R)
+    (LRTClosToCallRet stk R clos).
+*)
+
+
+CoFixpoint interp_top_call' {E stk U R} (I : FunInterp E (cons U stk) U)
+  (ot : SpecM' E (cons U stk) R) : SpecM E stk R :=
+  match ot with
+  | RetF r => Ret r
+  | TauF t => Tau (interp_top_call' I (observe t))
+  | VisF (Spec_vis (inl (MkStackCall _ _ 0 _ args))) k =>
+      Tau (interp_top_call'
+             (observe (EnTree.bind (applyFunInterp E _ _ I args) k)))
+  end.
+Definition interp_mrec {R} (t : entree (D + E) R) : entree E R :=
+  interp_mrec' (observe t).
+Definition mrec (d : D) := interp_mrec (bodies d).
+
+End mrec.
+
+Locate interp_mrec.
+
+
+
+
+
+
+
+
 
 
 (*** The definition of fixtrees ***)
