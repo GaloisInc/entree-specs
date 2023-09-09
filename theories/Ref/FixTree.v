@@ -39,6 +39,10 @@ Import Monads.
 Import ProperNotations.
 
 
+(***
+ *** List utilities
+ ***)
+
 (* A version of nth_default that does primary recursion on the list *)
 Fixpoint nth_default' {A} (d : A) (l : list A) n : A :=
   match l with
@@ -56,6 +60,34 @@ Fixpoint rev_app {A} (l1 l2 : list A) : list A :=
   | cons x l1' => rev_app l1' (cons x l2)
   end.
 
+(* Reverse and prepend each list in a list of lists *)
+Fixpoint revs_app {A} (ls : list (list A)) (l2 : list A) : list A :=
+  match ls with
+  | nil => l2
+  | cons l1 ls' => rev_app l1 (revs_app ls' l2)
+  end.
+
+(* Delete the nth element of a list *)
+Fixpoint deleteNth {A} n (l : list A) {struct l} : list A :=
+  match l with
+  | nil => nil
+  | cons a l' => match n with
+                 | 0 => l'
+                 | S n' => cons a (deleteNth n' l')
+                 end
+  end.
+
+(* Insert an element at the nth position in a list, or at the end if n is too big *)
+Fixpoint insertNth {A} (a:A) n l {struct n} : list A :=
+  match n with
+  | 0 => a :: l
+  | S n' => match l with
+            | nil => a :: nil
+            | b :: l' => b :: insertNth a n' l'
+            end
+  end.
+
+
 (* A proof that x is the nth element of a list *)
 Inductive isNth {A} (a:A) : nat -> list A -> Prop :=
 | isNth_base l : isNth a 0 (cons a l)
@@ -65,6 +97,51 @@ Lemma not_isNth_nil {A} (a:A) n : isNth a n nil -> False.
 Proof.
   induction n; intros; inversion H.
 Qed.
+
+Lemma isNthHead {A} {a:A} {b l} (isn : isNth a 0 (cons b l)) : a = b.
+Proof.
+  inversion isn. reflexivity.
+Qed.
+
+Lemma isNthTail {A} {a:A} {n b l} (isn : isNth a (S n) (cons b l)) : isNth a n l.
+Proof.
+  inversion isn. assumption.
+Qed.
+
+Lemma isNthEq {A} {a b:A} {n l} (isn_a : isNth a n l) (isn_b : isNth b n l) : a = b.
+Proof.
+  revert isn_b; induction isn_a; intros; inversion isn_b.
+  - reflexivity.
+  - apply IHisn_a; assumption.
+Qed.
+
+Definition isNthDelete {A} {a:A} {n l} (isn: isNth a n l) m :
+  (m = n) + { n' | isNth a n' (deleteNth m l) }.
+Proof.
+  revert m l isn; induction n; intros; destruct l.
+  - elimtype False; inversion isn.
+  - destruct m; [ left; reflexivity | ]. right. exists 0. inversion isn. constructor.
+  - elimtype False; inversion isn.
+  - destruct m; [ right; exists n; eapply isNthTail; eassumption | ].
+    destruct (IHn m l (isNthTail isn)).
+    + left; subst m; reflexivity.
+    + right; destruct s. exists (S x). econstructor; eassumption.
+Defined.
+
+Definition isNthUnInsert {A} {a:A} {b n m l}
+  (isn: isNth a n (insertNth b m l)) : (a = b) + { n' | isNth a n' l }.
+Proof.
+  revert m l isn; induction n; intros.
+  - destruct m; [ left; inversion isn; reflexivity | ].
+    destruct l; [ left; inversion isn; reflexivity | ].
+    right. exists 0. inversion isn. constructor.
+  - destruct m.
+    + right; exists n. inversion isn. assumption.
+    + destruct l; [ elimtype False; inversion isn; inversion H1 | ].
+      destruct (IHn m l (isNthTail isn)); [ left; assumption | ].
+      destruct s. right; exists (S x); constructor; assumption.
+Qed.
+
 
 (* Build the right-nested tuple type of a list of types formed by mapping a
 function across a list *)
@@ -103,18 +180,201 @@ Polymorphic Fixpoint nthProjDefault@{u v} {T:Type@{v}} (f : T -> Type@{u}) (dT:T
         end
   end.
 
-(* Project the nth element of a mapTuple using an isNth proof for the index *)
+
 Polymorphic Fixpoint nthProj@{u v} {T:Type@{v}} (f : T -> Type@{u}) t n :
-  forall l, isNth t n l -> f t.
-Admitted.
+  forall l, isNth t n l -> mapTuple f l -> f t.
+Proof.
+  induction n; intro l; destruct l; intros isn mtup.
+  - elimtype False; inversion isn.
+  - destruct mtup. rewrite (isNthHead isn). assumption.
+  - elimtype False; inversion isn.
+  - destruct mtup. apply (IHn l (isNthTail isn) m).
+Defined.
+
 
 (*
 Polymorphic Fixpoint nthProj@{u v} {T:Type@{v}} (f : T -> Type@{u}) t n :
-  forall l, isNth t n l -> f t :=
-  match n return forall l, isNth t n l -> f t with
-  | 0 => 
+  forall l, isNth t n l -> mapTuple f l -> f t :=
+  match n return forall l, isNth t n l -> mapTuple f l -> f t with
+  | 0 => fun l =>
+           match l return isNth t 0 l -> mapTuple f l -> f t with
+           | nil => fun isn => match not_isNth_nil t 0 isn with end
+           | cons b l' =>
+               fun isn 
   end.
 *)
+
+
+(**
+ ** List Inclusions
+ **)
+
+(* A single step of list inclusion, which adds an element into a list; note that
+this in in Type, not in Prop, because we care about the contents *)
+Inductive listIncl1 {A} : list A -> list A -> Type :=
+| incl1Base a l2 : listIncl1 l2 (cons a l2)
+| incl1Step a l1 l2 : listIncl1 l1 l2 -> listIncl1 (cons a l1) (cons a l2)
+.
+
+(* Map an index through a single step of list inclusion *)
+Fixpoint applyListIncl1 {A l1 l2} (incl: @listIncl1 A l1 l2) n : nat :=
+  match incl with
+  | incl1Base _ _ => S n
+  | incl1Step _ l1' l2' incl' =>
+      match n with
+      | 0 => 0
+      | S n' => S (applyListIncl1 incl' n')
+      end
+  end.
+
+(* Map an isNth proof through a single step of list inclusion *)
+Lemma applyListIncl1Nth {A l1 l2} (incl: @listIncl1 A l1 l2) a n :
+  isNth a n l1 -> isNth a (applyListIncl1 incl n) l2.
+Proof.
+  revert n; induction incl; intros; [ | destruct n ].
+  - constructor; assumption.
+  - inversion H. constructor.
+  - constructor. apply IHincl. inversion H. assumption.
+Qed.
+
+(* This is the reflexive-transitive closure of listIncl1, except we need it in
+Type, not Prop, because we care about the contents *)
+Inductive listIncl {A} : list A -> list A -> Type :=
+| reflListIncl l : listIncl l l
+| stepListIncl {l1 l2} (incl: listIncl1 l1 l2) : listIncl l1 l2
+| compListIncl {l1 l2 l3} (incl1 : listIncl l1 l2) (incl2 : listIncl l2 l3)
+  : listIncl l1 l3
+.
+
+Fixpoint applyListIncl {A l1 l2} (incl: @listIncl A l1 l2) : nat -> nat :=
+  match incl with
+  | reflListIncl _ => fun n => n
+  | stepListIncl incl1 => applyListIncl1 incl1
+  | compListIncl incl1 incl2 => fun n => applyListIncl incl2 (applyListIncl incl1 n)
+  end.
+
+Fixpoint applyListInclNth {A l1 l2} (incl: @listIncl A l1 l2) :
+  forall {a n}, isNth a n l1 -> isNth a (applyListIncl incl n) l2 :=
+  match incl in listIncl l1 l2
+        return forall a n, isNth a n l1 ->
+                           isNth a (applyListIncl incl n) l2 with
+  | reflListIncl _ => fun _ _ isn => isn
+  | stepListIncl incl1 => applyListIncl1Nth incl1
+  | compListIncl incl1 incl2 =>
+      fun a n isn => applyListInclNth incl2 (applyListInclNth incl1 isn)
+  end.
+
+
+(* Prefix a listIncl1 with a single element that stays constant *)
+Definition consListIncl1 {A} (a:A) {l1 l2} (incl : listIncl1 l1 l2) :
+  listIncl1 (cons a l1) (cons a l2) :=
+  incl1Step a _ _ incl.
+
+(* Prefix a listIncl with a single element that stays constant *)
+Fixpoint consListIncl {A} (a:A) {l1 l2} (incl : listIncl l1 l2) :
+  listIncl (cons a l1) (cons a l2) :=
+  match incl in listIncl l1 l2 return listIncl (cons a l1) (cons a l2) with
+  | reflListIncl l => reflListIncl (cons a l)
+  | stepListIncl incl1 => stepListIncl (consListIncl1 a incl1)
+  | compListIncl incl1 incl2 =>
+      compListIncl (consListIncl a incl1) (consListIncl a incl2)
+  end.
+
+
+Definition pushoutListIncl1 {A} {l1 l2 l3}
+  (incl1 : listIncl1 l1 l2) (incl2 : listIncl1 l1 l3) :
+  { l4:list A & listIncl1 l2 l4 & listIncl1 l3 l4 }.
+Proof.
+  revert l3 incl2; induction incl1; intros; [ | inversion incl2 ].
+  - exists (a :: l3); [ apply (incl1Step a _ _ incl2) | apply incl1Base ].
+  - subst l3. subst l0. exists (a0 :: a :: l2); [ apply incl1Base | ].
+    eapply incl1Step; eapply incl1Step; eassumption.
+  - subst l3. subst a0. subst l0.
+    destruct (IHincl1 l4 X) as [ l5 incl1' incl2' ].
+    exists (a :: l5); eapply incl1Step; eassumption.
+Qed.
+
+Definition pushoutListInclOne {A} {l1 l2 l3}
+  (incl1 : listIncl1 l1 l2) (incl2 : listIncl l1 l3) :
+  { l4:list A & listIncl l2 l4 & listIncl1 l3 l4 }.
+Proof.
+  revert l2 incl1; induction incl2; intros.
+  - exists l2; [ constructor | assumption ].
+  - destruct (pushoutListIncl1 incl incl1) as [ l4 incl1' incl2' ].
+    exists l4; [ apply stepListIncl | ]; assumption.
+  - destruct (IHincl2_1 l0 incl1) as [ l4 incl1' incl2' ].
+    destruct (IHincl2_2 _ incl2') as [ l5 incl1'' incl2'' ].
+    exists l5; [ | assumption ].
+    eapply compListIncl; eassumption.
+Defined.
+
+Definition pushoutListIncl {A} {l1 l2 l3}
+  (incl1 : listIncl l1 l2) (incl2 : listIncl l1 l3) :
+  { l4:list A & listIncl l2 l4 & listIncl l3 l4 }.
+Proof.
+  revert l3 incl2; induction incl1; intros.
+  - exists l3; try assumption; constructor.
+  - destruct (pushoutListInclOne incl incl2) as [ l4 incl1' incl2' ].
+    exists l4; try assumption; apply stepListIncl; assumption.
+  - destruct (IHincl1_1 l0 incl2) as [ l4 incl1' incl2' ].
+    destruct (IHincl1_2 l4 incl1') as [ l5 incl1'' incl2'' ].
+    exists l5; [ assumption | eapply compListIncl; eassumption ].
+Defined.
+
+Definition pushoutListInclList {A l1 l2 l3}
+  (incl1 : listIncl l1 l2) (incl2 : listIncl l1 l3) : list A :=
+  match pushoutListIncl incl1 incl2 with
+  | existT2 _ _ l _ _ => l
+  end.
+
+Definition pushoutListInclIncl1 {A l1 l2 l3}
+  (incl1 : listIncl l1 l2) (incl2 : listIncl l1 l3)
+  : @listIncl A l2 (pushoutListInclList incl1 incl2) :=
+  projT2 (sigT_of_sigT2 (pushoutListIncl incl1 incl2)).
+
+Definition pushoutListInclIncl2 {A l1 l2 l3}
+  (incl1 : listIncl l1 l2) (incl2 : listIncl l1 l3)
+  : @listIncl A l3 (pushoutListInclList incl1 incl2) :=
+  projT3 (pushoutListIncl incl1 incl2).
+
+
+Definition deleteNthIncl {A} n (l:list A) : listIncl (deleteNth n l) l.
+Proof.
+  revert n; induction l; intros; [ | destruct n ].
+  - apply reflListIncl.
+  - apply stepListIncl; apply incl1Base.
+  - apply consListIncl. apply IHl.
+Defined.
+
+Definition undeleteIncl {A l1 l2 n} (incl : @listIncl A (deleteNth n l1) l2) :
+  { l3 & listIncl l1 l3 & listIncl l2 l3 } :=
+  pushoutListIncl (deleteNthIncl n l1) incl.
+
+Definition insertListIncl1 {A l1 l2} n a (incl : @listIncl1 A l1 l2) :
+  listIncl1 (insertNth a n l1) (insertNth a (applyListIncl1 incl n) l2).
+Proof.
+  revert n; induction incl; intros; [ | destruct n ].
+  - constructor.
+  - constructor; constructor; assumption.
+  - simpl. constructor. apply IHincl.
+Defined.
+
+Definition insertListIncl {A l1 l2} n a (incl : @listIncl A l1 l2) :
+  listIncl (insertNth a n l1) (insertNth a (applyListIncl incl n) l2).
+Proof.
+  revert n; induction incl; intros.
+  - constructor.
+  - apply stepListIncl; apply (insertListIncl1 n a incl).
+  - eapply compListIncl; [ apply IHincl1 | apply IHincl2 ].
+Defined.
+
+Definition insertListInclR {A} (a:A) n l : listIncl l (insertNth a n l).
+Proof.
+  apply stepListIncl; revert l; induction n; intro l;
+    [ | destruct l ]; constructor.
+  apply IHn.
+Defined.
+
 
 (** Event types **)
 
@@ -171,6 +431,74 @@ Inductive TpDesc : Type@{entree_u} :=
 | Tp_Sigma (A : SimpleDesc) (B : stpElem A -> TpDesc) : TpDesc
 .
 
+
+(** Syntactic subterms of type descriptions **)
+
+(* The notion that a type description is a structural subterm of another *)
+Inductive ImmDescSubterm : TpDesc -> TpDesc -> Prop :=
+| Subt_M R : ImmDescSubterm R (Tp_M R)
+| Subt_Pi A B a : ImmDescSubterm (B a) (Tp_Pi A B)
+| Subt_ArrL A B : ImmDescSubterm A (Tp_Arr A B)
+| Subt_ArrR A B : ImmDescSubterm B (Tp_Arr A B)
+| Subt_PairL A B : ImmDescSubterm A (Tp_Pair A B)
+| Subt_PairR A B : ImmDescSubterm B (Tp_Pair A B)
+| Subt_SumL A B : ImmDescSubterm A (Tp_Sum A B)
+| Subt_SumR A B : ImmDescSubterm B (Tp_Sum A B)
+| Subt_Sigma A B a : ImmDescSubterm (B a) (Tp_Sigma A B)
+.
+
+Inductive DescSubterm (T U : TpDesc) : Prop :=
+| Subt1 : ImmDescSubterm T U -> DescSubterm T U
+| SubtTrans V : DescSubterm T V -> ImmDescSubterm V U -> DescSubterm T U
+.
+
+Definition castDescSubtLeft T U V (e : T = U) (subt: DescSubterm T V) : DescSubterm U V :=
+  eq_rect T (fun x => DescSubterm x V) subt U e.
+
+Global Instance transDescSubterm : Transitive DescSubterm.
+Proof.
+  intros T U V subTU subUV. revert T subTU; induction subUV; intros.
+  - eapply SubtTrans; eassumption.
+  - eapply SubtTrans; [ | eassumption ]. apply IHsubUV. assumption.
+Qed.
+
+Lemma wfDescSubterm : well_founded DescSubterm.
+Proof.
+  intro T; induction T; constructor; intros.
+  - inversion H.
+    + inversion H0. apply IHT.
+    + destruct IHT; apply H2. inversion H1. rewrite <- H5; assumption.
+  - inversion H0; clear H0.
+    + revert H; inversion H1; intros. apply H0.
+    + revert H H1; inversion H2; intros. destruct (H0 a0). apply H5. assumption.
+  - inversion H; clear H.
+    + inversion H0; assumption.
+    + inversion H1; [ destruct IHT1 as [acc] | destruct IHT2 as [acc] ];
+        apply acc; subst V; subst A; subst B; assumption.
+  - inversion H; [ inversion H0 | inversion H1 ].
+  - inversion H; clear H.
+    + inversion H0; assumption.
+    + inversion H1; [ destruct IHT1 as [acc] | destruct IHT2 as [acc] ];
+        apply acc; subst V; subst A; subst B; assumption.
+  - inversion H; clear H.
+    + inversion H0; assumption.
+    + inversion H1; [ destruct IHT1 as [acc] | destruct IHT2 as [acc] ];
+        apply acc; subst V; subst A; subst B; assumption.
+  - inversion H0; clear H0.
+    + revert H; inversion H1; intros. apply H0.
+    + revert H H1; inversion H2; intros. destruct (H0 a0). apply H5. assumption.
+Qed.
+
+Lemma not_self_DescSubterm T : DescSubterm T T -> False.
+Proof.
+  refine (well_founded_ind wfDescSubterm (fun T => DescSubterm T T -> False) _ T).
+  intros.
+  apply (H x H0 H0).
+Qed.
+
+
+(** Function variables as indexes into a function type stack **)
+
 Definition FunStack := list TpDesc.
 
 (* A trivially inhabited "default" function type *)
@@ -181,22 +509,76 @@ Definition default_tp : TpDesc :=
 Definition nthTp (stk : FunStack) n : TpDesc :=
   nth_default' default_tp stk n.
 
+(*
 Inductive StkFun stk : TpDesc -> Type@{entree_u} :=
 | MkStkFun (n:nat) (pf:n < length stk) : StkFun stk (nthTp stk n).
-
-(*
-Inductive StkFun stk (T:TpDesc) : Type@{entree_u} :=
-| MkStkFun (n:nat) (pf: isNth T n stk) : StkFun stk T.
 *)
 
-Lemma noNilStkFun T (clos : StkFun nil T) : False.
-  destruct clos. inversion pf.
+Inductive StkFun stk (T:TpDesc) : Type@{entree_u} :=
+| MkStkFun (n:nat) (isn: isNth T n stk) : StkFun stk T.
+
+Lemma noNilStkFun T (stkf : StkFun nil T) : False.
+  destruct stkf. inversion isn.
 Qed.
 
-Definition liftStkFun stk U T (clos : StkFun stk T) : StkFun (cons U stk) T :=
-  match clos with
-  | MkStkFun _ n pf => MkStkFun (cons U stk) (S n) (lt_n_S _ _ pf)
+Definition liftStkFun {stk stk'} (incl: listIncl stk stk') {T} (stkf : StkFun stk T)
+  : StkFun stk' T :=
+  match stkf with
+  | MkStkFun _ _ n isn =>
+      MkStkFun _ _ (applyListIncl incl n) (applyListInclNth incl isn)
   end.
+
+Definition lowerStkFun {stk T m U} (stkf : StkFun (insertNth U m stk) T) :
+  StkFun stk T + (T = U).
+Proof.
+  destruct stkf. destruct (isNthUnInsert isn).
+  - right; assumption.
+  - destruct s. left. exact (MkStkFun _ _ x i).
+Defined.
+
+(*
+Definition lowerStkFun {stk T} m (stkf : StkFun stk T) :
+  StkFun (deleteNth m stk) T + isNth T m stk.
+Proof.
+  destruct stkf. destruct (isNthDelete isn m).
+  - subst m; right; assumption.
+  - destruct s. left. exact (MkStkFun _ _ x i).
+Defined.
+*)
+
+Definition case0StkFun {stk U T} (stkf : StkFun (cons U stk) T) :
+  StkFun stk T + (T = U).
+Proof.
+  destruct (@lowerStkFun stk T 0 U stkf).
+  - left; assumption.
+  - right; assumption.
+Defined.
+
+(*
+Definition case0StkFun {stk U T} (stkf : StkFun (cons U stk) T) :
+  StkFun stk T + (T = U).
+Proof.
+  destruct (@lowerStkFun (cons U stk) T 0 stkf).
+  - left; assumption.
+  - right. eapply isNthEq; try eassumption. constructor.
+Defined.
+*)
+
+(*
+Definition case0StkFun stk U T (clos : StkFun (cons U stk) T) :
+  StkFun stk T + (T = U) :=
+  match clos in StkFun _ T return StkFun stk T + (T = U) with
+  | MkStkFun _ 0 _ => inr (eq_refl U)
+  | MkStkFun _ (S n) pf => inl (MkStkFun _ n (lt_S_n _ _ pf))
+  end.
+
+Definition caseNStkFun stk stks U T :
+  StkFun (revs_app stks (cons U stk)) T -> StkFun (revs_app stks stk) T + (T = U).
+Admitted.
+*)
+
+
+(** Elements of type descriptions **)
 
 Fixpoint tpElem (E:EvType) stk (T : TpDesc) : Type@{entree_u} :=
   match T with
@@ -204,50 +586,45 @@ Fixpoint tpElem (E:EvType) stk (T : TpDesc) : Type@{entree_u} :=
   | Tp_Pi A B => StkFun stk (Tp_Pi A B) + forall a, tpElem E stk (B a)
   | Tp_Arr A B =>
       StkFun stk (Tp_Arr A B) +
-        (forall stk',
-            tpElem E (rev_app stk' stk) A -> tpElem E (rev_app stk' stk) B)
+        (forall stk' (incl : listIncl stk stk'), tpElem E stk' A -> tpElem E stk' B)
   | Tp_SType A => stpElem A
   | Tp_Pair A B => tpElem E stk A * tpElem E stk B
   | Tp_Sum A B => tpElem E stk A + tpElem E stk B
   | Tp_Sigma A B => { a:stpElem A & tpElem E stk (B a) }
   end.
 
-Fixpoint liftTpElem E stk U T : tpElem E stk T -> tpElem E (cons U stk) T :=
-  match T return tpElem E stk T -> tpElem E (cons U stk) T with
+
+Fixpoint liftTpElem {E stk stk'} (incl: listIncl stk stk') {T} :
+  tpElem E stk T -> tpElem E stk' T :=
+  match T return tpElem E stk T -> tpElem E stk' T with
   | Tp_M R => fun elem => match elem with
-                          | inl stkf => inl (liftStkFun stk U _ stkf)
-                          | inr m => inr (fmap (liftTpElem E stk U R) m)
+                          | inl stkf => inl (liftStkFun incl stkf)
+                          | inr m => inr (fmap (liftTpElem incl (T:=R)) m)
                           end
   | Tp_Pi A B => fun elem => match elem with
-                             | inl stkf => inl (liftStkFun stk U _ stkf)
-                             | inr f => inr (fun a => liftTpElem E stk U _ (f a))
+                             | inl stkf => inl (liftStkFun incl stkf)
+                             | inr f => inr (fun a => liftTpElem incl (f a))
                              end
   | Tp_Arr A B => fun elem =>
                     match elem with
-                    | inl stkf => inl (liftStkFun stk U _ stkf)
-                    | inr f => inr (fun stk' => f (cons U stk'))
+                    | inl stkf => inl (liftStkFun incl stkf)
+                    | inr f => inr (fun stk' incl' arg =>
+                                      f stk' (compListIncl incl incl') arg)
                     end
   | Tp_SType A => fun elem => elem
-  | Tp_Pair A B => fun elem => (liftTpElem E stk U A (fst elem),
-                                 liftTpElem E stk U B (snd elem))
+  | Tp_Pair A B => fun elem => (liftTpElem incl (fst elem),
+                                 liftTpElem incl (snd elem))
   | Tp_Sum A B => fun elem => match elem with
-                              | inl x => inl (liftTpElem E stk U A x)
-                              | inr y => inr (liftTpElem E stk U B y)
+                              | inl x => inl (liftTpElem incl x)
+                              | inr y => inr (liftTpElem incl y)
                               end
   | Tp_Sigma A B =>
       fun elem =>
-        existT _ (projT1 elem) (liftTpElem E stk U (B (projT1 elem)) (projT2 elem))
-  end.
-
-Fixpoint liftTpElemMulti E stk stk' T (elem: tpElem E stk T) : tpElem E (rev_app stk' stk) T :=
-  match stk' return tpElem E (rev_app stk' stk) T with
-  | nil => elem
-  | cons U stk'' =>
-      liftTpElemMulti E (cons U stk) stk'' T (liftTpElem E stk U T elem)
+        existT _ (projT1 elem) (liftTpElem incl (projT2 elem))
   end.
 
 
-
+(** Interpretations of function types **)
 
 (* An interpretation of a monadic function type *)
 (* NOTE: this treats a non-monadic return type as M Empty_set *)
@@ -260,11 +637,15 @@ Fixpoint FunInterp (E:EvType) stk (T : TpDesc) : Type@{entree_u} :=
   | _ => entree E Empty_set
   end.
 
+(*
 Definition defaultFunInterp E stk : FunInterp E stk default_tp :=
   fun v => match v with end.
+*)
 
+(*
 Definition FunInterpToElem E stk T : FunInterp E stk T -> tpElem E stk T.
 Admitted.
+*)
 
 (*
 Fixpoint FunInterpToElem E stk T : FunInterp E stk T -> tpElem E stk T :=
@@ -291,18 +672,149 @@ Fixpoint FunOutputDesc E stk T : FunInput E stk T -> TpDesc :=
 Definition FunOutput E stk T (args: FunInput E stk T) : Type@{entree_u} :=
   tpElem E stk (FunOutputDesc E stk T args).
 
+Lemma FunOutputSubterm {E stk T} (args: FunInput E stk T) :
+  DescSubterm (FunOutputDesc _ _ _ args) T
+  + (FunOutputDesc _ _ _ args = Tp_SType SimpTp_Void).
+Proof.
+  revert args; induction T; intros.
+  - left; apply Subt1; constructor.
+  - destruct args as [ a args ]. destruct (X a args); [ | right; assumption ].
+    left; etransitivity; [ eassumption | ]. apply Subt1; constructor.
+  - destruct args as [ arg args ].
+    destruct (IHT2 args); [ | right; assumption ].
+    left; etransitivity; [ eassumption | ]. apply Subt1; constructor.
+  - right; reflexivity.
+  - right; reflexivity.
+  - right; reflexivity.
+  - right; reflexivity.
+Qed.
 
-Definition liftFunInput E stk stk' T (args : FunInput E stk T) :
-  FunInput E (app stk' stk) T.
-Admitted.
+
+Fixpoint liftFunInput {E stk stk' T} (incl: listIncl stk stk') :
+  FunInput E stk T -> FunInput E stk' T :=
+  match T return FunInput E stk T -> FunInput E stk' T with
+  | Tp_M R => fun args => args
+  | Tp_Pi A B =>
+      fun args =>
+        existT _ (projT1 args) (liftFunInput incl (projT2 args))
+  | Tp_Arr A B =>
+      fun args => (liftTpElem incl (fst args),
+                    liftFunInput incl (snd args))
+  | Tp_SType A => fun args => args
+  | Tp_Pair A B => fun args => args
+  | Tp_Sum A B => fun args => args
+  | Tp_Sigma A B => fun args => args
+  end.
+
+Definition lift0FunInput {E stk U T}
+  : FunInput E stk T -> FunInput E (cons U stk) T :=
+  liftFunInput (insertListInclR U 0 stk).
+
+Lemma liftFunOutputEq {E stk stk' T} (incl: listIncl stk stk') :
+  forall args, FunOutputDesc E stk' T (liftFunInput incl args)
+               = FunOutputDesc E stk T args.
+Proof.
+  induction T; intros; try reflexivity; simpl.
+  - apply H.
+  - apply IHT2.
+Qed.
+
+
+(* If T is a syntactic subterm of some type U in the corecursive function
+context, then an element of type T cannot make a call at type U, so we can
+remove U from its context *)
+Fixpoint lowerSubtermTpElem (E:EvType) stk U n T :
+  DescSubterm T U -> tpElem E (insertNth U n stk) T -> tpElem E stk T :=
+  match T return DescSubterm T U -> tpElem E (insertNth U n stk) T ->
+                 tpElem E stk T with
+  | Tp_M R =>
+      fun subt elem =>
+        match elem with
+        | inl stkf =>
+            match lowerStkFun stkf with
+            | inl stkf' => inl stkf'
+            | inr e =>
+                match not_self_DescSubterm U
+                        (castDescSubtLeft (Tp_M R) U U e subt) with end
+            end
+        | inr comp =>
+            inr (fmap (lowerSubtermTpElem E stk U n R
+                         (transitivity (Subt1 _ _ (Subt_M R)) subt)) comp)
+        end
+  | Tp_Pi A B =>
+      fun subt elem =>
+        match elem with
+        | inl stkf =>
+            match lowerStkFun stkf with
+            | inl stkf' => inl stkf'
+            | inr e =>
+                match not_self_DescSubterm U
+                        (castDescSubtLeft _ U U e subt) with end
+            end
+        | inr f =>
+            inr (fun a =>
+                   lowerSubtermTpElem E stk U n (B a)
+                     (transitivity (Subt1 _ _ (Subt_Pi _ _ a)) subt) (f a))
+        end
+  | Tp_Arr A B =>
+      fun subt elem =>
+        match elem with
+        | inl stkf =>
+            match lowerStkFun stkf with
+            | inl stkf' => inl stkf'
+            | inr e =>
+                match not_self_DescSubterm U
+                        (castDescSubtLeft _ U U e subt) with end
+            end
+        | inr f =>
+            inr (fun stk' (incl : listIncl stk stk') arg =>
+                   lowerSubtermTpElem E _ U _ B
+                     (transitivity (Subt1 _ _ (Subt_ArrR A B)) subt)
+                     (f _ (insertListIncl n U incl)
+                        (liftTpElem (insertListInclR U (applyListIncl incl n) stk') arg)))
+        end
+  | Tp_SType _ => fun _ elem => elem
+  | Tp_Pair A B =>
+      fun subt elem =>
+        (lowerSubtermTpElem E stk U n A
+           (transitivity (Subt1 _ _ (Subt_PairL A B)) subt)
+           (fst elem),
+          lowerSubtermTpElem E stk U n B
+            (transitivity (Subt1 _ _ (Subt_PairR A B)) subt)
+            (snd elem))
+  | Tp_Sum A B =>
+      fun subt elem =>
+        match elem with
+        | inl x =>
+            inl (lowerSubtermTpElem E stk U n A
+                   (transitivity (Subt1 _ _ (Subt_SumL A B)) subt)
+                   x)
+        | inr y =>
+            inr (lowerSubtermTpElem E stk U n B
+                   (transitivity (Subt1 _ _ (Subt_SumR A B)) subt)
+                   y)
+        end
+  | Tp_Sigma A B =>
+      fun subt elem =>
+        existT _ (projT1 elem)
+          (lowerSubtermTpElem E stk U n (B (projT1 elem))
+             (transitivity (Subt1 _ _ (Subt_Sigma A B (projT1 elem))) subt)
+             (projT2 elem))
+  end.
+
 
 (* Need a subterm relation on type descriptions and a proof that no type
 description can be a subterm of itself *)
 Definition lowerOutputElem E stk T args
   (elem : tpElem E (cons T stk)
-            (FunOutputDesc E (cons T stk) T (liftFunInput E stk (cons T nil) T args)))
+            (FunOutputDesc E (cons T stk) T (lift0FunInput args)))
   : tpElem E stk (FunOutputDesc E stk T args).
-Admitted.
+Proof.
+  unfold lift0FunInput in elem; rewrite liftFunOutputEq in elem.
+  destruct (FunOutputSubterm args) as [ subt | e ];
+    [ | rewrite e in elem; destruct elem ].
+  exact (lowerSubtermTpElem _ _ T 0 _ subt elem).
+Defined.
 
 (*
 Definition applyFunInterp {E stk T} :
@@ -364,6 +876,7 @@ Fixpoint lambdaFunInterp E stk T :
  ** Substitution of function interpretations for stack functions
  **)
 
+(*
 Definition substStkFun E stk U (I : FunInterp E (cons U stk) U)
   T (clos : StkFun (cons U stk) T) : StkFun stk T + FunInterp E (cons U stk) T :=
   match clos with
@@ -374,6 +887,7 @@ Definition substStkFun E stk U (I : FunInterp E (cons U stk) U)
 Definition substTpElem E stk U (I : FunInterp E (cons U stk) U) T :
   tpElem E (cons U stk) T -> tpElem E stk T.
 Admitted.
+*)
 
 (*
 Fixpoint substLiftTpElem E stk U (I : FunInterp E (cons U stk) U) T :
@@ -515,29 +1029,29 @@ Definition nthFunInterp E stk n (Is : StackInterp E stk) : FunInterp E stk (nthT
 *)
 
 Inductive StackCall E : FunStack -> Type@{entree_u} :=
-| MkStackCall stk n (pf : n < length stk) (args : FunInput E stk (nthTp stk n)) stk'
+| MkStackCall T n stk (isn: isNth T n stk) (args : FunInput E stk T) stk'
   : StackCall E (app stk' stk).
 
 Definition StackCallRet E stk (call: StackCall E stk) :=
   match call with
-  | MkStackCall _ stk n _ args _ => FunOutput E stk (nthTp stk n) args
+  | MkStackCall _ T n stk _ args _ => FunOutput E stk T args
   end.
 
 Global Instance EncodingType_StackCall E stk : EncodingType (StackCall E stk) :=
  StackCallRet E stk.
 
-Definition liftStackCall E stk T (call:StackCall E stk) : StackCall E (cons T stk) :=
-  match call with
-  | MkStackCall _ stk n pf args stk' =>
-      MkStackCall _ stk n pf args (cons T stk')
+Definition liftStackCall E stk U (call:StackCall E stk) : StackCall E (cons U stk) :=
+  match call in StackCall _ stk return StackCall E (cons U stk) with
+  | MkStackCall _ T n stk pf args stk' =>
+      MkStackCall _ T n stk pf args (cons U stk')
   end.
 
-Definition unliftStackCallRet E stk T call :
-  StackCallRet E (cons T stk) (liftStackCall E stk T call) -> StackCallRet E stk call :=
+Definition unliftStackCallRet E stk U call :
+  StackCallRet E (cons U stk) (liftStackCall E stk U call) -> StackCallRet E stk call :=
   match call in StackCall _ stk
-        return StackCallRet E (cons T stk) (liftStackCall E stk T call) ->
+        return StackCallRet E (cons U stk) (liftStackCall E stk U call) ->
                StackCallRet E stk call with
-  | MkStackCall _ stk n pf args stk' =>
+  | MkStackCall _ T n stk isn args stk' =>
       fun x => x
   end.
 
@@ -658,6 +1172,9 @@ Definition FxInterp (E:EvType) stk (T : TpDesc) : Type@{entree_u} :=
   forall stk' (args: FunInput E (rev_app stk' stk) T),
     fixtree E (rev_app stk' stk) (FunOutput E (rev_app stk' stk) T args).
 
+Definition default_FxInterp E stk : FxInterp E stk default_tp :=
+  fun _ args => match projT1 args with end.
+
 Definition liftFxInterp E stk U T (I: FxInterp E stk T) : FxInterp E (cons U stk) T :=
   fun stk' => I (cons U stk').
 
@@ -668,9 +1185,8 @@ Definition consFxInterp E stk T (Is : FxInterps E stk)
   (I : FxInterp E (cons T stk) T) : FxInterps E (cons T stk) :=
   (I, mapMapTuple _ _ (liftFxInterp E stk T) _ Is).
 
-Definition nthFxInterp E stk (defs : FxInterps E stk) n :
-  n < length stk -> FxInterp E stk (nthTp stk n).
-Admitted.
+Definition nthFxInterp E stk (defs : FxInterps E stk) n : FxInterp E stk (nthTp stk n) :=
+  nthProjDefault (FxInterp E stk) default_tp (default_FxInterp E stk) stk n defs.
 
 Definition doStackCall {E stk} (call : StackCall E stk)
   : FxInterps E stk -> fixtree E stk (StackCallRet E stk call).
@@ -704,7 +1220,7 @@ CoFixpoint interp_fixtree' {E stk R} (defs : FxInterps E stk) (ot : fixtree' E s
              (consFxInterp E stk _ defs body)
              (fxobserve
                 (FixTree.bind
-                   (body nil (liftFunInput E stk (cons _ nil) _ args))
+                   (body nil (lift0FunInput args))
                    (fun x =>
                       liftFixTree' _ (fxobserve (k (lowerOutputElem _ _ _ _ x)))))))
   end.
