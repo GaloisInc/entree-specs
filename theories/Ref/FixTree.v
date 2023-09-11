@@ -87,6 +87,16 @@ Fixpoint insertNth {A} (a:A) n l {struct n} : list A :=
             end
   end.
 
+(* Drop the first n elements of a list *)
+Fixpoint drop {A} n (l:list A) {struct n} : list A :=
+  match n with
+  | 0 => l
+  | S n' => match l with
+            | nil => nil
+            | _ :: l' => drop n' l'
+            end
+  end.
+
 
 (* A proof that x is the nth element of a list *)
 Inductive isNth {A} (a:A) : nat -> list A -> Prop :=
@@ -151,24 +161,36 @@ Polymorphic Fixpoint mapTuple@{u v} {T:Type@{v}} (f : T -> Type@{u}) (xs : list 
   | cons x xs' => f x * mapTuple f xs'
   end.
 
-Polymorphic Fixpoint mapMapTuple@{u v} {T:Type@{v}} (f g : T -> Type@{u})
+Polymorphic Fixpoint mapMapTuple@{u v} {T:Type@{v}} {f g : T -> Type@{u}}
   (fg : forall t, f t -> g t) (xs : list T) : mapTuple f xs -> mapTuple g xs :=
   match xs return mapTuple f xs -> mapTuple g xs with
   | nil => fun u => u
-  | cons x xs' => fun tup => (fg x (fst tup), mapMapTuple f g fg xs' (snd tup))
+  | cons x xs' => fun tup => (fg x (fst tup), mapMapTuple fg xs' (snd tup))
   end.
 
 (* Append two mapTuple tuples *)
-Polymorphic Fixpoint appMapTuple@{u v} {T:Type@{v}} (f : T -> Type@{u}) (xs ys : list T) :
+Polymorphic Fixpoint appMapTuple@{u v} {T:Type@{v}} {f : T -> Type@{u}} (xs ys : list T) :
   mapTuple f xs -> mapTuple f ys -> mapTuple f (app xs ys) :=
   match xs return mapTuple f xs -> mapTuple f ys -> mapTuple f (app xs ys) with
   | nil => fun _ tup2 => tup2
   | cons x xs' =>
-      fun tup1 tup2 => (fst tup1, appMapTuple f xs' ys (snd tup1) tup2)
+      fun tup1 tup2 => (fst tup1, appMapTuple xs' ys (snd tup1) tup2)
+  end.
+
+(* Drop the first n elements from a mapTuple *)
+Polymorphic Fixpoint dropMapTuple@{u v} {T:Type@{v}} {f : T -> Type@{u}}
+  n {xs : list T} : mapTuple f xs -> mapTuple f (drop n xs) :=
+  match n return mapTuple f xs -> mapTuple f (drop n xs) with
+  | 0 => fun tup => tup
+  | S n' =>
+      match xs return mapTuple f xs -> mapTuple f (drop (S n') xs) with
+      | nil => fun tup => tup
+      | _ :: xs' => fun tup => dropMapTuple n' (snd tup)
+      end
   end.
 
 (* Project the nth element of a mapTuple, using a default if n is too big *)
-Polymorphic Fixpoint nthProjDefault@{u v} {T:Type@{v}} (f : T -> Type@{u}) (dT:T) (d:f dT) xs
+Polymorphic Fixpoint nthProjDefault@{u v} {T:Type@{v}} {f : T -> Type@{u}} {dT:T} (d:f dT) {xs}
   : forall n, mapTuple f xs -> f (nth_default' dT xs n) :=
   match xs return forall n, mapTuple f xs -> f (nth_default' dT xs n) with
   | nil => fun _ _ => d
@@ -176,13 +198,13 @@ Polymorphic Fixpoint nthProjDefault@{u v} {T:Type@{v}} (f : T -> Type@{u}) (dT:T
       fun n =>
         match n return mapTuple f (cons x xs') -> f (nth_default' dT (cons x xs') n) with
         | 0 => fun tup => fst tup
-        | S n' => fun tup => nthProjDefault f dT d xs' n' (snd tup)
+        | S n' => fun tup => nthProjDefault d n' (snd tup)
         end
   end.
 
 
-Polymorphic Fixpoint nthProj@{u v} {T:Type@{v}} (f : T -> Type@{u}) t n :
-  forall l, isNth t n l -> mapTuple f l -> f t.
+Polymorphic Fixpoint nthProj@{u v} {T:Type@{v}} {f : T -> Type@{u}} {t n} :
+  forall {l}, isNth t n l -> mapTuple f l -> f t.
 Proof.
   induction n; intro l; destruct l; intros isn mtup.
   - elimtype False; inversion isn.
@@ -589,7 +611,6 @@ Fixpoint tpElem (E:EvType) stk (T : TpDesc) : Type@{entree_u} :=
   | Tp_Sigma A B => { a:stpElem A & tpElem E stk (B a) }
   end.
 
-
 Fixpoint liftTpElem {E stk stk'} (incl: listIncl stk stk') {T} :
   tpElem E stk T -> tpElem E stk' T :=
   match T return tpElem E stk T -> tpElem E stk' T with
@@ -830,12 +851,12 @@ Variant fixtreeF (F : FunStack -> Type@{entree_u} -> Type@{entree_u})
   | Fx_TauF (t : F stk R)
   | Fx_VisF (e : E) (k : encodes e -> F stk R)
   | Fx_CallF (call : StackCall E stk) (k : StackCallRet E stk call -> F stk R)
-  | Fx_FixF (T : TpDesc)
-      (body : forall stk' (args:FunInput E (rev_app stk' (cons T stk)) T),
-          F (rev_app stk' (cons T stk))
-            (FunOutput E (rev_app stk' (cons T stk)) T args))
-      (args : FunInput E stk T)
-      (k : FunOutput E stk T args -> F stk R)
+  | Fx_FixF (T : TpDesc) (lft : nat)
+      (body : forall stk' (incl: listIncl (cons T (drop lft stk)) stk')
+                     (args:FunInput E stk' T),
+          F stk' (FunOutput E stk' T args))
+      (args : FunInput E (drop lft stk) T)
+      (k : FunOutput E (drop lft stk) T args -> F stk R)
 .
 
 (* "Tying the knot" by defining entrees as the greatest fixed-point of fixtreeF *)
@@ -849,13 +870,13 @@ Arguments Fx_RetF {_ _ _ _} _.
 Arguments Fx_TauF {_ _ _ _} _.
 Arguments Fx_VisF {_ _ _ _} _ _.
 Arguments Fx_CallF {_ _ _ _} _ _.
-Arguments Fx_FixF {_ _ _ _ _} _ _ _.
+Arguments Fx_FixF {_ _ _ _ _} _ _ _ _.
 Notation fixtree' E stk R := (fixtreeF E (fixtree E) stk R).
 Notation Fx_Tau t := {| _fxobserve := Fx_TauF t |}.
 Notation Fx_Ret r := {| _fxobserve := Fx_RetF r |}.
 Notation Fx_Vis e k := {| _fxobserve := Fx_VisF e k |}.
 Notation Fx_Call call k := {| _fxobserve := Fx_CallF call k |}.
-Notation Fx_Fix body args k := {| _fxobserve := Fx_FixF body args k |}.
+Notation Fx_Fix lft body args k := {| _fxobserve := Fx_FixF lft body args k |}.
 
 (* "Observe" the top-most constructor of an fixtree by unwrapping it one step *)
 Definition fxobserve {E stk R} (t : fixtree E stk R) : fixtree' E stk R :=
@@ -877,7 +898,7 @@ Definition subst' {E : EvType} {stk} {R S : Type@{entree_u}}
     | Fx_TauF t => Fx_Tau (_subst (fxobserve t))
     | Fx_VisF e k => Fx_Vis e (fun x => _subst (fxobserve (k x)))
     | Fx_CallF call k => Fx_Call call (fun x => _subst (fxobserve (k x)))
-    | Fx_FixF body args k => Fx_Fix body args (fun x => _subst (fxobserve (k x)))
+    | Fx_FixF lft body args k => Fx_Fix lft body args (fun x => _subst (fxobserve (k x)))
     end.
 
 (* Wrap up subst' so it operates on an fixtree instead of an fixtree' *)
@@ -910,11 +931,6 @@ Definition trigger {E:EvType} {stk} (e : E) : fixtree E stk (encodes e) :=
 (* The nonterminating computation that spins forever and never does anything *)
 CoFixpoint spin {E stk R} : fixtree E stk R := Fx_Tau spin.
 
-Definition liftFixTree' {E stk R} T (ot : fixtree' E stk R) : fixtree E (cons T stk) R.
-Admitted.
-
-(* FIXME: need to insert a type at an arbitrary point in the stack, to handle fix bodies *)
-(*
 CoFixpoint liftFixTree' {E stk R} T (ot : fixtree' E stk R) : fixtree E (cons T stk) R :=
   match ot with
   | Fx_RetF r => Fx_Ret r
@@ -923,10 +939,14 @@ CoFixpoint liftFixTree' {E stk R} T (ot : fixtree' E stk R) : fixtree E (cons T 
   | Fx_CallF call k =>
       Fx_Call (liftStackCall E stk T call)
         (fun x => liftFixTree' T (fxobserve (k (unliftStackCallRet E stk T call x))))
-  | Fx_FixF body args k => Fx_Fix body args (fun x => _subst (fxobserve (k x)))
+  | Fx_FixF lft body args k =>
+      {| _fxobserve :=
+          Fx_FixF (stk:= cons T stk) (S lft) body args
+            (fun x => liftFixTree' T (fxobserve (k x))) |}
   end.
-*)
 
+Definition liftFixTree {E stk R} T (t : fixtree E stk R) : fixtree E (cons T stk) R :=
+  liftFixTree' T (fxobserve t).
 
 Definition FxInterp (E:EvType) stk (T : TpDesc) : Type@{entree_u} :=
   forall stk' (args: FunInput E (rev_app stk' stk) T),
@@ -943,10 +963,10 @@ Definition FxInterps E stk : Type@{entree_u} :=
 
 Definition consFxInterp E stk T (Is : FxInterps E stk)
   (I : FxInterp E (cons T stk) T) : FxInterps E (cons T stk) :=
-  (I, mapMapTuple _ _ (liftFxInterp E stk T) _ Is).
+  (I, mapMapTuple (liftFxInterp E stk T) _ Is).
 
 Definition nthFxInterp E stk (defs : FxInterps E stk) n : FxInterp E stk (nthTp stk n) :=
-  nthProjDefault (FxInterp E stk) default_tp (default_FxInterp E stk) stk n defs.
+  nthProjDefault (default_FxInterp E stk) n defs.
 
 Definition doStackCall {E stk} (call : StackCall E stk)
   : FxInterps E stk -> fixtree E stk (StackCallRet E stk call).
