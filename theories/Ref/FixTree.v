@@ -312,6 +312,16 @@ Fixpoint consListIncl {A} (a:A) {l1 l2} (incl : listIncl l1 l2) :
       compListIncl (consListIncl a incl1) (consListIncl a incl2)
   end.
 
+(* Cons an element onto the right side of a listIncl *)
+Definition consListInclR {A} (a:A) {l1 l2} (incl : listIncl l1 l2)
+  : listIncl l1 (cons a l2) :=
+  compListIncl incl (stepListIncl (incl1Base a l2)).
+
+(* Un-cons an element onto the right side of a listIncl *)
+Definition consListInclL {A} (a:A) {l1 l2} (incl : listIncl (cons a l1) l2)
+  : listIncl l1 l2 :=
+  compListIncl (stepListIncl (incl1Base a l1)) incl.
+
 
 Definition pushoutListIncl1 {A} {l1 l2 l3}
   (incl1 : listIncl1 l1 l2) (incl2 : listIncl1 l1 l3) :
@@ -819,6 +829,20 @@ Defined.
 
 (** Stack calls **)
 
+
+Inductive StackCall E stk : Type@{entree_u} :=
+| MkStackCall T n (isn: isNth T n stk) (args : FunInput E stk T)
+  : StackCall E stk.
+
+Definition StackCallRet E stk (call: StackCall E stk) :=
+  match call with
+  | MkStackCall _ _ T _ _ args => FunOutput E stk T args
+  end.
+
+Global Instance EncodingType_StackCall E stk : EncodingType (StackCall E stk) :=
+ StackCallRet E stk.
+
+(*
 Inductive StackCall E : FunStack -> Type@{entree_u} :=
 | MkStackCall T n stk (isn: isNth T n stk) (args : FunInput E stk T) stk'
   : StackCall E (app stk' stk).
@@ -845,6 +869,7 @@ Definition unliftStackCallRet E stk U call :
   | MkStackCall _ T n stk isn args stk' =>
       fun x => x
   end.
+*)
 
 
 (**
@@ -861,12 +886,11 @@ Variant fixtreeF (F : FunStack -> Type@{entree_u} -> Type@{entree_u})
   | Fx_TauF (t : F stk R)
   | Fx_VisF (e : E) (k : encodes e -> F stk R)
   | Fx_CallF (call : StackCall E stk) (k : StackCallRet E stk call -> F stk R)
-  | Fx_FixF (T : TpDesc) (lft : nat)
-      (body : forall stk' (incl: listIncl (cons T (drop lft stk)) stk')
-                     (args:FunInput E stk' T),
+  | Fx_FixF (T : TpDesc)
+      (body : forall stk' (incl: listIncl (cons T stk) stk') (args:FunInput E stk' T),
           F stk' (FunOutput E stk' T args))
-      (args : FunInput E (drop lft stk) T)
-      (k : FunOutput E (drop lft stk) T args -> F stk R)
+      (args : FunInput E stk T)
+      (k : FunOutput E stk T args -> F stk R)
 .
 
 (* "Tying the knot" by defining entrees as the greatest fixed-point of fixtreeF *)
@@ -880,13 +904,13 @@ Arguments Fx_RetF {_ _ _ _} _.
 Arguments Fx_TauF {_ _ _ _} _.
 Arguments Fx_VisF {_ _ _ _} _ _.
 Arguments Fx_CallF {_ _ _ _} _ _.
-Arguments Fx_FixF {_ _ _ _ _} _ _ _ _.
+Arguments Fx_FixF {_ _ _ _ _} _ _ _.
 Notation fixtree' E stk R := (fixtreeF E (fixtree E) stk R).
 Notation Fx_Tau t := {| _fxobserve := Fx_TauF t |}.
 Notation Fx_Ret r := {| _fxobserve := Fx_RetF r |}.
 Notation Fx_Vis e k := {| _fxobserve := Fx_VisF e k |}.
 Notation Fx_Call call k := {| _fxobserve := Fx_CallF call k |}.
-Notation Fx_Fix lft body args k := {| _fxobserve := Fx_FixF lft body args k |}.
+Notation Fx_Fix body args k := {| _fxobserve := Fx_FixF body args k |}.
 
 (* "Observe" the top-most constructor of an fixtree by unwrapping it one step *)
 Definition fxobserve {E stk R} (t : fixtree E stk R) : fixtree' E stk R :=
@@ -908,7 +932,7 @@ Definition subst' {E : EvType} {stk} {R S : Type@{entree_u}}
     | Fx_TauF t => Fx_Tau (_subst (fxobserve t))
     | Fx_VisF e k => Fx_Vis e (fun x => _subst (fxobserve (k x)))
     | Fx_CallF call k => Fx_Call call (fun x => _subst (fxobserve (k x)))
-    | Fx_FixF lft body args k => Fx_Fix lft body args (fun x => _subst (fxobserve (k x)))
+    | Fx_FixF body args k => Fx_Fix body args (fun x => _subst (fxobserve (k x)))
     end.
 
 (* Wrap up subst' so it operates on an fixtree instead of an fixtree' *)
@@ -941,6 +965,9 @@ Definition trigger {E:EvType} {stk} (e : E) : fixtree E stk (encodes e) :=
 (* The nonterminating computation that spins forever and never does anything *)
 CoFixpoint spin {E stk R} : fixtree E stk R := Fx_Tau spin.
 
+(* NOTE: cannot lift fixtrees directly because of the complexities of how it
+interacts with Fx_FixF... *)
+(*
 CoFixpoint liftFixTree' {E stk R} T (ot : fixtree' E stk R) : fixtree E (cons T stk) R :=
   match ot with
   | Fx_RetF r => Fx_Ret r
@@ -964,14 +991,15 @@ Fixpoint liftFixTreeMulti {E stk R} stk' (t : fixtree E stk R) {struct stk'}
   | nil => t
   | T :: stk'' => liftFixTree T (liftFixTreeMulti stk'' t)
   end.
+*)
 
 
 Definition FxInterp (E:EvType) stk (T : TpDesc) : Type@{entree_u} :=
-  forall stk' (args: FunInput E (rev_app stk' stk) T),
-    fixtree E (rev_app stk' stk) (FunOutput E (rev_app stk' stk) T args).
+  forall stk' (incl: listIncl stk stk') (args: FunInput E stk' T),
+    fixtree E stk' (FunOutput E stk' T args).
 
 Definition liftFxInterp {E stk U T} (I: FxInterp E stk T) : FxInterp E (cons U stk) T :=
-  fun stk' => I (cons U stk').
+  fun stk' incl => I stk' (consListInclL _ incl).
 
 (* A sequence of interps for the corecursive functions in stack stk, where each
 is relative to the stack where it was defined *)
@@ -984,6 +1012,12 @@ Fixpoint FxInterps E stk : Type@{entree_u} :=
 Definition consFxInterp {E stk T} (defs : FxInterps E stk)
   (I : FxInterp E (cons T stk) T) : FxInterps E (cons T stk) :=
   (I, defs).
+
+Definition tailFxInterps {E stk} : FxInterps E stk -> FxInterps E (tail stk) :=
+  match stk with
+  | nil => fun defs => defs
+  | _ :: _ => fun defs => snd defs
+  end.
 
 Fixpoint nthFxInterp {E stk T n} {struct stk} :
   isNth T n stk -> FxInterps E stk -> FxInterp E stk T :=
@@ -1006,6 +1040,14 @@ Fixpoint dropFxInterps {E stk stk'} : FxInterps E (app stk' stk) -> FxInterps E 
   | _ :: stk'' => fun defs => dropFxInterps (snd defs)
   end.
 
+Definition doStackCall {E stk} (call : StackCall E stk) (defs: FxInterps E stk)
+  : fixtree E stk (StackCallRet E stk call) :=
+  match call with
+  | MkStackCall _ _ _ _ isn args =>
+      nthFxInterp isn defs stk (reflListIncl _) args
+  end.
+
+(*
 Definition doStackCall {E stk} (call : StackCall E stk)
   : FxInterps E stk -> fixtree E stk (StackCallRet E stk call) :=
   match call in StackCall _ stk
@@ -1013,33 +1055,52 @@ Definition doStackCall {E stk} (call : StackCall E stk)
   | MkStackCall _ T n stk isn args stk' =>
       fun defs => liftFixTreeMulti stk' (nthFxInterp isn (dropFxInterps defs) nil args)
   end.
+*)
 
+Inductive InterpCont (E:EvType) stk (R:Type@{entree_u}) : Type :=
+| RetCont : InterpCont E stk R
+| ConsCont (T:TpDesc) {R' : Type@{entree_u}}
+    (k : R -> fixtree E (tail stk) R') (cont: InterpCont E (tail stk) R')
+  : InterpCont E stk R
+.
 
-FIXME: need to add some more complicated lifting in the below to make it work with
-the new def of Fx_FixF with the lft number...
+Arguments RetCont {_ _ _}.
+Arguments ConsCont {_ _ _ _ _} _ _.
 
+Fixpoint InterpContOut {E stk R} (cont : InterpCont E stk R) : Type@{entree_u} :=
+  match cont with
+  | RetCont => R
+  | ConsCont _ cont => InterpContOut cont
+  end.
 
-CoFixpoint interp_fixtree' {E stk R} (defs : FxInterps E stk) (ot : fixtree' E stk R)
-  : entree E R :=
+CoFixpoint interp_fixtree' {E stk R} (defs : FxInterps E stk)
+  (ot : fixtree' E stk R) (cont : InterpCont E stk R)
+  : entree E (InterpContOut cont) :=
   match ot with
-  | Fx_RetF r => Ret r
-  | Fx_TauF t => Tau (interp_fixtree' defs (fxobserve t))
-  | Fx_VisF e k => Vis e (fun x => interp_fixtree' defs (fxobserve (k x)))
+  | Fx_RetF r =>
+      match cont return entree E (InterpContOut cont) with
+      | RetCont => Ret r
+      | ConsCont k cont' =>
+          Tau (interp_fixtree' (tailFxInterps defs) (fxobserve (k r)) cont')
+      end
+  | Fx_TauF t => Tau (interp_fixtree' defs (fxobserve t) cont)
+  | Fx_VisF e k => Vis e (fun x => interp_fixtree' defs (fxobserve (k x)) cont)
   | Fx_CallF call k =>
       Tau (interp_fixtree' defs
              (fxobserve
                 (FixTree.bind
                    (doStackCall call defs)
-                   k)))
-  | Fx_FixF lft body args k =>
+                   k))
+             cont)
+  | @Fx_FixF _ _ _ _ T body args k =>
       Tau (interp_fixtree'
              (consFxInterp defs body)
-             (fxobserve
-                (FixTree.bind
-                   (body nil (lift0FunInput args))
-                   (fun x =>
-                      liftFixTree' _ (fxobserve (k (lowerOutputElem _ _ _ _ x)))))))
+             (fxobserve (body _ (reflListIncl _) (lift0FunInput args)))
+             (ConsCont (T:=T) (stk:=_::stk) (fun x => k (lowerOutputElem _ _ _ _ x)) cont))
   end.
+
+Definition interp_fixtree_nil {E R} (t : fixtree E nil R) : entree E R :=
+  interp_fixtree' (stk:=nil) tt (fxobserve t) RetCont.
 
 
 End FixTree.
