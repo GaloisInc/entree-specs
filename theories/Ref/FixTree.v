@@ -177,6 +177,16 @@ Polymorphic Fixpoint appMapTuple@{u v} {T:Type@{v}} {f : T -> Type@{u}} (xs ys :
       fun tup1 tup2 => (fst tup1, appMapTuple xs' ys (snd tup1) tup2)
   end.
 
+(* Split a mapTuple on an append in two *)
+Polymorphic Fixpoint splitMapTuple@{u v} {T:Type@{v}} {f : T -> Type@{u}} {xs ys : list T} :
+  mapTuple f (app xs ys) -> mapTuple f xs * mapTuple f ys :=
+  match xs return mapTuple f (app xs ys) -> mapTuple f xs * mapTuple f ys with
+  | nil => fun tup => (tt, tup)
+  | cons x xs' =>
+      fun tup => ((fst tup, fst (splitMapTuple (snd tup))),
+                   snd (splitMapTuple (snd tup)))
+  end.
+
 (* Drop the first n elements from a mapTuple *)
 Polymorphic Fixpoint dropMapTuple@{u v} {T:Type@{v}} {f : T -> Type@{u}}
   n {xs : list T} : mapTuple f xs -> mapTuple f (drop n xs) :=
@@ -948,39 +958,65 @@ CoFixpoint liftFixTree' {E stk R} T (ot : fixtree' E stk R) : fixtree E (cons T 
 Definition liftFixTree {E stk R} T (t : fixtree E stk R) : fixtree E (cons T stk) R :=
   liftFixTree' T (fxobserve t).
 
+Fixpoint liftFixTreeMulti {E stk R} stk' (t : fixtree E stk R) {struct stk'}
+  : fixtree E (app stk' stk) R :=
+  match stk' return fixtree E (app stk' stk) R with
+  | nil => t
+  | T :: stk'' => liftFixTree T (liftFixTreeMulti stk'' t)
+  end.
+
+
 Definition FxInterp (E:EvType) stk (T : TpDesc) : Type@{entree_u} :=
   forall stk' (args: FunInput E (rev_app stk' stk) T),
     fixtree E (rev_app stk' stk) (FunOutput E (rev_app stk' stk) T args).
 
-Definition default_FxInterp E stk : FxInterp E stk default_tp :=
-  fun _ args => match projT1 args with end.
-
-Definition liftFxInterp E stk U T (I: FxInterp E stk T) : FxInterp E (cons U stk) T :=
+Definition liftFxInterp {E stk U T} (I: FxInterp E stk T) : FxInterp E (cons U stk) T :=
   fun stk' => I (cons U stk').
 
-Definition FxInterps E stk : Type@{entree_u} :=
-  mapTuple (FxInterp E stk) stk.
+(* A sequence of interps for the corecursive functions in stack stk, where each
+is relative to the stack where it was defined *)
+Fixpoint FxInterps E stk : Type@{entree_u} :=
+  match stk with
+  | nil => unit
+  | T :: stk' => FxInterp E (T :: stk') T * FxInterps E stk'
+  end.
 
-Definition consFxInterp E stk T (Is : FxInterps E stk)
+Definition consFxInterp {E stk T} (defs : FxInterps E stk)
   (I : FxInterp E (cons T stk) T) : FxInterps E (cons T stk) :=
-  (I, mapMapTuple (liftFxInterp E stk T) _ Is).
+  (I, defs).
 
-Definition nthFxInterp E stk (defs : FxInterps E stk) n : FxInterp E stk (nthTp stk n) :=
-  nthProjDefault (default_FxInterp E stk) n defs.
+Fixpoint nthFxInterp {E stk T n} {struct stk} :
+  isNth T n stk -> FxInterps E stk -> FxInterp E stk T :=
+  match stk return isNth T n stk -> FxInterps E stk -> FxInterp E stk T with
+  | nil => fun isn => match not_isNth_nil _ _ isn with end
+  | U :: stk' =>
+      match n return isNth T n (U :: stk') -> FxInterps E (U :: stk') ->
+                     FxInterp E (U :: stk') T with
+      | 0 => fun isn defs =>
+               eq_rect U (FxInterp E (U :: stk')) (fst defs) T
+                 (symmetry (isNthHead isn))
+      | S n' => fun isn defs =>
+                  liftFxInterp (nthFxInterp (isNthTail isn) (snd defs))
+      end
+  end.
 
-Definition doStackCall {E stk} (call : StackCall E stk)
-  : FxInterps E stk -> fixtree E stk (StackCallRet E stk call).
-Admitted.
-(*
+Fixpoint dropFxInterps {E stk stk'} : FxInterps E (app stk' stk) -> FxInterps E stk :=
+  match stk' return FxInterps E (app stk' stk) -> FxInterps E stk with
+  | nil => fun defs => defs
+  | _ :: stk'' => fun defs => dropFxInterps (snd defs)
+  end.
+
 Definition doStackCall {E stk} (call : StackCall E stk)
   : FxInterps E stk -> fixtree E stk (StackCallRet E stk call) :=
   match call in StackCall _ stk
-        return FxInterps E stk -> fixtree E stk (StackCallRet E stk call)
-  with
-    MkStackCall _ stk1 n pf args stk2 =>
-      fun defs => nthFxInterp E _ defs n _ nil (liftFunInput E stk1 stk2 _ args)
+        return FxInterps E stk -> fixtree E stk (StackCallRet E stk call) with
+  | MkStackCall _ T n stk isn args stk' =>
+      fun defs => liftFixTreeMulti stk' (nthFxInterp isn (dropFxInterps defs) nil args)
   end.
-*)
+
+
+FIXME: need to add some more complicated lifting in the below to make it work with
+the new def of Fx_FixF with the lft number...
 
 
 CoFixpoint interp_fixtree' {E stk R} (defs : FxInterps E stk) (ot : fixtree' E stk R)
@@ -995,9 +1031,9 @@ CoFixpoint interp_fixtree' {E stk R} (defs : FxInterps E stk) (ot : fixtree' E s
                 (FixTree.bind
                    (doStackCall call defs)
                    k)))
-  | Fx_FixF body args k =>
+  | Fx_FixF lft body args k =>
       Tau (interp_fixtree'
-             (consFxInterp E stk _ defs body)
+             (consFxInterp defs body)
              (fxobserve
                 (FixTree.bind
                    (body nil (lift0FunInput args))
