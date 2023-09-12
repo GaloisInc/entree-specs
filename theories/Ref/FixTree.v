@@ -473,6 +473,15 @@ Inductive TpDesc : Type@{entree_u} :=
 | Tp_Sigma (A : SimpleDesc) (B : stpElem A -> TpDesc) : TpDesc
 .
 
+(* Proof that a TpDesc is a monadic function type *)
+Fixpoint isFunTp (T:TpDesc) : Prop :=
+  match T with
+  | Tp_M _ => True
+  | Tp_Pi A B => forall a, isFunTp (B a)
+  | Tp_Arr A B => isFunTp B
+  | _ => False
+  end.
+
 
 (** Syntactic subterms of type descriptions **)
 
@@ -559,7 +568,7 @@ Inductive StkFun stk : TpDesc -> Type@{entree_u} :=
 *)
 
 Inductive StkFun stk (T:TpDesc) : Type@{entree_u} :=
-| MkStkFun (n:nat) (isn: isNth T n stk) : StkFun stk T.
+| MkStkFun (n:nat) (isn: isNth T n stk) (isfun: isFunTp T) : StkFun stk T.
 
 Lemma noNilStkFun T (stkf : StkFun nil T) : False.
   destruct stkf. inversion isn.
@@ -568,8 +577,8 @@ Qed.
 Definition liftStkFun {stk stk'} (incl: stackIncl stk stk') {T} (stkf : StkFun stk T)
   : StkFun stk' T :=
   match stkf with
-  | MkStkFun _ _ n isn =>
-      MkStkFun _ _ (applyListIncl incl n) (applyListInclNth incl isn)
+  | MkStkFun _ _ n isn isfun =>
+      MkStkFun _ _ (applyListIncl incl n) (applyListInclNth incl isn) isfun
   end.
 
 Definition lowerStkFun {stk T m U} (stkf : StkFun (insertNth U m stk) T) :
@@ -577,7 +586,7 @@ Definition lowerStkFun {stk T m U} (stkf : StkFun (insertNth U m stk) T) :
 Proof.
   destruct stkf. destruct (isNthUnInsert isn).
   - right; assumption.
-  - destruct s. left. exact (MkStkFun _ _ x i).
+  - destruct s. left. exact (MkStkFun _ _ x i isfun).
 Defined.
 
 (*
@@ -670,7 +679,7 @@ Fixpoint FunInput E stk (T:TpDesc) : Type@{entree_u} :=
   | Tp_M _ => unit
   | Tp_Pi A B => { a : stpElem A & FunInput E stk (B a) }
   | Tp_Arr A B => tpElem E stk A * FunInput E stk B
-  | _ => unit
+  | _ => Empty_set
   end.
 
 Fixpoint FunOutputDesc E stk T : FunInput E stk T -> TpDesc :=
@@ -967,6 +976,8 @@ Definition trigger {E:EvType} {stk} (e : E) : fixtree E stk (encodes e) :=
 (* The nonterminating computation that spins forever and never does anything *)
 CoFixpoint spin {E stk R} : fixtree E stk R := Fx_Tau spin.
 
+End FixTree.
+
 (* NOTE: cannot lift fixtrees directly because of the complexities of how it
 interacts with Fx_FixF... *)
 (*
@@ -995,10 +1006,21 @@ Fixpoint liftFixTreeMulti {E stk R} stk' (t : fixtree E stk R) {struct stk'}
   end.
 *)
 
+CoFixpoint embedEntree' {E:EvType} {stk R} (ot: entree' E R) : fixtree E stk R :=
+  match ot with
+  | RetF r => Fx_Ret r
+  | TauF t' => Fx_Tau (embedEntree' (observe t'))
+  | VisF e k => Fx_Vis e (fun x => embedEntree' (observe (k x)))
+  end.
+
+Definition embedEntree {E:EvType} {stk R} (t: entree E R) : fixtree E stk R :=
+  embedEntree' (observe t).
+
+Definition MonoInterp E stk T :=
+ forall (args:FunInput E stk T), fixtree E stk (FunOutput E stk T args).
 
 Definition FxInterp (E:EvType) stk (T : TpDesc) : Type@{entree_u} :=
-  forall stk' (incl: stackIncl stk stk') (args: FunInput E stk' T),
-    fixtree E stk' (FunOutput E stk' T args).
+  forall stk' (incl: stackIncl stk stk'), MonoInterp E stk' T.
 
 Definition liftFxInterp {E stk U T} (I: FxInterp E stk T) : FxInterp E (cons U stk) T :=
   fun stk' incl => I stk' (consListInclL _ incl).
@@ -1105,9 +1127,6 @@ Definition interp_fixtree_nil {E R} (t : fixtree E nil R) : entree E R :=
   interp_fixtree' (stk:=nil) tt (fxobserve t) RetCont.
 
 
-End FixTree.
-
-
 (*** Notations for monadic computations ***)
 Module FixTreeNotations.
 
@@ -1127,10 +1146,10 @@ End FixTreeNotations.
 
 (*** Instances to show that entrees form a monad ***)
 
-#[global] Instance Functor_entree {E stk} : Functor (fixtree E stk) :=
+#[global] Instance Functor_fixtree {E stk} : Functor (fixtree E stk) :=
   { fmap := @FixTree.map E _ }.
 
-#[global] Instance Applicative_entree {E stk} : Applicative (fixtree E stk) :=
+#[global] Instance Applicative_fixtree {E stk} : Applicative (fixtree E stk) :=
   {
     pure := fun _  x => Fx_Ret x;
     ap := fun _ _ f x =>
@@ -1138,11 +1157,11 @@ End FixTreeNotations.
 
   }.
 
-#[global] Instance Monad_entree {E stk} : Monad (fixtree E stk) :=
+#[global] Instance Monad_fixtree {E stk} : Monad (fixtree E stk) :=
   {
     ret := fun _ x => Fx_Ret x;
     bind := @FixTree.bind E _;
   }.
 
-#[global] Instance MonadIter_entree {E stk} : MonadIter (fixtree E stk) :=
+#[global] Instance MonadIter_fixtree {E stk} : MonadIter (fixtree E stk) :=
   fun _ _ => FixTree.iter.
