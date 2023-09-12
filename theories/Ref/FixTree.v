@@ -543,6 +543,8 @@ Qed.
 
 Definition FunStack := list TpDesc.
 
+Definition stackIncl := listIncl (A:=TpDesc).
+
 (* A trivially inhabited "default" function type *)
 Definition default_tp : TpDesc :=
   Tp_Pi SimpTp_Void (fun _ => Tp_M (Tp_SType SimpTp_Void)).
@@ -563,7 +565,7 @@ Lemma noNilStkFun T (stkf : StkFun nil T) : False.
   destruct stkf. inversion isn.
 Qed.
 
-Definition liftStkFun {stk stk'} (incl: listIncl stk stk') {T} (stkf : StkFun stk T)
+Definition liftStkFun {stk stk'} (incl: stackIncl stk stk') {T} (stkf : StkFun stk T)
   : StkFun stk' T :=
   match stkf with
   | MkStkFun _ _ n isn =>
@@ -624,14 +626,14 @@ Fixpoint tpElem (E:EvType) stk (T : TpDesc) : Type@{entree_u} :=
   | Tp_Pi A B => StkFun stk (Tp_Pi A B) + forall a, tpElem E stk (B a)
   | Tp_Arr A B =>
       StkFun stk (Tp_Arr A B) +
-        (forall stk' (incl : listIncl stk stk'), tpElem E stk' A -> tpElem E stk' B)
+        (forall stk' (incl : stackIncl stk stk'), tpElem E stk' A -> tpElem E stk' B)
   | Tp_SType A => stpElem A
   | Tp_Pair A B => tpElem E stk A * tpElem E stk B
   | Tp_Sum A B => tpElem E stk A + tpElem E stk B
   | Tp_Sigma A B => { a:stpElem A & tpElem E stk (B a) }
   end.
 
-Fixpoint liftTpElem {E stk stk'} (incl: listIncl stk stk') {T} :
+Fixpoint liftTpElem {E stk stk'} (incl: stackIncl stk stk') {T} :
   tpElem E stk T -> tpElem E stk' T :=
   match T return tpElem E stk T -> tpElem E stk' T with
   | Tp_M R => fun elem => match elem with
@@ -700,7 +702,7 @@ Proof.
 Qed.
 
 
-Fixpoint liftFunInput {E stk stk' T} (incl: listIncl stk stk') :
+Fixpoint liftFunInput {E stk stk' T} (incl: stackIncl stk stk') :
   FunInput E stk T -> FunInput E stk' T :=
   match T return FunInput E stk T -> FunInput E stk' T with
   | Tp_M R => fun args => args
@@ -720,7 +722,7 @@ Definition lift0FunInput {E stk U T}
   : FunInput E stk T -> FunInput E (cons U stk) T :=
   liftFunInput (insertListInclR U 0 stk).
 
-Lemma liftFunOutputEq {E stk stk' T} (incl: listIncl stk stk') :
+Lemma liftFunOutputEq {E stk stk' T} (incl: stackIncl stk stk') :
   forall args, FunOutputDesc E stk' T (liftFunInput incl args)
                = FunOutputDesc E stk T args.
 Proof.
@@ -777,7 +779,7 @@ Fixpoint lowerSubtermTpElem (E:EvType) stk U n T :
                         (castDescSubtLeft _ U U e subt) with end
             end
         | inr f =>
-            inr (fun stk' (incl : listIncl stk stk') arg =>
+            inr (fun stk' (incl : stackIncl stk stk') arg =>
                    lowerSubtermTpElem E _ U _ B
                      (transitivity (Subt1 _ _ (Subt_ArrR A B)) subt)
                      (f _ (insertListIncl n U incl)
@@ -887,7 +889,7 @@ Variant fixtreeF (F : FunStack -> Type@{entree_u} -> Type@{entree_u})
   | Fx_VisF (e : E) (k : encodes e -> F stk R)
   | Fx_CallF (call : StackCall E stk) (k : StackCallRet E stk call -> F stk R)
   | Fx_FixF (T : TpDesc)
-      (body : forall stk' (incl: listIncl (cons T stk) stk') (args:FunInput E stk' T),
+      (body : forall stk' (incl: stackIncl (cons T stk) stk') (args:FunInput E stk' T),
           F stk' (FunOutput E stk' T args))
       (args : FunInput E stk T)
       (k : FunOutput E stk T args -> F stk R)
@@ -995,7 +997,7 @@ Fixpoint liftFixTreeMulti {E stk R} stk' (t : fixtree E stk R) {struct stk'}
 
 
 Definition FxInterp (E:EvType) stk (T : TpDesc) : Type@{entree_u} :=
-  forall stk' (incl: listIncl stk stk') (args: FunInput E stk' T),
+  forall stk' (incl: stackIncl stk stk') (args: FunInput E stk' T),
     fixtree E stk' (FunOutput E stk' T args).
 
 Definition liftFxInterp {E stk U T} (I: FxInterp E stk T) : FxInterp E (cons U stk) T :=
