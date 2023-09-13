@@ -107,14 +107,25 @@ Definition ErrorS {E} {stk} A (str : string) : SpecM E stk A :=
  ** Making and calling tpElems
  **)
 
+(* Re-exporting tpElem from the SpecM module *)
+Definition tpElem := tpElem.
+
+(* A tpElem specifically of SpecM type *)
+Definition specElem E stk R := tpElem E stk (Tp_M R).
+
+(* A tpElem specifically of pi type *)
+Definition piElem E stk A B := tpElem E stk (Tp_Pi A B).
+
+(* A tpElem specifically of arrow type *)
+Definition arrowElem E stk A B := tpElem E stk (Tp_Arr A B).
+
+
 (* An element of a type description that uses SpecM for the monadic type *)
 Fixpoint SpecElem E stk T : Type@{entree_u} :=
   match T with
   | Tp_M R => SpecM E stk (tpElem (SpecEv E) stk R)
   | Tp_Pi A B => forall a, SpecElem E stk (B a)
-  | Tp_Arr A B =>
-      forall stk' (incl : stackIncl stk stk'),
-        tpElem (SpecEv E) stk' A -> SpecElem E stk' B
+  | Tp_Arr A B => tpElem (SpecEv E) stk A -> SpecElem E stk B
   | Tp_SType A => tpElem (SpecEv E) stk (Tp_SType A)
   | Tp_Pair A B => tpElem (SpecEv E) stk (Tp_Pair A B)
   | Tp_Sum A B => tpElem (SpecEv E) stk (Tp_Sum A B)
@@ -128,6 +139,15 @@ Definition liftPolySpecElem {E stk stk' T} (incl : stackIncl stk stk')
   (elem : PolySpecElem E stk T) : PolySpecElem E stk' T :=
   fun stk'' incl' => elem stk'' (compListIncl incl incl').
 
+Definition lift0PolySpecElem {E stk U T} (elem : PolySpecElem E stk T)
+  : PolySpecElem E (U :: stk) T :=
+  liftPolySpecElem (stepListIncl (incl1Base U stk)) elem.
+
+Definition applyPolySpecElem {E stk T U}
+  (f : PolySpecElem E stk (Tp_Arr T U)) (arg : tpElem (SpecEv E) stk T)
+  : PolySpecElem E stk U :=
+  fun stk' incl => f stk' incl (liftTpElem incl arg).
+
 Fixpoint SpecElemToMonoInterp {E stk} T : SpecElem E stk T -> MonoInterp (SpecEv E) stk T :=
   match T return SpecElem E stk T -> MonoInterp (SpecEv E) stk T with
   | Tp_M R => fun elem args => elem
@@ -136,7 +156,7 @@ Fixpoint SpecElemToMonoInterp {E stk} T : SpecElem E stk T -> MonoInterp (SpecEv
         SpecElemToMonoInterp (B (projT1 args)) (elem (projT1 args)) (projT2 args)
   | Tp_Arr A B =>
       fun elem args =>
-        SpecElemToMonoInterp B (elem stk (reflListIncl _) (fst args)) (snd args)
+        SpecElemToMonoInterp B (elem (fst args)) (snd args)
   | Tp_SType A => fun elem args => match args with end
   | Tp_Pair A B => fun elem args => match args with end
   | Tp_Sum A B => fun elem args => match args with end
@@ -155,10 +175,9 @@ Fixpoint InterpToSpecElem {E stk} T
                    InterpToSpecElem (B a) (isfun a)
                      (fun stk' incl args => f stk' incl (existT _ a args))
   | Tp_Arr A B =>
-      fun isfun f stk' incl arg =>
-        InterpToSpecElem B isfun (fun stk'' incl' args =>
-                                    f stk'' (compListIncl incl incl')
-                                      (liftTpElem incl' arg, args))
+      fun isfun f arg =>
+        InterpToSpecElem B isfun (fun stk' incl args =>
+                                    f stk' incl (liftTpElem incl arg, args))
   | Tp_SType _ => fun isfun => match isfun with end
   | Tp_Pair _ _ => fun isfun => match isfun with end
   | Tp_Sum _ _ => fun isfun => match isfun with end
@@ -190,7 +209,7 @@ Fixpoint CallS {E stk T} : tpElem (SpecEv E) stk T -> SpecElem E stk T :=
   | Tp_Arr A B =>
       fun elem => match elem with
                   | inl stkf => callStkFun stkf
-                  | inr f => fun stk' incl arg => CallS (f stk' incl arg)
+                  | inr f => fun arg => CallS (f stk (reflListIncl _) arg)
                   end
   | Tp_SType _ => fun elem => elem
   | Tp_Pair _ _ => fun elem => elem
@@ -199,9 +218,24 @@ Fixpoint CallS {E stk T} : tpElem (SpecEv E) stk T -> SpecElem E stk T :=
   end.
 
 
-Definition fixS {E stk T} (isfun : isFunTp T) (body : PolySpecElem E (T :: stk) T)
+Definition fixS {E stk T} (isfun : isFunTp T) (body : PolySpecElem E stk (Tp_Arr T T))
   : SpecElem E stk T :=
   InterpToSpecElem (stk:=stk) T isfun
     (fun stk' incl args =>
-       Fx_Fix (SpecElemToInterp (liftPolySpecElem (consListIncl _ incl) body))
+       Fx_Fix (SpecElemToInterp (liftPolySpecElem (consListIncl _ incl)
+                                   (applyPolySpecElem
+                                      (lift0PolySpecElem body)
+                                      (tpElem0 isfun))))
          args (fun x => Fx_Ret x)).
+
+
+FIXME: how to define mkTpElem?
+
+Fixpoint mkTpElem {E stk T} : SpecElem E nil T -> tpElem (SpecEv E) stk T :=
+  match T return SpecElem E nil T -> tpElem (SpecEv E) stk T with
+  | Tp_M R => fun m => inr (interp_fixtree_nil
+                              (Functor.fmap (liftTpElem (nilListIncl _)) m))
+  | Tp_Pi A B => fun f => inr (fun a => mkTpElem (f a))
+  | Tp_Arr A B =>
+      fun f stk' incl => inr (fun arg => )
+  end.

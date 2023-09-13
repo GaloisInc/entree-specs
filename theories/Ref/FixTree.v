@@ -296,6 +296,12 @@ Fixpoint applyListInclNth {A l1 l2} (incl: @listIncl A l1 l2) :
       fun a n isn => applyListInclNth incl2 (applyListInclNth incl1 isn)
   end.
 
+(* Build an inclusion from nil into any list *)
+Fixpoint nilListIncl {A} (l:list A) : listIncl nil l :=
+  match l return listIncl nil l with
+  | nil => reflListIncl nil
+  | a :: l' => compListIncl (nilListIncl l') (stepListIncl (incl1Base a l'))
+  end.
 
 (* Prefix a listIncl1 with a single element that stays constant *)
 Definition consListIncl1 {A} (a:A) {l1 l2} (incl : listIncl1 l1 l2) :
@@ -570,6 +576,10 @@ Inductive StkFun stk : TpDesc -> Type@{entree_u} :=
 Inductive StkFun stk (T:TpDesc) : Type@{entree_u} :=
 | MkStkFun (n:nat) (isn: isNth T n stk) (isfun: isFunTp T) : StkFun stk T.
 
+(* A stack function that calls the top-most corecursive function in the stack *)
+Definition StkFun0 {stk T} (isfun : isFunTp T) : StkFun (T :: stk) T :=
+  MkStkFun (T :: stk) T 0 (isNth_base _ _) isfun.
+
 Lemma noNilStkFun T (stkf : StkFun nil T) : False.
   destruct stkf. inversion isn.
 Qed.
@@ -642,6 +652,16 @@ Fixpoint tpElem (E:EvType) stk (T : TpDesc) : Type@{entree_u} :=
   | Tp_Sigma A B => { a:stpElem A & tpElem E stk (B a) }
   end.
 
+(* A tpElem that calls the top-most corecursive function in the stack *)
+Definition tpElem0 {E stk T} : isFunTp T -> tpElem E (T :: stk) T :=
+  match T return isFunTp T -> tpElem E (T :: stk) T with
+  | Tp_M _ => fun isfun => inl (StkFun0 isfun)
+  | Tp_Pi _ _ => fun isfun => inl (StkFun0 isfun)
+  | Tp_Arr _ _ => fun isfun => inl (StkFun0 isfun)
+  | _ => fun isfun => match isfun with end
+  end.
+
+(* Lift the stack of a tpElem *)
 Fixpoint liftTpElem {E stk stk'} (incl: stackIncl stk stk') {T} :
   tpElem E stk T -> tpElem E stk' T :=
   match T return tpElem E stk T -> tpElem E stk' T with
