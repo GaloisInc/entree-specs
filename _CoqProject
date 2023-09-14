@@ -42,6 +42,7 @@ theories/AlmostStlc/SemanticsFactsSeq2.v
 
 theories/AlmostStlc/EnTreeStep.v
 theories/AlmostStlc/RecursionTrace.v
+theories/AlmostStlc/SubstCommute.v
 theories/AlmostStlc/ClosingSubst.v
 theories/AlmostStlc/LogicalApprox.v
 theories/AlmostStlc/Compatibility.v

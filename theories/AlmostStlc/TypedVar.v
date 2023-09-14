@@ -38,6 +38,8 @@ Equations var_neq_sym {A} {a b : A} {l} (x : var a l) (y : var b l) (Hn : var_ne
   var_neq_sym a b (var_neq_SZ a b l x) := var_neq_ZS b a l x;
   var_neq_sym a b (var_neq_SS a b c l x y Hn) := var_neq_SS b a c l y x (var_neq_sym x y Hn).
 
+
+
 Lemma var_eq_surj A (a b : A) (l : list A) (x : var a l) (y : var b l) :
   var_eq x y -> a = b.
 Proof.
@@ -172,6 +174,7 @@ Arguments perm_swap {_ _ _ _ _}.
 Arguments perm_refl {_ _ }.
 Arguments perm_skip {_ _ _ _}.
 Arguments perm_var {_ _ _ _}.
+
 
 Lemma perm_var_trans A (a : A) l1 l2 l3 (x : var a l1) (Hperm1 : perm l1 l2) (Hperm2 : perm l2 l3)
       : perm_var x (perm_trans Hperm1 Hperm2) =

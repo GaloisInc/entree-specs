@@ -56,29 +56,34 @@ Definition exchange_comp MR G1 G2 G3 (u1 u2 t: vtype)
       (e : comp t (G1 ++ [u1] ++ G2 ++ [u2] ++ G3) MR) : 
       comp t (G1 ++ [u2] ++ G2 ++ [u1] ++ G3) MR :=
   comp_map e (fun t' x => perm_var x (exchange_var_perm G1 G2 G3 u1 u2)).
-Definition weaken_l_comp MR G1 G2 t (e : comp t G2 MR ) : comp t (G1 ++ G2) MR
+Definition weaken_l_comp {MR} G1 {G2 t} (e : comp t G2 MR ) : comp t (G1 ++ G2) MR
   := comp_map e (fun t' e' => weaken_var_l _ _ t' e').
-Definition weaken_l_comp_single MR t1 G2 t (e : comp t G2 MR ) : comp t (t1 :: G2) MR :=
-  weaken_l_comp MR [t1] G2 t e.
+Definition weaken_l_comp_single {MR} t1 {G2 t} (e : comp t G2 MR ) : comp t (t1 :: G2) MR :=
+  weaken_l_comp [t1] e.
 
 Definition weaken_l_value {t Γ2} Γ1 (v : value t Γ2) : value t (Γ1 ++ Γ2) :=
   val_map v (weaken_var_l _ _).
 Definition weaken_l_value_single {t1 Γ2 t} (v : value t Γ2) : value t (t1 :: Γ2) :=
   weaken_l_value [t1] v.
 
-Definition weaken_l_bodies {R MR G1 G2} (bodies : mfix_bodies G2 MR R R) : mfix_bodies (G1 ++ G2) MR R R :=
+Definition weaken_l_bodies {R1 R2 MR G2} G1 (bodies : mfix_bodies G2 MR R1 R2) : mfix_bodies (G1 ++ G2) MR R1 R2 :=
   bodies_map bodies (fun t' e' => weaken_var_l _ _ t' e').
 
-Definition weaken_l_bodies_single {R MR G t} (bodies : mfix_bodies G MR R R) : mfix_bodies (t :: G) MR R R:=
-  @weaken_l_bodies _ _ [t] G bodies.
+Definition weaken_l_bodies_single {R1 R2 MR G} t (bodies : mfix_bodies G MR R1 R2) : mfix_bodies (t :: G) MR R1 R2:=
+  weaken_l_bodies [t] bodies.
 Definition weaken_r_bodies {R MR G1 G2} (bodies : mfix_bodies G1 MR R R) : mfix_bodies (G1 ++ G2) MR R R :=
   bodies_map bodies (fun t' c' => weaken_var_r _ _ t' c').
 Definition weaken_r_comp MR G1 G2 t (e : comp t G1 MR ) : comp t (G1 ++ G2) MR
   := comp_map e (fun t' e' => weaken_var_r _ _ t' e').
 Definition weaken_r_value {Γ1 t} Γ2 (e : value t Γ1) : value t (Γ1 ++ Γ2) :=
   val_map e (weaken_var_r _ _).
-Definition weaken_mid_comp MR G1 G2 G3 t (e : comp t (G1 ++ G3) MR) : comp t (G1 ++ G2 ++ G3) MR
+Definition weaken_mid_comp {MR G1} G2 {G3 t} (e : comp t (G1 ++ G3) MR) : comp t (G1 ++ G2 ++ G3) MR
   := comp_map e (fun t' e' => weaken_var_mid _ _ _ t' e').
+Definition weaken_mid_value {G1 G3 t} G2 (v : value t (G1 ++ G3)) : value t (G1 ++ G2 ++ G3) :=
+  val_map v (fun t' e' => weaken_var_mid _ _ _ t' e').
+Definition weaken_mid_bodies {G1 G3 MR R1 R2} G2 (bodies : mfix_bodies (G1 ++ G3) MR R1 R2) :
+  mfix_bodies (G1 ++ G2 ++ G3) MR R1 R2 :=
+  bodies_map bodies (fun t' e' => weaken_var_mid _ _ _ t' e').
 
 Equations subst_var {t u} (Γ1 Γ2 : ctx) (v : value t Γ2) (x : var u (Γ1 ++ [t] ++ Γ2)) : 
   value u (Γ1 ++ Γ2) :=
