@@ -6,37 +6,20 @@ From ExtLib Require Import
 
 From ITree Require Import
      Basics.Basics
-     Basics.Tacs
-     Basics.HeterogeneousRelations
-     Basics.Monad
  .
 From EnTree Require Import
      Basics.HeterogeneousRelations
      Basics.QuantType
      Core.EnTreeDefinition
      Core.SubEvent
-     Eq.Eqit
-     Ref.Padded
-     Ref.EnTreeSpecDefinition
-     Ref.MRecSpec
 .
 From Coq Require Import
   Arith.Arith
   Strings.String
   Lists.List
-  Logic.Eqdep_dec
-  Logic.EqdepFacts
-  Eqdep EqdepFacts
-  Morphisms
 .
 
-From Paco Require Import paco.
-
-Local Open Scope entree_scope.
-Local Open Scope list_scope.
-
 Import Monads.
-Import ProperNotations.
 
 
 (** Event types **)
@@ -59,50 +42,6 @@ Class IsTpDesc (Tp:Type@{entree_u}) : Type :=
     FunOutput : forall {T}, FunInput T -> Type@{entree_u};
     dec_eq_Tp : forall (T U : Tp), {T=U} + {T<>U} }.
 
-
-(*
-(* Simple, non-dependent type descriptions *)
-Inductive SimpleDesc : Type@{entree_u} :=
-| SimpTp_Void : SimpleDesc
-| SimpTp_Unit : SimpleDesc
-(* | SimpTp_Prop (P:Prop) : SimpleDesc *) (* Cannot decide equality of Props! *)
-| SimpTp_Nat : SimpleDesc
-| SimpTp_Sum (A B : SimpleDesc) : SimpleDesc
-.
-
-Definition dec_eq_SimpleDesc (T U:SimpleDesc) : { T = U } + {~ T = U}.
-Proof. decide equality. Defined.
-
-(* Decode a simple type description to a type *)
-Fixpoint stpElem (d : SimpleDesc) : Type@{entree_u} :=
-  match d with
-  | SimpTp_Void => Empty_set
-  | SimpTp_Unit => unit
-  | SimpTp_Nat => nat
-  | SimpTp_Sum A B => stpElem A + stpElem B
-  end.
-
-(* General type descriptions, parameterized by whether they are a monadic type *)
-Inductive TpDesc : Type@{entree_u} :=
-(* Monadic function types *)
-| Tp_M (R : TpDesc) : TpDesc
-| Tp_Pi (A : SimpleDesc) (B : stpElem A -> TpDesc) : TpDesc
-| Tp_Arr (A : TpDesc) (B : TpDesc) : TpDesc
-
-(* First-order types *)
-| Tp_SType (A : SimpleDesc) : TpDesc
-| Tp_Pair (A : TpDesc) (B : TpDesc) : TpDesc
-| Tp_Sum (A : TpDesc) (B : TpDesc) : TpDesc
-| Tp_Sigma (A : SimpleDesc) (B : stpElem A -> TpDesc) : TpDesc
-.
-
-Definition dec_eq_TpDesc (T U:TpDesc) : { T = U } + {~ T = U}.
-Proof.
-  revert U; induction T; intro U; destruct U; try (right; intro e; discriminate e).
-  - destruct (IHT U) as [ e | neq ]; [ rewrite e; left; reflexivity | ].
-    right; intro e; refine (neq _); inversion e; reflexivity.
-Admitted.
-*)
 
 Section FixTree.
 
@@ -204,7 +143,7 @@ Variant fixtreeF (F : Type@{entree_u} -> Type@{entree_u}) (R:Type@{entree_u}) : 
   | Fx_VisF (e : E) (k : encodes e -> F R)
   | Fx_CallF (call : FunCall) (k : FunCallRet call -> F R)
   | Fx_MkFunF (T : Tp)
-      (body : forall (args:FunInput T), F (FunOutput args))
+      (body : FunIx T -> forall (args:FunInput T), F (FunOutput args))
       (k : FunIx T -> F R)
 .
 
@@ -333,8 +272,9 @@ CoFixpoint interp_fixtree' {R} (err:entree E R) (defs : FxInterps)
       | None => err
       end
   | Fx_MkFunF body k =>
-      Tau (interp_fixtree' err (consFxInterp defs body)
-             (fxobserve (k (MkFunIx _ (length defs)))))
+      let funIx := MkFunIx _ (length defs) in
+      Tau (interp_fixtree' err (consFxInterp defs (body funIx))
+             (fxobserve (k funIx)))
   end.
 
 Definition interp_fixtree {R} (err:entree E R) (defs : FxInterps) (t : fixtree R)
