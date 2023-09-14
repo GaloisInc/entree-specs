@@ -98,8 +98,14 @@ Definition AssertS (P : Prop) : SpecM unit :=
 Definition TriggerS (e : E) : SpecM (encodes e) :=
   Fx_Vis (resum e : SpecEv E) (fun x => Fx_Ret x).
 
-Definition ErrorS A (str : string) : SpecM A :=
+Definition ErrorS {A} (str : string) : SpecM A :=
   Fx_Vis ((Spec_vis (inl (mkErrorE str))) : SpecEv E)
     (fun (x:Empty_set) => match x with end).
+
+Definition errorEntree {R} (s : string) : entree (SpecEv E) R :=
+  Vis (Spec_vis (inl (mkErrorE s))) (fun v:void => match v with end).
+
+Definition interp_SpecM {R} (t:SpecM R) : entree (SpecEv E) R :=
+  interp_fixtree (@errorEntree R "Unbound function call") nil t.
 
 End SpecM.
