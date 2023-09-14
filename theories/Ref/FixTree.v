@@ -49,12 +49,6 @@ Record EvType : Type :=
 Global Instance EncodingType_EvType (E:EvType) : EncodingType E :=
   evRetType E.
 
-(* The error event type *)
-Inductive ErrorE : Set :=
-| mkErrorE : string -> ErrorE.
-
-Global Instance EncodingType_ErrorE : EncodingType ErrorE := fun _ => Empty_set.
-
 
 (** Type Descriptions **)
 
