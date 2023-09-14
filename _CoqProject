@@ -21,4 +21,4 @@ theories/Ref/RecSpecFix.v
 # theories/Ref/RecFixSpecTotal.v
 theories/Ref/Concrete.v
 
-# theories/EnTreeSpecs.v
+theories/EnTreeSpecs.v

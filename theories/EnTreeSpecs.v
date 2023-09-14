@@ -11,6 +11,4 @@ From EnTree Require Export
      Ref.EnTreeSpecDefinition
      Ref.MRecSpec
      Ref.SpecM
-     Ref.LetRecRefines
-     Ref.DefRefines
 .
