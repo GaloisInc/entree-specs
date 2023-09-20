@@ -12,6 +12,7 @@ From Coq Require Import
   Strings.String
   Lists.List
   Logic.FunctionalExtensionality
+  Eqdep (* NOTE: we actually only need this on decidable types... *)
 .
 
 Import Monads.
@@ -55,42 +56,85 @@ Global Instance ReSumRet_SpecE_Error (E : EvType) : ReSumRet ErrorE (SpecE E) :=
  ** Type Descriptions
  **)
 
-Variant ArithKind : Type@{entree_u} :=
-| Kind_Nat
-| Kind_BV (w:nat)
-.
+Section TpDesc.
+
+Class IsArithKind (ArithK:Type@{entree_u}) : Type :=
+  {
+    (* The types described by an element of ArithK, each of which must have a
+    default element *)
+    arithKindElem : ArithK -> Type@{entree_u};
+    defaultAKElem : forall AK, arithKindElem AK;
+
+    (* The type descriptions and elements must have decidable equality *)
+    dec_eq_ArithK : forall (AK1 AK2:ArithK), {AK1=AK2} + {~AK1=AK2};
+    dec_eq_arithKElem : forall AK (elem1 elem2:arithKindElem AK),
+      {elem1=elem2} + {~elem1=elem2};
+  }.
+
+Context ArithK `{IsArithKind ArithK}.
+
+Inductive ArithKind : Type@{entree_u} :=
+| Kind_nat
+| Kind_other (AK:ArithK).
+
+Global Program Instance IsArithKind_ArithKind : IsArithKind ArithKind :=
+  {| arithKindElem :=
+      fun AK => match AK with
+                | Kind_nat => nat
+                | Kind_other AK' => arithKindElem AK'
+                end;
+    defaultAKElem :=
+      fun AK => match AK with
+                | Kind_nat => 0
+                | Kind_other AK' => defaultAKElem AK'
+                end;
+  |}.
+Next Obligation.
+  decide equality. apply dec_eq_ArithK.
+Defined.
+Next Obligation.
+  destruct AK; [ decide equality | apply dec_eq_arithKElem ].
+Defined.
+
+
+(* Types and interpretations of unary and binary operations, which are
+   parameterized by their input and output types *)
+Class ArithOps (ArithK:Type@{entree_u}) `{IsArithKind ArithK} : Type :=
+  {
+    arithUnOp : ArithK -> ArithK -> Type@{entree_u};
+    arithBinOp : ArithK -> ArithK -> ArithK -> Type@{entree_u};
+
+    dec_eq_UnOp : forall {AK1 AK2} (op1 op2 : arithUnOp AK1 AK2),
+      {op1=op2} + {~op1=op2};
+    dec_eq_BinOp : forall {AK1 AK2 AK3} (op1 op2 : arithBinOp AK1 AK2 AK3),
+      {op1=op2} + {~op1=op2};
+
+    evalUnOp : forall {AK1 AK2},
+      arithUnOp AK1 AK2 -> arithKindElem AK1 -> arithKindElem AK2;
+    evalBinOp : forall {AK1 AK2 AK3},
+      arithBinOp AK1 AK2 AK3 -> arithKindElem AK1 -> arithKindElem AK2 ->
+      arithKindElem AK3;
+  }.
+
+Context {AOps:ArithOps ArithKind}.
 
 Variant KindDesc : Type@{entree_u} :=
 | Kind_Arith (K:ArithKind)
 | Kind_Tp
 .
 
-Variant ArithUnOp := | Op1_Neg | Op1_Succ.
-Variant ArithBinOp := | Op2_Plus | Op2_Times.
-
-Inductive CastOp : ArithKind -> ArithKind -> Type@{entree_u} :=
-| Cast_BVToNat w : CastOp (Kind_BV w) Kind_Nat
-| Cast_NatToBV w : CastOp Kind_Nat (Kind_BV w)
-| Cast_BVResize w1 w2 : CastOp (Kind_BV w1) (Kind_BV w2).
-
-Inductive ArithConst : ArithKind -> Type@{entree_u} :=
-| Const_nat (n:nat) : ArithConst Kind_Nat
-| Const_bv (w:nat) (bits:VectorDef.t bool w) : ArithConst (Kind_BV w).
-
 Inductive ArithExpr (K:ArithKind) : Type@{entree_u} :=
-| Arith_Const (c:ArithConst K)
+| Arith_Const (c:arithKindElem K)
 | Arith_Var (ix:nat)
-| Arith_UnOp (op:ArithUnOp) (e:ArithExpr K)
-| Arith_BinOp (op:ArithBinOp) (e1 e2:ArithExpr K)
-| Arith_Cast K' (op:CastOp K' K) (e:ArithExpr K')
+| Arith_UnOp {K1} (op:arithUnOp K1 K) (e:ArithExpr K1)
+| Arith_BinOp {K1 K2} (op:arithBinOp K1 K2 K) (e1:ArithExpr K1) (e2:ArithExpr K2)
 .
 
-(* The natural number 0 as an ArithExpr *)
-Definition ArithZ : ArithExpr Kind_Nat := Arith_Const _ (Const_nat 0).
+(* The natural number N as an ArithExpr *)
+Definition ArithN n : ArithExpr Kind_nat := Arith_Const Kind_nat n.
 
-(* The successor function on ArithExprs *)
-Definition ArithS (e: ArithExpr Kind_Nat) : ArithExpr Kind_Nat :=
-  Arith_UnOp _ Op1_Succ e.
+(* The natural number 0 as an ArithExpr *)
+Definition ArithZ : ArithExpr Kind_nat := Arith_Const Kind_nat 0.
 
 (* Descriptions of types *)
 Inductive TpDesc : Type@{entree_u} :=
@@ -104,7 +148,7 @@ Inductive TpDesc : Type@{entree_u} :=
 | Tp_Pair (A : TpDesc) (B : TpDesc)
 | Tp_Sum (A : TpDesc) (B : TpDesc)
 | Tp_Sigma (K : KindDesc) (B : TpDesc)
-| Tp_Vec (A : TpDesc) (n:ArithExpr Kind_Nat)
+| Tp_Vec (A : TpDesc) (e:ArithExpr Kind_nat)
 
 (* Inductive types and type variables *)
 | Tp_Ind (A : TpDesc)
@@ -112,48 +156,53 @@ Inductive TpDesc : Type@{entree_u} :=
 | Tp_Void
 .
 
+
 (**
  ** Deciding equality of type descriptions
  **)
 
 Lemma dec_eq_KindDesc (K1 K2:KindDesc) : {K1=K2} + {~K1=K2}.
-Proof. repeat decide equality. Qed.
-
-Lemma dec_eq_ArithConst_dep K1 (e1:ArithConst K1) K2 (e2:ArithConst K2) :
-  { existT ArithConst K1 e1 = existT ArithConst K2 e2 } +
-    { ~ existT ArithConst K1 e1 = existT ArithConst K2 e2 }.
-Proof.
-Admitted.
-
-Lemma dec_eq_ArithConst K (e1 e2:ArithConst K) : {e1=e2} + {~e1=e2}.
-Admitted.
+Proof. decide equality. apply dec_eq_ArithK. Qed.
 
 Lemma dec_eq_ArithExpr K (e1 e2 : ArithExpr K) : {e1=e2} + {~e1=e2}.
 Proof.
-  revert e2; induction e1; intro e2; destruct e2; try (right; intro H; discriminate H).
-  - destruct (dec_eq_ArithConst K c c0).
+  revert e2; induction e1; intro e2; destruct e2; try (right; intro H0; discriminate H0).
+  - destruct (dec_eq_arithKElem K c c0).
     + rewrite e; left; reflexivity.
-    + right; intro H; inversion H; apply n; assumption.
+    + right; intro e; inversion e; apply n; assumption.
   - destruct (Nat.eq_dec ix ix0).
     + rewrite e; left; reflexivity.
-    + right; intro H; inversion H; apply n; assumption.
-Admitted.
+    + right; intro e; inversion e; apply n; assumption.
+  - destruct (dec_eq_ArithK K0 K1).
+    + subst K0. destruct (dec_eq_UnOp op op0); [ destruct (IHe1 e2) | ].
+      * subst op; subst e1; left; reflexivity.
+      * right; intro e'; inversion e'; apply n.
+        apply inj_pairT2 in H2. assumption.
+      * right; intro e'; inversion e'; apply n.
+        apply inj_pairT2 in H1. assumption.
+    + right; intro e; inversion e. apply n; symmetry; assumption.
+  - destruct (dec_eq_ArithK K0 K1); [ destruct (dec_eq_ArithK K3 K2) | ].
+    + subst K0; subst K3.
+      destruct (dec_eq_BinOp op op0);
+        [ destruct (IHe1_1 e2_1); [ destruct (IHe1_2 e2_2) | ] | ].
+      * subst op0; subst e1_1; subst e1_2. left; reflexivity.
+      * right; intro e'; inversion e'; apply n. apply inj_pairT2 in H3; assumption.
+      * right; intro e'; inversion e'; apply n. apply inj_pairT2 in H2; assumption.
+      * right; intro e'; inversion e'; apply n.
+        apply inj_pairT2 in H1. apply inj_pairT2 in H1. assumption.
+    + right; intro e'; inversion e'; apply n; symmetry; assumption.
+    + right; intro e'; inversion e'; apply n; symmetry; assumption.
+Qed.
 
 Definition dec_eq_TpDesc (T U:TpDesc) : { T = U } + {~ T = U}.
 Proof.
-  repeat decide equality. apply dec_eq_ArithExpr.
+  repeat decide equality; try apply dec_eq_ArithK. apply dec_eq_ArithExpr.
 Qed.
 
 
 (**
  ** Elements of kind descriptions
  **)
-
-Definition arithKindElem K :=
-  match K with
-  | Kind_Nat => nat
-  | Kind_BV w => VectorDef.t bool w
-  end.
 
 (* An element of a kind *)
 Definition kindElem K : Type@{entree_u} :=
@@ -164,9 +213,8 @@ Definition kindElem K : Type@{entree_u} :=
 
 Definition defaultKindElem K : kindElem K :=
   match K return kindElem K with
-  | Kind_Arith Kind_Nat => 0
-  | Kind_Arith (Kind_BV w) => VectorDef.const false w
   | Kind_Tp => Tp_Void
+  | Kind_Arith AK => defaultAKElem AK
   end.
 
 
@@ -198,13 +246,6 @@ Definition headTpEnv K (env:TpEnv) : kindElem K :=
   match env with
   | nil => defaultKindElem K
   | elem :: _ => elimTpEnvElem K elem
-  end.
-
-(* Turn an element of an arith kind into an expression *)
-Definition arithKindElemExpr {K} : arithKindElem K -> ArithExpr K :=
-  match K return arithKindElem K -> ArithExpr K with
-  | Kind_Nat => fun n => Arith_Const _ (Const_nat n)
-  | Kind_BV w => fun bv => Arith_Const _ (Const_bv w bv)
   end.
 
 
@@ -243,13 +284,12 @@ Fixpoint substArithExpr n env {K'} (e:ArithExpr K') : ArithExpr K' :=
   | Arith_Const _ c => Arith_Const _ c
   | Arith_Var _ ix =>
       match substVar n env (Kind_Arith K') ix with
-      | inl e' => arithKindElemExpr e'
+      | inl e' => Arith_Const K' e'
       | inr ix' => Arith_Var _ ix'
       end
   | Arith_UnOp _ op e' => Arith_UnOp _ op (substArithExpr n env e')
   | Arith_BinOp _ op e1 e2 =>
       Arith_BinOp _ op (substArithExpr n env e1) (substArithExpr n env e2)
-  | Arith_Cast _ K' op e' => Arith_Cast _ _ op (substArithExpr n env e')
   end.
 
 (* Substitute an environment at lifting level n into type description T *)
@@ -276,8 +316,14 @@ Fixpoint tpSubst n env (T:TpDesc) : TpDesc :=
  ** Elements of type descriptions
  **)
 
-Fixpoint evalArithExpr (env:TpEnv) {K} (e:ArithExpr K) : arithKindElem K.
-Admitted.
+Fixpoint evalArithExpr (env:TpEnv) {K} (e:ArithExpr K) : arithKindElem K :=
+  match e with
+  | Arith_Const _ c => c
+  | Arith_Var _ ix => evalVar 0 env (Kind_Arith K) ix
+  | Arith_UnOp _ op e => evalUnOp op (evalArithExpr env e)
+  | Arith_BinOp _ op e1 e2 =>
+      evalBinOp op (evalArithExpr env e1) (evalArithExpr env e2)
+  end.
 
 (* Inductively defined elements of a type description *)
 Inductive indElem : TpEnv -> TpDesc -> Type@{entree_u} :=
@@ -293,8 +339,9 @@ Inductive indElem : TpEnv -> TpDesc -> Type@{entree_u} :=
     (elem1: kindElem K) (elem2: indElem (envConsElem elem1 env) B)
   : indElem env (Tp_Sigma K B)
 | Elem_VecNil {env A} : indElem env (Tp_Vec A ArithZ)
-| Elem_VecCons {env A e} (elem1: indElem env A) (elem2: indElem env (Tp_Vec A e))
-  : indElem env (Tp_Vec A (ArithS e))
+| Elem_VecCons {env A n} (elem1: indElem env A)
+    (elem2: indElem env (Tp_Vec A (ArithN n)))
+  : indElem env (Tp_Vec A (ArithN (S n)))
 | Elem_VecCast {env A e1 e2} (e: evalArithExpr env e1 = evalArithExpr env e2)
     (elem: indElem env (Tp_Vec A e1)) : indElem env (Tp_Vec A e2)
 | Elem_Ind {env A} (elem: indElem (@envConsElem Kind_Tp
@@ -305,6 +352,24 @@ Inductive indElem : TpEnv -> TpDesc -> Type@{entree_u} :=
   indElem env (Tp_Var var)
 (* No case for Tp_Void *)
 .
+
+(* Helper function to build a vector indElem with a constant size *)
+Fixpoint mkVecIndElemConst {env T n} :
+  VectorDef.t (indElem env T) n -> indElem env (Tp_Vec T (ArithN n)) :=
+  match n return VectorDef.t (indElem env T) n -> indElem env (Tp_Vec T (ArithN n)) with
+  | 0 => fun _ => Elem_VecNil
+  | S n' =>
+       fun elems =>
+         Elem_VecCons (VectorDef.hd elems) (mkVecIndElemConst (VectorDef.tl elems))
+  end.
+
+(* Helper function to build a vector indElem from a vector of indElems *)
+Definition mkVecIndElem {env T} {e:ArithExpr Kind_nat}
+  (elems:VectorDef.t (indElem env T) (evalArithExpr env e)) : indElem env (Tp_Vec T e).
+  apply (Elem_VecCast (e1:=ArithN (evalArithExpr env e))); [ reflexivity | ].
+  apply mkVecIndElemConst. assumption.
+Defined.
+
 
 (* Elements of a type description *)
 Fixpoint tpElem env T : Type@{entree_u} :=
@@ -321,6 +386,40 @@ Fixpoint tpElem env T : Type@{entree_u} :=
   | Tp_Var var => indElem nil (evalVar 0 env Kind_Tp var)
   | Tp_Void => Empty_set
   end.
+
+Fixpoint indToTpElem env {T} (elem : indElem env T) : tpElem env T.
+  destruct elem.
+  - assumption.
+  - assumption.
+  - assumption.
+  - assumption.
+  - split; apply indToTpElem; assumption.
+  - left; apply indToTpElem; assumption.
+  - right; apply indToTpElem; assumption.
+  - exists elem1. apply indToTpElem; assumption.
+  - apply VectorDef.nil.
+  - apply VectorDef.cons;
+      [ apply (indToTpElem env _ elem1) | apply (indToTpElem env _ elem2) ].
+  - simpl. rewrite <- e. apply (indToTpElem env _ elem).
+  - constructor. apply elem.
+  - apply elem.
+Defined.
+
+Fixpoint tpToIndElem env {T} : tpElem env T -> indElem env T.
+  destruct T; intro elem.
+  - constructor; assumption.
+  - constructor; assumption.
+  - constructor; assumption.
+  - constructor; assumption.
+  - constructor; destruct elem; apply tpToIndElem; assumption.
+  - destruct elem; [ apply Elem_SumL | apply Elem_SumR ];
+      apply tpToIndElem; assumption.
+  - econstructor. apply (tpToIndElem _ _ (projT2 elem)).
+  - apply mkVecIndElem. apply (VectorDef.map (tpToIndElem env T) elem).
+  - apply elem.
+  - constructor; assumption.
+  - destruct elem.
+Defined.
 
 
 (**
