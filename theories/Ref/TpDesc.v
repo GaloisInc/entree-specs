@@ -185,7 +185,7 @@ Definition defaultKindElem K : kindElem K :=
 
 
 (**
- ** Substitution for type descriptions
+ ** Substitution and evaluation for type descriptions
  **)
 
 (* An element of an environment is a value, i.e., an element of some kind *)
@@ -258,6 +258,16 @@ Fixpoint substArithExpr n env {K} (e:ArithExpr K) : ArithExpr K :=
       Arith_BinOp op (substArithExpr n env e1) (substArithExpr n env e2)
   end.
 
+(* Evaluate an arithmetic expression to a value *)
+Fixpoint evalArithExpr (env:TpEnv) {K} (e:ArithExpr K) : arithKindElem K :=
+  match e in ArithExpr K return arithKindElem K with
+  | Arith_Const c => c
+  | Arith_Var ix => evalVar 0 env (Kind_Arith _) ix
+  | Arith_UnOp op e => evalUnOp op (evalArithExpr env e)
+  | Arith_BinOp op e1 e2 =>
+      evalBinOp op (evalArithExpr env e1) (evalArithExpr env e2)
+  end.
+
 (* Substitute an environment at lifting level n into type description T *)
 Fixpoint tpSubst n env (T:TpDesc) : TpDesc :=
   match T with
@@ -281,15 +291,6 @@ Fixpoint tpSubst n env (T:TpDesc) : TpDesc :=
 (**
  ** Elements of type descriptions
  **)
-
-Fixpoint evalArithExpr (env:TpEnv) {K} (e:ArithExpr K) : arithKindElem K :=
-  match e in ArithExpr K return arithKindElem K with
-  | Arith_Const c => c
-  | Arith_Var ix => evalVar 0 env (Kind_Arith _) ix
-  | Arith_UnOp op e => evalUnOp op (evalArithExpr env e)
-  | Arith_BinOp op e1 e2 =>
-      evalBinOp op (evalArithExpr env e1) (evalArithExpr env e2)
-  end.
 
 (* Inductively defined elements of a type description *)
 Inductive indElem : TpEnv -> TpDesc -> Type@{entree_u} :=
