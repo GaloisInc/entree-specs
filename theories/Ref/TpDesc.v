@@ -82,6 +82,11 @@ Class ArithOps (ArithK:Type@{entree_u}) `{IsArithKind ArithK} : Type :=
 (* We assume a collection of operations on ArithKind ArithK *)
 Context {AOps:ArithOps ArithKind}.
 
+
+(**
+ ** Type descriptions themselves
+ **)
+
 Variant KindDesc : Type@{entree_u} :=
 | Kind_Arith (K:ArithKind)
 | Kind_Tp
@@ -287,10 +292,19 @@ Fixpoint tpSubst n env (T:TpDesc) : TpDesc :=
   | Tp_Void => Tp_Void
   end.
 
+(* Substitute a single value into a type description *)
+Definition tpSubst1 {K} (elem:kindElem K) T : TpDesc :=
+  tpSubst 0 (cons (existT kindElem K elem) nil) T.
+
 
 (**
  ** Elements of type descriptions
  **)
+
+(* Unfold an inductive type description Tp_Ind A by substituting the current
+environment augmented with the mapping from deBruijn index 0 to Tp_Ind A *)
+Definition unfoldIndTpDesc env A : TpDesc :=
+  tpSubst 0 (@envConsElem Kind_Tp (tpSubst 0 env (Tp_Ind A)) env) A.
 
 (* Inductively defined elements of a type description *)
 Inductive indElem : TpEnv -> TpDesc -> Type@{entree_u} :=
@@ -311,9 +325,7 @@ Inductive indElem : TpEnv -> TpDesc -> Type@{entree_u} :=
   : indElem env (Tp_Vec A (ArithN (S n)))
 | Elem_VecCast {env A e1 e2} (e: evalArithExpr env e1 = evalArithExpr env e2)
     (elem: indElem env (Tp_Vec A e1)) : indElem env (Tp_Vec A e2)
-| Elem_Ind {env A} (elem: indElem (@envConsElem Kind_Tp
-                                     (tpSubst 0 env (Tp_Ind A))
-                                     env) A)
+| Elem_Ind {env A} (elem: indElem nil (unfoldIndTpDesc env A))
   : indElem env (Tp_Ind A)
 | Elem_Var {env} var (elem: indElem nil (evalVar 0 env Kind_Tp var)) :
   indElem env (Tp_Var var)
@@ -349,7 +361,7 @@ Fixpoint tpElem env T : Type@{entree_u} :=
   | Tp_Sum A B => tpElem env A + tpElem env B
   | Tp_Sigma K B => { elem: kindElem K & tpElem (envConsElem elem env) B }
   | Tp_Vec A e => VectorDef.t (tpElem env A) (evalArithExpr env e)
-  | Tp_Ind A => indElem env (Tp_Ind A)
+  | Tp_Ind A => indElem nil (unfoldIndTpDesc env A)
   | Tp_Var var => indElem nil (evalVar 0 env Kind_Tp var)
   | Tp_Void => Empty_set
   end.
@@ -368,7 +380,7 @@ Fixpoint indToTpElem env {T} (elem : indElem env T) : tpElem env T.
   - apply VectorDef.cons;
       [ apply (indToTpElem env _ elem1) | apply (indToTpElem env _ elem2) ].
   - simpl. rewrite <- e. apply (indToTpElem env _ elem).
-  - constructor. apply elem.
+  - apply elem.
   - apply elem.
 Defined.
 
@@ -383,10 +395,91 @@ Fixpoint tpToIndElem env {T} : tpElem env T -> indElem env T.
       apply tpToIndElem; assumption.
   - econstructor. apply (tpToIndElem _ _ (projT2 elem)).
   - apply mkVecIndElem. apply (VectorDef.map (tpToIndElem env T) elem).
-  - apply elem.
+  - constructor; assumption.
   - constructor; assumption.
   - destruct elem.
 Defined.
+
+
+(**
+ ** Function elements of type descriptions
+ **)
+
+(* A tuple of inputs to a functional type description *)
+Fixpoint TpFunInput env (T:TpDesc) : Type@{entree_u} :=
+  match T with
+  | Tp_M _ => unit
+  | Tp_Pi K B => { elem:kindElem K & TpFunInput (envConsElem elem env) B }
+  | Tp_Arr A B => tpElem env A * TpFunInput env B
+  | _ => Empty_set
+  end.
+
+Fixpoint TpFunOutput {env T} : TpFunInput env T -> Type@{entree_u} :=
+  match T return TpFunInput env T -> Type with
+  | Tp_M R => fun _ => tpElem nil (tpSubst 0 env R)
+  | Tp_Pi K B => fun args => TpFunOutput (projT2 args)
+  | Tp_Arr A B => fun args => TpFunOutput (snd args)
+  | _ => fun _ => Empty_set
+  end.
+
+(* We build an IsTpDesc instance for each environment, though we only want to
+use the empty environment for "the" instance *)
+Definition IsTpDescInEnv env : IsTpDesc TpDesc :=
+  {|
+    FunInput := @TpFunInput env;
+    FunOutput := @TpFunOutput env;
+    dec_eq_Tp := dec_eq_TpDesc
+  |}.
+
+Global Instance IsTpDesc_TpDesc : IsTpDesc TpDesc := IsTpDescInEnv nil.
+
+
+(*
+FIXME: I think this is the wrong approach, but keeping it around just in case
+
+(* A tuple of inputs to a functional type description; NOTE: we define this as
+an inductive type, rather than a function on TpDescs, so we can perform the type
+substitution in the Tp_Pi case *)
+Inductive TpFunInput : TpDesc -> Type@{entree_u} :=
+| TpFunInput_M R : TpFunInput (Tp_M R)
+| TpFunInput_Pi K B (elem: kindElem K) (args: TpFunInput (tpSubst1 elem B)) :
+  TpFunInput (Tp_Pi K B)
+| TpFunInput_Arr A B (arg: tpElem nil A) (args: TpFunInput B) :
+  TpFunInput (Tp_Arr A B)
+.
+
+(* The output type of a function applied to the given inputs *)
+Fixpoint TpFunOutput {T} (args: TpFunInput T) : Type@{entree_u} :=
+  match args in TpFunInput T return Type with
+  | TpFunInput_M R => tpElem nil R
+  | TpFunInput_Pi K B elem args' => TpFunOutput args'
+  | TpFunInput_Arr A B arg args' => TpFunOutput args'
+  end.
+
+Global Instance IsTpDesc_TpDesc : IsTpDesc TpDesc :=
+  {|
+    FunInput := TpFunInput;
+    FunOutput := @TpFunOutput;
+    dec_eq_Tp := dec_eq_TpDesc
+  |}.
+
+*)
+
+(* A monadic function of a given type description *)
+Fixpoint funElem (E:EvType) env T : Type@{entree_u} :=
+  match T with
+  | Tp_M R => fixtree TpDesc E (tpElem nil (tpSubst 0 env R))
+  | Tp_Pi K B => forall (elem:kindElem K), funElem E (envConsElem elem env) B
+  | Tp_Arr A B => tpElem env A -> funElem E env B
+  | _ => Empty_set
+  end.
+
+(* Convert a monadic function to an FxInterp *)
+Fixpoint funElemToInterp {E env T} : funElem E env T ->
+                                     @FxInterp TpDesc _ E T :=
+  match T return funElem E env T -> @FxInterp TpDesc _ E T with
+  | Tp_M R => fun elem _ => elem
+  end.
 
 
 End TpDesc.
