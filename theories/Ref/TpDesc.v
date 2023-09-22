@@ -8,79 +8,56 @@ From EnTree Require Import
      Basics.HeterogeneousRelations
      Ref.FixTree
 .
+From Bits Require Import operations spec.
 
-Section TpDesc.
 
 (**
  ** Arithmetic Kinds
  **)
 
-(* An arithmetic kind is a description of a type that can be used in arithmetic
-expressions in types *)
-Class IsArithKind (ArithK:Type@{entree_u}) : Type :=
-  {
-    (* The types described by an element of ArithK, each of which must have a
-    default element *)
-    arithKindElem : ArithK -> Type@{entree_u};
-    defaultAKElem : forall AK, arithKindElem AK;
-
-    (* The type descriptions and elements must have decidable equality *)
-    dec_eq_ArithK : forall (AK1 AK2:ArithK), {AK1=AK2} + {~AK1=AK2};
-    dec_eq_arithKElem : forall AK (elem1 elem2:arithKindElem AK),
-      {elem1=elem2} + {~elem1=elem2};
-  }.
-
-(* We assume some arithmetic kind for the rest of this file *)
-Context ArithK `{IsArithKind ArithK}.
-
 (* The type we use for arithmetic kinds must include nat, so we define "the"
 type of arithmetic kinds as either nat or a user-defined kind *)
 Inductive ArithKind : Type@{entree_u} :=
 | Kind_nat
-| Kind_other (AK:ArithK).
+| Kind_bv (w:nat).
 
-(* If ArithK is an arithmetic kind then so is ArithKind *)
-Global Program Instance IsArithKind_ArithKind : IsArithKind ArithKind :=
-  {| arithKindElem :=
-      fun AK => match AK with
-                | Kind_nat => nat
-                | Kind_other AK' => arithKindElem AK'
-                end;
-    defaultAKElem :=
-      fun AK => match AK with
-                | Kind_nat => 0
-                | Kind_other AK' => defaultAKElem AK'
-                end;
-  |}.
-Next Obligation.
-  decide equality. apply dec_eq_ArithK.
-Defined.
-Next Obligation.
-  destruct AK; [ decide equality | apply dec_eq_arithKElem ].
-Defined.
+Definition arithKindElem AK : Type@{entree_u} :=
+  match AK with
+  | Kind_nat => nat
+  | Kind_bv w => VectorDef.t bool w
+  end.
 
+Definition defaultAKElem AK : arithKindElem AK :=
+  match AK return arithKindElem AK with
+  | Kind_nat => 0
+  | Kind_bv w => VectorDef.const false w
+  end.
 
-(* Types and interpretations of unary and binary operations, which are
-   parameterized by their input and output types *)
-Class ArithOps (ArithK:Type@{entree_u}) `{IsArithKind ArithK} : Type :=
-  {
-    arithUnOp : ArithK -> ArithK -> Type@{entree_u};
-    arithBinOp : ArithK -> ArithK -> ArithK -> Type@{entree_u};
+Inductive ArithUnOp : ArithKind -> ArithKind -> Type@{entree_u} :=
+| UnOp_BVToNat w : ArithUnOp (Kind_bv w) Kind_nat
+| UnOp_NatToBV w : ArithUnOp Kind_nat (Kind_bv w)
+| UnOp_Neg AK : ArithUnOp AK AK
+.
 
-    dec_eq_UnOp : forall {AK1 AK2} (op1 op2 : arithUnOp AK1 AK2),
-      {op1=op2} + {~op1=op2};
-    dec_eq_BinOp : forall {AK1 AK2 AK3} (op1 op2 : arithBinOp AK1 AK2 AK3),
-      {op1=op2} + {~op1=op2};
+Inductive ArithBinOp : ArithKind -> ArithKind -> ArithKind -> Type@{entree_u} :=
+| BinOp_Add AK : ArithBinOp AK AK AK
+| BinOp_Mult AK : ArithBinOp AK AK AK
+.
 
-    evalUnOp : forall {AK1 AK2},
-      arithUnOp AK1 AK2 -> arithKindElem AK1 -> arithKindElem AK2;
-    evalBinOp : forall {AK1 AK2 AK3},
-      arithBinOp AK1 AK2 AK3 -> arithKindElem AK1 -> arithKindElem AK2 ->
-      arithKindElem AK3;
-  }.
+Lemma dec_eq_UnOp {AK1 AK2} (op1 op2 : ArithUnOp AK1 AK2) : {op1=op2} + {~op1=op2}.
+Admitted.
 
-(* We assume a collection of operations on ArithKind ArithK *)
-Context {AOps:ArithOps ArithKind}.
+Lemma dec_eq_BinOp {AK1 AK2 AK3} (op1 op2 : ArithBinOp AK1 AK2 AK3)
+  : {op1=op2} + {~op1=op2}.
+Admitted.
+
+Definition evalUnOp {AK1 AK2} (op: ArithUnOp AK1 AK2) :
+  arithKindElem AK1 -> arithKindElem AK2.
+Admitted.
+
+Definition evalBinOp {AK1 AK2 AK3} (op: ArithBinOp AK1 AK2 AK3) :
+  arithKindElem AK1 -> arithKindElem AK2 -> arithKindElem AK3.
+Admitted.
 
 
 (**
@@ -96,8 +73,8 @@ Variant KindDesc : Type@{entree_u} :=
 Inductive ArithExpr : ArithKind -> Type@{entree_u} :=
 | Arith_Const {K} (c:arithKindElem K) : ArithExpr K
 | Arith_Var {K} (ix:nat) : ArithExpr K
-| Arith_UnOp {K1 K2} (op:arithUnOp K1 K2) (e:ArithExpr K1) : ArithExpr K2
-| Arith_BinOp {K1 K2 K3} (op:arithBinOp K1 K2 K3)
+| Arith_UnOp {K1 K2} (op:ArithUnOp K1 K2) (e:ArithExpr K1) : ArithExpr K2
+| Arith_BinOp {K1 K2 K3} (op:ArithBinOp K1 K2 K3)
     (e1:ArithExpr K1) (e2:ArithExpr K2) : ArithExpr K3
 .
 
@@ -132,35 +109,42 @@ Inductive TpDesc : Type@{entree_u} :=
  ** Deciding equality of type descriptions
  **)
 
+Lemma dec_eq_ArithKind (AK1 AK2:ArithKind) : {AK1=AK2} + {~AK1=AK2}.
+Proof. repeat decide equality. Qed.
+
+Lemma dec_eq_arithKElem {AK} (elem1 elem2: arithKindElem AK)
+  : {elem1=elem2} + {~elem1=elem2}.
+Admitted.
+
 Lemma dec_eq_KindDesc (K1 K2:KindDesc) : {K1=K2} + {~K1=K2}.
-Proof. decide equality. apply dec_eq_ArithK. Qed.
+Proof. repeat decide equality. Qed.
 
 Lemma dec_eq_ArithExpr K (e1 e2 : ArithExpr K) : {e1=e2} + {~e1=e2}.
 Proof.
   revert e2; induction e1; intro e2; destruct e2; try (right; intro H0; discriminate H0).
-  - destruct (dec_eq_arithKElem K c c0).
+  - destruct (dec_eq_arithKElem c c0).
     + rewrite e; left; reflexivity.
-    + right; intro e; inversion e; apply inj_pairT2 in H1; apply n; assumption.
+    + right; intro e; inversion e; apply inj_pairT2 in H0; apply n; assumption.
   - destruct (Nat.eq_dec ix ix0).
     + rewrite e; left; reflexivity.
     + right; intro e; inversion e; apply n; assumption.
-  - destruct (dec_eq_ArithK K0 K1).
+  - destruct (dec_eq_ArithKind K0 K1).
     + subst K0. destruct (dec_eq_UnOp op op0); [ destruct (IHe1 e2) | ].
       * subst op; subst e1; left; reflexivity.
       * right; intro e'; inversion e'; apply n.
-        apply inj_pairT2 in H2. assumption.
+        apply inj_pairT2 in H1. assumption.
       * right; intro e'; inversion e'; apply n.
-        repeat apply inj_pairT2 in H1. assumption.
+        repeat apply inj_pairT2 in H0. assumption.
     + right; intro e; inversion e. apply n; symmetry; assumption.
-  - destruct (dec_eq_ArithK K0 K1); [ destruct (dec_eq_ArithK K3 K2) | ].
+  - destruct (dec_eq_ArithKind K0 K1); [ destruct (dec_eq_ArithKind K3 K2) | ].
     + subst K0; subst K3.
       destruct (dec_eq_BinOp op op0);
         [ destruct (IHe1_1 e2_1); [ destruct (IHe1_2 e2_2) | ] | ].
       * subst op0; subst e1_1; subst e1_2. left; reflexivity.
-      * right; intro e'; inversion e'; apply n. apply inj_pairT2 in H3; assumption.
       * right; intro e'; inversion e'; apply n. apply inj_pairT2 in H2; assumption.
+      * right; intro e'; inversion e'; apply n. apply inj_pairT2 in H1; assumption.
       * right; intro e'; inversion e'; apply n.
-        repeat apply inj_pairT2 in H1. assumption.
+        repeat apply inj_pairT2 in H0. assumption.
     + right; intro e'; inversion e'; apply n; symmetry; assumption.
     + right; intro e'; inversion e'; apply n; symmetry; assumption.
 Qed.
@@ -252,24 +236,24 @@ Definition evalVar n env K var : kindElem K :=
 (* Substitute an environment at lifting level n into arithmetic expression e *)
 Fixpoint substArithExpr n env {K} (e:ArithExpr K) : ArithExpr K :=
   match e in ArithExpr K return ArithExpr K with
-  | Arith_Const c => Arith_Const c
-  | Arith_Var ix =>
+  | Arith_Const _ c => Arith_Const c
+  | Arith_Var _ ix =>
       match substVar n env (Kind_Arith _) ix with
       | inl e' => Arith_Const e'
       | inr ix' => Arith_Var ix'
       end
-  | Arith_UnOp op e' => Arith_UnOp op (substArithExpr n env e')
-  | Arith_BinOp op e1 e2 =>
+  | Arith_UnOp _ _ op e' => Arith_UnOp op (substArithExpr n env e')
+  | Arith_BinOp _ _ _ op e1 e2 =>
       Arith_BinOp op (substArithExpr n env e1) (substArithExpr n env e2)
   end.
 
 (* Evaluate an arithmetic expression to a value *)
 Fixpoint evalArithExpr (env:TpEnv) {K} (e:ArithExpr K) : arithKindElem K :=
   match e in ArithExpr K return arithKindElem K with
-  | Arith_Const c => c
-  | Arith_Var ix => evalVar 0 env (Kind_Arith _) ix
-  | Arith_UnOp op e => evalUnOp op (evalArithExpr env e)
-  | Arith_BinOp op e1 e2 =>
+  | Arith_Const _ c => c
+  | Arith_Var _ ix => evalVar 0 env (Kind_Arith _) ix
+  | Arith_UnOp _ _ op e => evalUnOp op (evalArithExpr env e)
+  | Arith_BinOp _ _ _ op e1 e2 =>
       evalBinOp op (evalArithExpr env e1) (evalArithExpr env e2)
   end.
 
@@ -456,6 +440,3 @@ Fixpoint funElemToInterpEnv {E env T} : funElem E env T ->
 (* Convert a monadic function to an FxInterp in the top-level environment *)
 Definition funElemToInterp {E T} : funElem E nil T -> @FxInterp TpDesc _ E T :=
   funElemToInterpEnv.
-
-
-End TpDesc.
