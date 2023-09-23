@@ -6,13 +6,12 @@ From EnTree Require Import
      Core.SubEvent
      Ref.EnTreeSpecDefinition
      Ref.FixTree
+     Ref.TpDesc
 .
 From Coq Require Import
   Arith.Arith
   Strings.String
   Lists.List
-  Logic.FunctionalExtensionality
-  Eqdep (* NOTE: we actually only need this on decidable types... *)
 .
 
 Import Monads.
@@ -53,49 +52,40 @@ Global Instance ReSumRet_SpecE_Error (E : EvType) : ReSumRet ErrorE (SpecE E) :=
 
 
 (**
- ** Type Descriptions
- **)
-
-
-
-(**
  ** The SpecM monad
  **)
 
-Section SpecM.
-
-Context {Tp} `{IsTpDesc Tp} {E : EvType}.
-
 (* The SpecM monad is an entree spec over SpecE events *)
-Definition SpecM A : Type := fixtree Tp (SpecEv E) A.
+Definition SpecM (E:EvType) A : Type := fixtree TpDesc (SpecEv E) A.
 
-#[global] Instance Monad_SpecM : Monad SpecM := Monad_fixtree _ _.
+#[global] Instance Monad_SpecM E : Monad (SpecM E) := Monad_fixtree _ _.
 
 (* The monadic operations on SpecM *)
-Definition RetS {A} (a : A) : SpecM A := ret a.
-Definition BindS {A B} (m : SpecM A) (k : A -> SpecM B) := bind m k.
+Definition RetS {E A} (a : A) : SpecM E A := ret a.
+Definition BindS {E A B} (m : SpecM E A) (k : A -> SpecM E B) := bind m k.
 
-Definition ForallS (A : Type) `{QuantType A} : SpecM A :=
+Definition ForallS {E} (A : Type) `{QuantType A} : SpecM E A :=
   Fx_Vis (Spec_forall quantEnc : SpecEv E) (fun x => Fx_Ret (quantEnum x)).
-Definition ExistsS (A : Type) `{QuantType A} : SpecM A :=
+Definition ExistsS {E} (A : Type) `{QuantType A} : SpecM E A :=
   Fx_Vis (Spec_exists quantEnc : SpecEv E) (fun x => Fx_Ret (quantEnum x)).
 
-Definition AssumeS (P : Prop) : SpecM unit :=
+Definition AssumeS {E} (P : Prop) : SpecM E unit :=
   BindS (ForallS P) (fun _ => ret tt).
-Definition AssertS (P : Prop) : SpecM unit :=
+Definition AssertS {E} (P : Prop) : SpecM E unit :=
   BindS (ExistsS P) (fun _ => ret tt).
 
-Definition TriggerS (e : E) : SpecM (encodes e) :=
+Definition TriggerS {E:EvType} (e : E) : SpecM E (encodes e) :=
   Fx_Vis (resum e : SpecEv E) (fun x => Fx_Ret x).
 
-Definition ErrorS {A} (str : string) : SpecM A :=
+Definition ErrorS {E A} (str : string) : SpecM E A :=
   Fx_Vis ((Spec_vis (inl (mkErrorE str))) : SpecEv E)
     (fun (x:Empty_set) => match x with end).
 
-Definition errorEntree {R} (s : string) : entree (SpecEv E) R :=
+Definition errorEntree {E R} (s : string) : entree (SpecEv E) R :=
   Vis (Spec_vis (inl (mkErrorE s))) (fun v:Empty_set => match v with end).
 
-Definition interp_SpecM {R} (t:SpecM R) : entree (SpecEv E) R :=
-  interp_fixtree (@errorEntree R "Unbound function call") nil t.
+Definition interp_SpecM {E R} (t:SpecM E R) : entree (SpecEv E) R :=
+  interp_fixtree (@errorEntree E R "Unbound function call") nil t.
 
-End SpecM.
+Definition CallS {E T} (f : FunIx T) : funElem E nil T :=
+  funInterpToElem (fun args => Fx_Call (MkFunCall T f args) (fun x => Fx_Ret x)).
