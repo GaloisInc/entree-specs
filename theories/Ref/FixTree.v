@@ -42,6 +42,28 @@ Class IsTpDesc (Tp:Type@{entree_u}) : Type :=
     FunOutput : forall {T}, FunInput T -> Type@{entree_u};
     dec_eq_Tp : forall (T U : Tp), {T=U} + {T<>U} }.
 
+(* An input to the nth function type in a list *)
+Fixpoint nthFunInput {Tp} `{IsTpDesc Tp} Ts n {struct Ts} : Type@{entree_u} :=
+  match Ts with
+  | nil => Empty_set
+  | T :: Ts' =>
+      match n with
+      | 0 => FunInput T
+      | S n' => nthFunInput Ts' n'
+      end
+  end.
+
+(* An output for the nth function type in a list *)
+Fixpoint nthFunOutput {Tp} `{IsTpDesc Tp} {Ts n} : nthFunInput Ts n -> Type@{entree_u} :=
+  match Ts return nthFunInput Ts n -> Type with
+  | nil => fun (v:Empty_set) => match v with end
+  | T :: Ts' =>
+      match n return nthFunInput (T::Ts') n -> Type with
+      | 0 => fun args => FunOutput args
+      | S n' => nthFunOutput (Ts:=Ts') (n:=n')
+      end
+  end.
+
 
 Section FixTree.
 
@@ -52,10 +74,32 @@ essentially just a nat, but we make it a distinct type to make things clearer *)
 Inductive FunIx (T:Tp) : Type@{entree_u} :=
 | MkFunIx (n:nat).
 
+(* Get the index from a FunIx *)
 Definition funIxIx {T} (f:FunIx T) : nat :=
   match f with
   | MkFunIx _ n => n
   end.
+
+(* A list of function indexes with the given types *)
+Fixpoint FunIxs (Ts : list Tp) : Type@{entree_u} :=
+  match Ts with
+  | nil => unit
+  | T :: Ts' => FunIx T * FunIxs Ts'
+  end.
+
+(* Get the head index of a non-empty FunIxs list *)
+Definition headFunIx {T Ts} (ixs : FunIxs (T::Ts)) : FunIx T := fst ixs.
+
+(* Get the tail of a non-empty FunIxs list *)
+Definition tailFunIx {T Ts} (ixs : FunIxs (T::Ts)) : FunIxs Ts := snd ixs.
+
+(* Make a FunIxs list from starting at a given natural number *)
+Fixpoint mkFunIxs Ts n : FunIxs Ts :=
+  match Ts return FunIxs Ts with
+  | nil => tt
+  | T :: Ts' => (MkFunIx T n, mkFunIxs Ts' (S n))
+  end.
+
 
 (*
 Fixpoint tpElem (T : TpDesc) : Type@{entree_u} :=
@@ -142,9 +186,9 @@ Variant fixtreeF (F : Type@{entree_u} -> Type@{entree_u}) (R:Type@{entree_u}) : 
   | Fx_TauF (t : F R)
   | Fx_VisF (e : E) (k : encodes e -> F R)
   | Fx_CallF (call : FunCall) (k : FunCallRet call -> F R)
-  | Fx_MkFunF (T : Tp)
-      (body : FunIx T -> forall (args:FunInput T), F (FunOutput args))
-      (k : FunIx T -> F R)
+  | Fx_MkFunsF (Ts : list Tp)
+      (body : FunIxs Ts -> forall n (args:nthFunInput Ts n), F (nthFunOutput args))
+      (k : FunIxs Ts -> F R)
 .
 
 (* "Tying the knot" by defining entrees as the greatest fixed-point of fixtreeF *)
@@ -156,13 +200,13 @@ Arguments Fx_RetF {_ _} _.
 Arguments Fx_TauF {_ _} _.
 Arguments Fx_VisF {_ _} _ _.
 Arguments Fx_CallF {_ _} _ _.
-Arguments Fx_MkFunF {_ _ _} _ _.
+Arguments Fx_MkFunsF {_ _ _} _ _.
 Notation fixtree' R := (fixtreeF (fixtree) R).
 Notation Fx_Tau t := {| _fxobserve := Fx_TauF t |}.
 Notation Fx_Ret r := {| _fxobserve := Fx_RetF r |}.
 Notation Fx_Vis e k := {| _fxobserve := Fx_VisF e k |}.
 Notation Fx_Call call k := {| _fxobserve := Fx_CallF call k |}.
-Notation Fx_MkFun body k := {| _fxobserve := Fx_MkFunF body k |}.
+Notation Fx_MkFuns body k := {| _fxobserve := Fx_MkFunsF body k |}.
 
 (* "Observe" the top-most constructor of an fixtree by unwrapping it one step *)
 Definition fxobserve {R} (t : fixtree R) : fixtree' R :=
@@ -182,7 +226,7 @@ Definition subst' {R S : Type@{entree_u}}
     | Fx_TauF t => Fx_Tau (_subst (fxobserve t))
     | Fx_VisF e k => Fx_Vis e (fun x => _subst (fxobserve (k x)))
     | Fx_CallF call k => Fx_Call call (fun x => _subst (fxobserve (k x)))
-    | Fx_MkFunF body k => Fx_MkFun body (fun x => _subst (fxobserve (k x)))
+    | Fx_MkFunsF body k => Fx_MkFuns body (fun x => _subst (fxobserve (k x)))
     end.
 
 (* Wrap up subst' so it operates on an fixtree instead of an fixtree' *)
@@ -256,8 +300,30 @@ Definition callFxInterp (defs : FxInterps) (call : FunCall)
       end
   end.
 
+(* A single function that gives an interpretation for a list of types *)
+Definition MultiFxInterp Ts : Type@{entree_u} :=
+  forall n (args:nthFunInput Ts n), fixtree (nthFunOutput args).
+
+(* Make a MultiFxInterp from a single FxInterp *)
+Definition mkMultiFxInterp1 T (f: FxInterp T) : MultiFxInterp (T::nil) :=
+  fun n =>
+    match n return forall (args:nthFunInput (T::nil) n), fixtree (nthFunOutput args) with
+    | 0 => fun args => f args
+    | S n' => fun (args:Empty_set) => match args with end
+    end.
+
+(* Turn a multi-interpretation into a list of interpretations *)
+Fixpoint multiFxInterpList {Ts} : MultiFxInterp Ts -> FxInterps :=
+  match Ts return MultiFxInterp Ts -> FxInterps with
+  | nil => fun _ => nil
+  | T :: Ts' =>
+      fun f => existT FxInterp T (f 0) :: multiFxInterpList (fun n => f (S n))
+  end.
+
+(* FIXME: no longer needed... *)
 Definition consFxInterp (defs : FxInterps) {T} (d : FxInterp T) : FxInterps :=
   app defs (existT FxInterp T d :: nil).
+
 
 CoFixpoint interp_fixtree' {R} (err:entree E R) (defs : FxInterps)
   (ot : fixtree' R) : entree E R :=
@@ -271,10 +337,10 @@ CoFixpoint interp_fixtree' {R} (err:entree E R) (defs : FxInterps)
           Tau (interp_fixtree' err defs (fxobserve (FixTree.bind m k)))
       | None => err
       end
-  | Fx_MkFunF body k =>
-      let funIx := MkFunIx _ (length defs) in
-      Tau (interp_fixtree' err (consFxInterp defs (body funIx))
-             (fxobserve (k funIx)))
+  | Fx_MkFunsF body k =>
+      let funIxs := mkFunIxs _ (length defs) in
+      Tau (interp_fixtree' err (app defs (multiFxInterpList (body funIxs)))
+             (fxobserve (k funIxs)))
   end.
 
 Definition interp_fixtree {R} (err:entree E R) (defs : FxInterps) (t : fixtree R)
@@ -289,13 +355,13 @@ Arguments Fx_RetF {_ _ _ _ _} _.
 Arguments Fx_TauF {_ _ _ _ _} _.
 Arguments Fx_VisF {_ _ _ _ _} _ _.
 Arguments Fx_CallF {_ _ _ _ _} _ _.
-Arguments Fx_MkFunF {_ _ _ _ _ _} _ _.
+Arguments Fx_MkFunsF {_ _ _ _ _ _} _ _.
 Notation fixtree' Tp E R := (fixtreeF Tp E (fixtree Tp E) R).
 Notation Fx_Tau t := {| _fxobserve := Fx_TauF t |}.
 Notation Fx_Ret r := {| _fxobserve := Fx_RetF r |}.
 Notation Fx_Vis e k := {| _fxobserve := Fx_VisF e k |}.
 Notation Fx_Call call k := {| _fxobserve := Fx_CallF call k |}.
-Notation Fx_MkFun body k := {| _fxobserve := Fx_MkFunF body k |}.
+Notation Fx_MkFuns body k := {| _fxobserve := Fx_MkFunsF body k |}.
 
 
 (*** Notations for monadic computations ***)

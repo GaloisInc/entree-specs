@@ -36,7 +36,6 @@ Definition defaultAKElem AK : arithKindElem AK :=
 Inductive ArithUnOp : ArithKind -> ArithKind -> Type@{entree_u} :=
 | UnOp_BVToNat w : ArithUnOp (Kind_bv w) Kind_nat
 | UnOp_NatToBV w : ArithUnOp Kind_nat (Kind_bv w)
-| UnOp_Neg AK : ArithUnOp AK AK
 .
 
 Inductive ArithBinOp : ArithKind -> ArithKind -> ArithKind -> Type@{entree_u} :=
@@ -421,7 +420,7 @@ Fixpoint funElem (E:EvType) env T : Type@{entree_u} :=
   | Tp_M R => fixtree TpDesc E (tpElem nil (tpSubst 0 env R))
   | Tp_Pi K B => forall (elem:kindElem K), funElem E (envConsElem elem env) B
   | Tp_Arr A B => tpElem env A -> funElem E env B
-  | _ => Empty_set
+  | _ => unit
   end.
 
 (* Convert a monadic function to an FxInterp relative to an environment *)
@@ -434,9 +433,28 @@ Fixpoint funElemToInterpEnv {E env T} : funElem E env T ->
   | Tp_M R => fun m _ => m
   | Tp_Pi K B => fun f args => funElemToInterpEnv (f (projT1 args)) (projT2 args)
   | Tp_Arr A B => fun f args => funElemToInterpEnv (f (fst args)) (snd args)
-  | _ => fun (v:Empty_set) => match v with end
+  | _ => fun _ (v:Empty_set) => match v with end
   end.
 
 (* Convert a monadic function to an FxInterp in the top-level environment *)
 Definition funElemToInterp {E T} : funElem E nil T -> @FxInterp TpDesc _ E T :=
   funElemToInterpEnv.
+
+(* Convert an FxInterp to a monadic function relative to an environment *)
+Fixpoint funInterpToElemEnv {E env T} : (forall args:TpFunInput env T,
+                                            fixtree TpDesc E (TpFunOutput args)) ->
+                                        funElem E env T :=
+  match T return (forall args:TpFunInput env T,
+                     fixtree TpDesc E (TpFunOutput args)) ->
+                 funElem E env T with
+  | Tp_M R => fun f => f tt
+  | Tp_Pi K B => fun f elem =>
+                   funInterpToElemEnv (fun args => f (existT _ elem args))
+  | Tp_Arr A B => fun f arg =>
+                    funInterpToElemEnv (fun args => f (arg, args))
+  | _ => fun _ => tt
+  end.
+
+(* Convert an FxInterp to a monadic function in the top-level environment *)
+Definition funInterpToElem {E T} : @FxInterp TpDesc _ E T -> funElem E nil T :=
+  funInterpToElemEnv.
