@@ -91,7 +91,7 @@ Fixpoint FunIxs (Ts : list Tp) : Type@{entree_u} :=
 Definition headFunIx {T Ts} (ixs : FunIxs (T::Ts)) : FunIx T := fst ixs.
 
 (* Get the tail of a non-empty FunIxs list *)
-Definition tailFunIx {T Ts} (ixs : FunIxs (T::Ts)) : FunIxs Ts := snd ixs.
+Definition tailFunIxs {T Ts} (ixs : FunIxs (T::Ts)) : FunIxs Ts := snd ixs.
 
 (* Make a FunIxs list from starting at a given natural number *)
 Fixpoint mkFunIxs Ts n : FunIxs Ts :=
@@ -304,12 +304,27 @@ Definition callFxInterp (defs : FxInterps) (call : FunCall)
 Definition MultiFxInterp Ts : Type@{entree_u} :=
   forall n (args:nthFunInput Ts n), fixtree (nthFunOutput args).
 
+(* Make a MultiFxInterp for the empty list of types *)
+Definition mkMultiFxInterp0 : MultiFxInterp nil :=
+  fun n (args:Empty_set) => match args with end.
+
 (* Make a MultiFxInterp from a single FxInterp *)
 Definition mkMultiFxInterp1 T (f: FxInterp T) : MultiFxInterp (T::nil) :=
   fun n =>
-    match n return forall (args:nthFunInput (T::nil) n), fixtree (nthFunOutput args) with
+    match n return
+          forall (args:nthFunInput (T::nil) n), fixtree (nthFunOutput args) with
     | 0 => fun args => f args
     | S n' => fun (args:Empty_set) => match args with end
+    end.
+
+(* Add an interpretation to a MultiFxInterp *)
+Definition consMultiFxInterp {T Ts} (f: FxInterp T) (fs : MultiFxInterp Ts)
+  : MultiFxInterp (T :: Ts) :=
+  fun n =>
+    match n return
+          forall (args:nthFunInput (T::Ts) n), fixtree (nthFunOutput args) with
+    | 0 => fun args => f args
+    | S n' => fun args => fs n' args
     end.
 
 (* Turn a multi-interpretation into a list of interpretations *)

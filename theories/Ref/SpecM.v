@@ -114,9 +114,6 @@ Definition FixS {E T} (f: FunIx T -> specFun E nil T) : SpecM E (FunIx T) :=
     (fun ixs => Fx_Ret (headFunIx ixs)).
 
 
-FIXME: finish defining MultiFixS
-
-
 (**
  ** Defining a multi-way fixed point
  **)
@@ -127,6 +124,13 @@ Fixpoint arrowIxs (Ts : list TpDesc) (A : Type@{entree_u}) : Type@{entree_u} :=
   | T :: Ts' => FunIx T -> arrowIxs Ts' A
   end.
 
+Fixpoint applyArrowIxs {Ts A} : arrowIxs Ts A -> FunIxs Ts -> A :=
+  match Ts return arrowIxs Ts A -> FunIxs Ts -> A with
+  | nil => fun f _ => f
+  | T :: Ts' => fun f ixs => applyArrowIxs (f (headFunIx ixs)) (tailFunIxs ixs)
+  end.
+
+(* FIXME: do we still need this? *)
 Definition isSpecTp T : Prop :=
   match T with
   | Tp_M _ => True
@@ -142,6 +146,18 @@ Fixpoint specFuns E Ts : Type@{entree_u} :=
   | T :: Ts' => specFun E nil T * specFuns E Ts'
   end.
 
+(* FIXME: move this somewhere more relevant *)
+Arguments MultiFxInterp {_ _} _ _.
+
+(* Convert a specFuns tuple to a MultiFxInterp *)
+Fixpoint specFunsToMultiInterp {E Ts} : specFuns E Ts -> MultiFxInterp (SpecEv E) Ts :=
+  match Ts return specFuns E Ts -> MultiFxInterp (SpecEv E) Ts with
+  | nil => fun _ => mkMultiFxInterp0
+  | T :: Ts' =>
+      fun fs =>
+        consMultiFxInterp (funElemToInterp (fst fs)) (specFunsToMultiInterp (snd fs))
+  end.
+
 (* The type of a tuple of spec functions of types Us that take in FunIxs Ts *)
 Fixpoint arrowSpecFuns E (Ts Us : list TpDesc) : Type@{entree_u} :=
   match Us with
@@ -149,19 +165,23 @@ Fixpoint arrowSpecFuns E (Ts Us : list TpDesc) : Type@{entree_u} :=
   | U :: Us' => arrowIxs Ts (specFun E nil U) * arrowSpecFuns E Ts Us'
   end.
 
+(* Apply an arrowSpecFuns list to a list of FunIxs to get a specFuns list *)
+Fixpoint applyArrowSpecFuns {E Ts Us} : arrowSpecFuns E Ts Us -> FunIxs Ts ->
+                                        specFuns E Us :=
+  match Us return arrowSpecFuns E Ts Us -> FunIxs Ts -> specFuns E Us with
+  | nil => fun _ _ => tt
+  | U :: Us' => fun fs ixs => (applyArrowIxs (fst fs) ixs,
+                                applyArrowSpecFuns (snd fs) ixs)
+  end.
+
 Definition MultiFixBodies E Ts : Type@{entree_u} :=
   arrowSpecFuns E Ts Ts.
 
+Definition MultiFixS {E Ts} (funs : MultiFixBodies E Ts) : SpecM E (FunIxs Ts) :=
+  Fx_MkFuns
+    (fun ixs => specFunsToMultiInterp (applyArrowSpecFuns funs ixs))
+    (fun ixs => Fx_Ret ixs).
 
-Definition funIxToElem {T} : isSpecTp T -> FunIx T -> tpElem nil T :=
-  match T return isSpecTp T -> FunIx T -> tpElem nil T with
-  | Tp_M _ => fun _ ix => ix
-  | Tp_Pi _ _ => fun _ ix => ix
-  | Tp_Arr _ _ => fun _ ix => ix
-  | _ => fun (pf:False) _ => match pf with end
-  end.
-
-Fixpoint multiFixS {E} (Ts : list TpDesc) : MultiFixBodies E Ts ->
-                                            SpecM E (specFuns E Ts) :=
-  match Ts return MultiFixBodies E Ts -> SpecM E (specFuns E Ts) with
-  end.
+Definition LetRecS {E Ts A}
+  (funs : MultiFixBodies E Ts) (body : FunIxs Ts -> SpecM E A) : SpecM E A :=
+  BindS (MultiFixS funs) body.
