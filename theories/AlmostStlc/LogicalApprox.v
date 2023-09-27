@@ -20,6 +20,8 @@ Require Import Lia.
 Require Import Coq.Classes.Morphisms.
 Require Export ClosingSubst.
 Require Export EnTreeStep.
+From Paco Require Import paco.
+
 Definition valid_denote {t} (vv : denote_type t) : Prop :=
   types_equiv t vv vv.
 
@@ -188,6 +190,12 @@ Proof.
   - intros. apply lower_approx_val_aux in H. auto.
 Qed.
 
+Lemma lower_approx_val' : forall n m, n <= m -> forall t vv v, approx_val m t vv v -> approx_val n t vv v.
+Proof.
+  intros. inversion H; auto.
+  eapply lower_approx_val; try eapply H0. lia.
+Qed.
+
 Lemma lower_approx_comp : forall n j, n < j -> forall t MR c m R,
     (forall n m t v vv, n < m -> (R m t v vv : Prop) -> R n t v vv) ->
     approx_comp (t := t) (MR := MR) j R c m ->
@@ -196,6 +204,15 @@ Proof.
   intros n j Hnj. red in Hnj. dependent induction Hnj.
   - intros. apply lower_approx_comp_aux2; auto.
   - intros. apply lower_approx_comp_aux2 in H0; auto.
+Qed.
+
+Lemma lower_approx_comp' : forall n j, n <= j -> forall t MR c m R,
+    (forall n m t v vv, n < m -> (R m t v vv : Prop) -> R n t v vv) ->
+    approx_comp (t := t) (MR := MR) j R c m ->
+    approx_comp n R c m.
+Proof.
+  intros. inversion H; auto.
+  eapply lower_approx_comp; try apply H1. lia. eauto.
 Qed.
 
 (* 
@@ -221,22 +238,75 @@ Qed.
    whether you decrement steps in the ret case 
 
 *)
-
-Lemma approx_comp_multi_step t MR c m1 m2 j1 j2 :
-  multi_step j1 m1 m2 ->
-  approx_comp (t := t) (MR := MR) j2 approx_val m2 c ->
-  approx_comp (j1 + j2) approx_val m1 c.
+(*
+Lemma approx_comp_multi_step t MR c m1 m2 n :
+  multi_step 1 m1 m2 ->
+  approx_comp (t := t) (MR := MR) n approx_val m2 c ->
+  approx_comp n approx_val m1 c.
 Proof.
-  intros Hstep Happrox.
-  inversion Happrox. subst. clear Happrox. rename H into Happrox.
-  constructor. intros j' Hj'12.
+  intros. dependent destruction H. dependent destruction H. dependent destruction H0.
+  constructor. intros. inversion H1. subst.
   split.
-  - intros vv Hstepj'.
-    assert (j2 >0). admit.
-    assert (j' - j1 < j2). admit. specialize (Happrox (j' - j1) H0).
-    destruct Happrox as [Hret _].
-    (* here is a *)
-Abort.
+  - intros. rewrite H0 in H4.
+  rewrite <- H in H1.
+*)
+
+
+(* could multi_step j t1 t2 supposed to be at most j steps not exactly j steps?, maybe discuss with nick *)
+Lemma approx_comp_multi_step_1 t MR c m1 m2 j2 :
+  multi_step 1 m1 m2 ->
+  approx_comp (t := t) (MR := MR) j2 approx_val m2 c ->
+  approx_comp (S j2) approx_val m1 c.
+Proof.
+  intros Hstep Happrox. constructor.
+  intros. destruct j2 as [ | j2].
+  { 
+    assert (j' = 0). lia. subst.
+    clear - Hstep. dependent destruction Hstep.
+    dependent destruction Hstep. dependent destruction H0.
+    split.
+    intros. rewrite H0 in H1. dependent destruction H1.  pinversion H1. inversion CHECK.
+    intros. dependent destruction H1. exfalso.
+    rewrite H0 in H1. unfold call_term in H1. destruct (call_mrec x xR vvcall).
+    setoid_rewrite bind_trigger in H1. setoid_rewrite bind_vis in H1. pinversion H1. inversion CHECK.
+  }
+  dependent destruction Happrox.
+  destruct j' as [ | j''].
+  { split.
+    - intros. dependent destruction H1. rewrite H1 in Hstep. dependent destruction Hstep.
+      dependent destruction H2. pinversion H1. inversion CHECK.
+    - intros. dependent destruction H1. clear - H1 Hstep. exfalso.
+      rewrite H1 in Hstep. dependent destruction Hstep. dependent destruction H0.
+      unfold call_term in H. destruct (call_mrec x xR vvcall). setoid_rewrite bind_trigger in H.
+      setoid_rewrite bind_vis in H. pinversion H. inversion CHECK.
+  }
+  remember (S j'') as j'.
+  assert (Hj' : j' - 1 < S j2). lia.
+  specialize (H _ Hj'). destruct H as [Hret Hstuck].
+  split.
+  - intros. clear Hstuck.
+    assert (multi_step (j' - 1) m2 (ret vv)).
+    dependent destruction Hstep. dependent destruction H. rewrite H in H1.
+    dependent destruction Hstep. rewrite <- H. dependent destruction H2. pinversion H2. inversion CHECK.
+    dependent destruction H4. cbn. assert (n - 0 = n). lia. rewrite H4. apply eqit_inv_Tau in H3.
+    rewrite H3. auto.
+    eapply Hret in H1. destruct H1 as [v [Hv1 Hv2]]. eexists. split; eauto.
+    eapply lower_approx_val'; try apply Hv2. lia.
+ - intros. clear Hret.
+   assert (multi_step (j' - 1) m2 ((vv <- call_term x xR vvcall;; k vv))).
+   dependent destruction Hstep. dependent destruction H. rewrite H in H1.
+   dependent destruction Hstep. rewrite <- H. dependent destruction H2.
+   unfold call_term in H2. destruct (call_mrec x xR vvcall). setoid_rewrite bind_trigger in H2.
+   setoid_rewrite bind_vis in H2. pinversion H2. inversion CHECK.
+   dependent destruction H4. cbn. assert (n - 0 = n). lia. rewrite H4.
+   apply eqit_inv_Tau in H3. rewrite H3. auto.
+   eapply Hstuck in H1. 
+   destruct H1 as [vcall [E [c' [HE1 [HE2 [HE3 HE4]]]]]].
+   exists vcall, E, c'. split; [ | split; [ | split] ]; auto.
+   + eapply lower_approx_val'; try apply HE1. lia.
+   + intros. eapply HE4; auto. lia.
+Qed.
+
 (* may also need that vv is valid *)
 Inductive closing_subst_approx (n : nat) : forall Γ, denote_ctx Γ -> closing_subst Γ ->  Prop :=
   | closing_subst_approx_nil : closing_subst_approx n nil tt tt
@@ -258,69 +328,6 @@ Proof.
 Qed.
 
 
-
-
-
-(* notably properness is gone, that may make things more complicated
-
-   might cause complications especially in the value cases
-Lemma proper_approx_aux : forall n,
-    (forall t v vv1 vv2, types_equiv t vv1 vv2 -> approx_val n t vv1 v -> approx_val n t vv2 v) /\
-    (forall t MR c m1 m2, comp_equiv_rutt (t := t) (MR := MR) m1 m2 -> 
-       approx_comp n approx_val m1 c -> approx_comp n approx_val m2 c).
-Proof.
-  intros n. induction n as [ n IHn ] using (well_founded_induction lt_wf).
-  assert (IHv : forall y, y < n -> 
-           (forall (t : vtype) (v : closed_value t) (vv1 vv2 : denote_type t),
-         types_equiv t vv1 vv2 -> approx_val y t vv1 v -> approx_val y t vv2 v)).
-  { intros. apply IHn in H. destruct H. eauto. }
-  assert (IHc : forall y, y < n -> 
-           (forall t MR c m1 m2, comp_equiv_rutt (t := t) (MR := MR) m1 m2 -> 
-       approx_comp y approx_val m1 c -> approx_comp y approx_val m2 c)).
-  { intros. apply IHn in H. destruct H. eauto. }
-  clear IHn.
-  split; intros.
-  - destruct n. simp approx_val. auto.
-    induction t.
-    + red in v. dependent destruction v; try inversion x. simp approx_val in *.
-      simp types_equiv in H. subst. auto.
-    + simp approx_val. simp approx_val in H0. 
-      red in v. clear - H H0 IHt. dependent induction v; try inversion x.
-      * dependent destruction H0. simp types_equiv in H. dependent destruction H.
-        constructor.
-      * dependent destruction H0. simp types_equiv in H.
-        dependent destruction H. rename b into vv1. rename l2 into vv2.
-        constructor; eauto.
-        eapply IHv2; eauto. simp types_equiv.
-    + red in v. dependent destruction v; try inversion x.
-      simp types_equiv in H. destruct vv1 as [vv11 vv12]. destruct vv2 as [vv21 vv22].
-      dependent destruction H. cbn in *. simp approx_val in *.
-      destruct H0. split; eauto.
-    + red in v. dependent destruction v; try inversion x.
-      rename vv1 into f1. rename vv2 into f2. simp types_equiv in H. simp approx_val.
-      intros vv v m' Hm' Hvv Hv.
-      apply H in Hvv as Hvv'.
-      eapply lower_approx_comp_aux1 with (P := fun m' => m' < S n) (R1 := approx_val); eauto. intros. lia.
-      intros. split; intros; auto.
-      eapply IHc; eauto. simp approx_val in H0. 
-      eapply lower_approx_comp_aux1 with (P := fun m' => m' < S n); eauto. lia.
-      intros. simpl. split; intros; auto.
-  - constructor. intros. inversion H0. subst. specialize (H2 H1) as [Hret Hstuck].
-    split.
-    + intros. rewrite <- H in H2. eapply Hret. auto.
-    + intros. rewrite <- H in H2. apply Hstuck in H2. eauto.
-Qed.
-
-#[local] Instance proper_approx_val {n t} : Morphisms.Proper (types_equiv t ==> eq ==> Basics.flip Basics.impl) (approx_val n t).
-Proof.
-  repeat intro. subst. destruct (proper_approx_aux n). eapply H0; eauto. symmetry. auto.
-Qed.
-
-#[local] Instance proper_approx_comp {n t MR} : Morphisms.Proper (comp_equiv_rutt (t := t) (MR := MR)  ==> eq ==> Basics.flip Basics.impl) (approx_comp n approx_val).
-Proof.
-  repeat intro. subst. destruct (proper_approx_aux n). eapply H2; eauto. symmetry. auto.
-Qed.
-*)
 #[global] Instance proper_approx_comp {n t MR} : 
   Proper (eq_itree (R1 := denote_type t) eq ==> eq ==> Basics.flip Basics.impl)
          (approx_comp (MR := MR) n approx_val).
@@ -333,6 +340,80 @@ Proof.
   - intros. setoid_rewrite Hm12 in H0. eauto.
 Qed.
 
+
+Lemma approx_comp_multi_step t MR c m1 m2 j1 j2 :
+  multi_step j1 m1 m2 ->
+  approx_comp (t := t) (MR := MR) j2 approx_val m2 c ->
+  approx_comp (j1 + j2) approx_val m1 c.
+Proof.
+  revert t MR c m1 m2 j2. induction j1.
+  - cbn. intros. dependent destruction H. rewrite H. auto.
+  - cbn. intros. dependent destruction H. eapply IHj1 in H; eauto.
+    eapply approx_comp_multi_step_1; eauto. econstructor; eauto.
+    constructor. reflexivity.
+Qed.
+    
+#[global] Instance multi_step_approx_comp_proper t MR n m :
+  Proper (multi_step n ==> eq ==> Basics.flip Basics.impl) (approx_comp (t := t) (MR := MR) m approx_val).
+Proof.
+  repeat intro. subst. eapply approx_comp_multi_step in H1; eauto.
+  eapply lower_approx_comp'; try apply H1; auto. lia.
+  intros. eapply lower_approx_val; try apply H2; auto.
+Qed.
+
+
+Lemma approx_comp_eval_rel_stuck1 t MR (c1 c2 : comp t [] MR) m n :
+  eval_rel_stuck c1 (inr c2) ->
+  approx_comp n approx_val m c1 -> approx_comp n approx_val m c2.
+Proof.
+  intros Heval. dependent induction Heval; auto.
+  specialize (IHHeval c2 m eq_refl). intros. apply IHHeval.
+  inversion H0. subst. constructor. intros j Hj.
+  specialize (H1 j Hj) as [Hret Hstuck]. split.
+  - clear Hstuck. intros. apply Hret in H1. destruct H1 as [v [Hv1 Hv2]].
+    exists v. split; auto. clear - Hv1 H. dependent destruction Hv1. 
+    + inversion H. subst. inversion H0. subst. rewrite H1 in H2. injection H2. intros. subst. auto.
+    + inversion H. subst. rewrite H0 in H1. discriminate.
+  -  clear Hret. intros. apply Hstuck in H1. 
+     destruct H1 as [vcall [E [c' [HE1 [HE2 [HE3 HE4] ]]]]].
+     exists vcall, E, c'. split; auto. split; auto.
+     clear - HE2 H. dependent destruction HE2.
+     + inversion H. subst. inversion H0. subst. rewrite H1 in H2. injection H2. intros.
+       subst. auto.
+     + inversion H. subst. assert (step c' = inl None). eapply stuck_call_stuck'. eauto.
+       rewrite H1 in H2. discriminate.
+Qed.
+
+Lemma approx_comp_eval_rel_stuck2 t MR (c1 c2 : comp t [] MR) m n :
+  eval_rel_stuck c1 (inr c2) ->
+  approx_comp n approx_val m c2 -> approx_comp n approx_val m c1.
+Proof.
+  intros Heval. dependent induction Heval; auto. intros H0.
+  specialize (IHHeval c2 m eq_refl H0). 
+  clear H0. inversion IHHeval. subst. constructor.
+  intros j Hj. specialize (H0 j Hj). destruct H0 as [Hret Hstuck]. split.
+  - clear Hstuck. intros. eapply Hret in H0.
+    destruct H0 as [v [Hv1 Hv2]]. exists v. split; auto.
+    econstructor; eauto.
+  - clear Hret. intros. eapply Hstuck in H0.
+    destruct H0 as [vcall [E [c' [HE1 [HE2 [HE3 HE4] ]]]]].
+    exists vcall, E, c'. split; auto. split; auto.
+    econstructor; eauto.
+Qed.
+(*
+Lemma approx_comp_multi_step' t MR c m1 m2 n j : 
+  multi_step j m1 m2 ->
+  approx_comp (t := t) (MR := MR) n approx_val m1 c ->
+  approx_comp n approx_val m2 c.
+Proof.
+  intros Hstep Happrox.
+  constructor. intros. inversion Happrox.
+  subst. split.
+  - intros vv Hstep'.
+Abort. (* actually this is wrong, m1 <=n c might hold because n is not enough steps
+          to distinguish m1 and c
+        *)
+*)
 (* needs to include this new bodies steps t *)
 Equations log_rel_bodies_step {MR R1 R2} 
           (n : nat)
@@ -343,6 +424,29 @@ Equations log_rel_bodies_step {MR R1 R2}
    approx_val n (Arrow t1 (R1 :: MR) t2) (fun vv => f (inl vv)) (val_abs cbody) /\
       log_rel_bodies_step n (fun vv => f (inr vv)) bodies.
 
+Lemma lower_log_rel_bodies_step MR R1 R2
+          (j1 j2: nat)
+          (dbodies : forall arg : denote_call_frame R2, mtree (denote_mfix_ctx (R1 :: MR)) (encodes arg))
+          (bodies : mfix_bodies [] MR R1 R2) : 
+  j1 < j2 ->
+  log_rel_bodies_step j2 dbodies bodies -> log_rel_bodies_step j1 dbodies bodies.
+Proof.
+  revert bodies dbodies. intros bodies. dependent induction bodies.
+  - setoid_rewrite log_rel_bodies_step_equation_1. auto.
+  - setoid_rewrite log_rel_bodies_step_equation_2. intros. destruct H0.
+    split. eapply lower_approx_val; try apply H0; auto. eauto.
+Qed.
+
+Lemma lower_log_rel_bodies_step' MR R1 R2
+          (j1 j2: nat)
+          (dbodies : forall arg : denote_call_frame R2, mtree (denote_mfix_ctx (R1 :: MR)) (encodes arg))
+          (bodies : mfix_bodies [] MR R1 R2) : 
+  j1 <= j2 ->
+  log_rel_bodies_step j2 dbodies bodies -> log_rel_bodies_step j1 dbodies bodies.
+Proof.
+  intros. destruct H. auto.
+  eapply lower_log_rel_bodies_step; try apply H0. lia.
+Qed.
 
 Definition comp_rel {t Γ MR} 
            (m : denote_ctx Γ -> mtree (denote_mfix_ctx MR) (denote_type t))
@@ -372,3 +476,11 @@ Definition bodies_rel {Γ MR R1 R2}
   forall n (hyps : denote_ctx Γ) (ρ : closing_subst Γ), 
     closing_subst_approx n Γ hyps ρ -> 
      log_rel_bodies_step n (dbodies hyps) (close_bodies Γ ρ bodies).
+
+Definition bounded_bodies_rel {Γ MR R1 R2} n
+           (dbodies : denote_ctx Γ -> forall arg : denote_call_frame R2, mtree (denote_mfix_ctx (R1 :: MR)) (encodes arg))
+           (bodies : mfix_bodies Γ MR R1 R2) : Prop :=
+  forall j (hyps : denote_ctx Γ) (ρ : closing_subst Γ), 
+    j <= n ->
+    closing_subst_approx j Γ hyps ρ -> 
+     log_rel_bodies_step j (dbodies hyps) (close_bodies Γ ρ bodies).

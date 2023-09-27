@@ -28,7 +28,8 @@ From ITree Require Import
      Eq.Paco2.
 Require Export EnTreeStep.
 Section RecursionTrace.
-
+(* interp_mrec_call_term should be able to rewrite with ≅*)
+Locate interp_mrec_call_term.
 Context (D E : Type) `{EncodedType D} `{EncodedType E}.
 Context (bodies : forall (d : D), entree (D + E) (encodes d)).
 
@@ -106,7 +107,7 @@ Proof.
       * rewrite H2 in Heqx. rewrite interp_mrec_vis_inr in Heqx. pinversion Heqx; inversion CHECK.
 Qed.
 
-Lemma recurstion_trace_vis R (t : entree (D + E) R) (e : E) k n :
+Lemma recursion_trace_vis R (t : entree (D + E) R) (e : E) k n :
   multi_step n (interp_mrec bodies t) (Vis e (fun x => interp_mrec bodies (k x))) ->
   exists d, recursion_trace n t d (Vis e (fun x => interp_mrec bodies (k x))).
 Proof.
@@ -144,114 +145,42 @@ Proof.
       * rewrite H2 in Heqx. rewrite interp_mrec_vis_inr in Heqx. pinversion Heqx; inversion CHECK.
 Qed.
 
-
-End RecursionTrace.
-(* need lemmas relating bind call_term and vis*)
-(*
-(* I think this needs to be changed to rutt for some event transitive relations
-   rutt_trans' rutt_proper
-
- *)
-Inductive recursion_trace {A : Type} : 
-  entree (D + E) A -> list D -> entree E A -> Prop := 
-  | recursion_trace_ret_in t vv : t ≈ ret vv -> recursion_trace t [] (ret vv)
-  | recursion_trace_inr_in t (e : E) k1 k2  : 
-    t ≈ (Vis (inr e) k1) -> (forall x, interp_mrec bodies (k1 x) ≈ interp_mrec bodies (k2 x)) -> 
-    recursion_trace t [] (Vis e (fun vv => (interp_mrec bodies (k2 vv))))
-  | recursion_trace_inl_in t1 (d : D) k1 t2 l t3: 
-    t1 ≈ (Vis (inl d) k1) ->
-    t2 ≈ (bind (bodies d) k1) ->
-    recursion_trace t2 l t3 ->
-    recursion_trace t1 (d :: l) t3
-
-.
-
-
-Instance recursion_trace_eutt A : Proper (eutt eq ==> eq ==> eq ==> Basics.flip Basics.impl) (@recursion_trace A).
+Lemma multi_step_interp_mrec_vis_inv R (t : entree (D + E) R) e k n : 
+  multi_step n (interp_mrec bodies t) (Vis e k) ->
+  exists k', forall x, k x ≅ interp_mrec bodies (k' x).
 Proof.
-  repeat intro. subst. generalize dependent x.
-  induction H4.
-  - constructor. rewrite H2. auto.
-  - intros. econstructor. rewrite H3. eauto. auto.
-  - intros. econstructor; eauto. rewrite H3. auto.
-Qed.
-
-Lemma recursion_trace_ret R (t : entree (D + E) R) r: 
-  interp_mrec bodies t ≈ ret r ->
-  exists (l : list D), recursion_trace t l (ret r).
-Proof.
-  intros Hret. punfold Hret. red in Hret.
-  cbn in Hret. remember (RetF r) as y.
-  remember (observe (interp_mrec bodies t)) as x.
-  assert (go _ _ x ≅ interp_mrec bodies t). subst. rewrite <- entree_eta. reflexivity.
-  clear Heqx. generalize dependent H1. revert t.
-  hinduction Hret before bodies; intros; inv Heqy.
-  - unfold interp_mrec in H1.
-    destruct (observe t) eqn : Heq; try destruct e.
-    + setoid_rewrite interp_mrec_ret in H1. apply eqit_Ret_inv in H1. subst.
-      symmetry in Heq. apply simpobs in Heq. exists []. constructor. rewrite Heq. reflexivity.
-    + setoid_rewrite interp_mrec_tau in H1. pinversion H1. inv CHECK.
-    + setoid_rewrite interp_mrec_vis_inl in H1. pinversion H1; inv CHECK.
-    + setoid_rewrite interp_mrec_vis_inr in H1. pinversion H1; inv CHECK.
-  - unfold interp_mrec in H1. destruct (observe t) eqn : Heq; try destruct e.
-    + setoid_rewrite interp_mrec_ret in H1. pinversion H1; inv CHECK. inv CHECK0.
-    + setoid_rewrite interp_mrec_tau in H1. specialize (IHHret r eq_refl t0). 
-      assert (t1 ≅ interp_mrec bodies t0). pinversion H1; try inv CHECK; try inv CHECK0.
-      apply REL. rewrite <- entree_eta in IHHret. apply IHHret in H2.
-      destruct H2 as [l Hl]. exists l. symmetry in Heq. apply simpobs in Heq.
-      rewrite <- Heq. rewrite tau_eutt. auto.
-    + setoid_rewrite interp_mrec_vis_inl in H1.
-      assert (t1 ≅ (interp_mrec bodies (x <- bodies d;; k x))).
-      pinversion H1; try inv CHECK; try inv CHECK0. auto.
-      specialize (IHHret r eq_refl (x <- bodies d;; k x)).
-      rewrite <- entree_eta in IHHret. specialize (IHHret H2).
-      destruct IHHret as [l Hl].
-      exists (d :: l). eapply recursion_trace_inl_in; eauto. 2 : reflexivity.
-      symmetry in Heq. apply simpobs in Heq. rewrite Heq. reflexivity.
-    + setoid_rewrite interp_mrec_vis_inr in H1. pinversion H1. inv CHECK0.
-Qed.
-
-
-Lemma recursion_trace_vis R (t : entree (D + E) R) e k :
-  interp_mrec bodies t ≈ Vis e (fun x => interp_mrec bodies (k x)) ->
-  exists (l : list D), recursion_trace t l (Vis e (fun x => interp_mrec bodies (k x))).
-Proof.
-  intros Hvis. punfold Hvis. red in Hvis.
-  cbn in Hvis. remember (VisF e (fun x => interp_mrec bodies (k x))) as y.
-  remember (observe (interp_mrec bodies t)) as x.
-  assert (go _ _ x ≅ interp_mrec bodies t). subst. rewrite <- entree_eta. reflexivity.
-  clear Heqx. generalize dependent H1. revert t.
-  hinduction Hvis before bodies; intros; inv Heqy.
-  - inj_existT. subst. unfold interp_mrec in H1.
-    destruct (observe t) eqn : Heq; try destruct e.
-    + setoid_rewrite interp_mrec_ret in H1. pinversion H1.
-    + setoid_rewrite interp_mrec_tau in H1. pinversion H1. inv CHECK.
-    + setoid_rewrite interp_mrec_vis_inl in H1. pinversion H1; inv CHECK.
-    + pclearbot. setoid_rewrite interp_mrec_vis_inr in H1. exists []. 
-      symmetry in Heq. apply simpobs in Heq. rewrite <- Heq.
-      assert (e0 = e). pinversion H1. auto. subst. 
-      econstructor. reflexivity. intros.
-      eapply eqit_Vis_inv in H1. Unshelve. 2: auto. rewrite <- H1. apply REL.
-  - unfold interp_mrec in H1. destruct (observe t) eqn : Heq; try destruct e0.
-    + setoid_rewrite interp_mrec_ret in H1. pinversion H1; inv CHECK. inv CHECK0.
-    + setoid_rewrite interp_mrec_tau in H1. specialize (IHHvis e k eq_refl t0). 
-      assert (t1 ≅ interp_mrec bodies t0). pinversion H1; try inv CHECK; try inv CHECK0.
-      apply REL. rewrite <- entree_eta in IHHvis. apply IHHvis in H2.
-      destruct H2 as [l Hl]. exists l. symmetry in Heq. apply simpobs in Heq.
-      rewrite <- Heq. rewrite tau_eutt. auto.
-    + setoid_rewrite interp_mrec_vis_inl in H1.
-      assert (t1 ≅ (interp_mrec bodies (x <- bodies d;; k0 x))).
-      pinversion H1; try inv CHECK; try inv CHECK0. auto.
-      specialize (IHHvis e k eq_refl (x <- bodies d;; k0 x)).
-      rewrite <- entree_eta in IHHvis. specialize (IHHvis H2).
-      destruct IHHvis as [l Hl].
-      exists (d :: l). eapply recursion_trace_inl_in; eauto. 2 : reflexivity.
-      symmetry in Heq. apply simpobs in Heq. rewrite Heq. reflexivity.
-    + setoid_rewrite interp_mrec_vis_inr in H1. pinversion H1. inv CHECK0.
+  intros Hstep.
+  remember (interp_mrec bodies t) as x.
+  assert (x ≅ interp_mrec bodies t). subst. reflexivity.
+  clear Heqx. rename H1 into Heqx.
+  remember ( (Vis e k)) as y.
+  assert (y ≅  (Vis e k)). subst. reflexivity.
+  clear Heqy. rename H1 into Heqy. generalize dependent t.
+  generalize dependent e. induction Hstep; intros.  
+  - rewrite Heqx, Heqy in H1. clear Heqx Heqy.
+    destruct (eq_itree_case t) as [ | [ | ]].
+    + destruct H2. rewrite H2 in H1. rewrite interp_mrec_ret in H1. pinversion H1.
+    + destruct H2. rewrite H2 in H1. rewrite interp_mrec_tau in H1.
+      pinversion H1. inversion CHECK.
+    + destruct H2 as [ [d | e'] [k' Hk'] ].
+      * rewrite Hk' in H1. rewrite interp_mrec_vis_inl in H1. pinversion H1.
+        inversion CHECK.
+      * rewrite Hk' in H1. rewrite interp_mrec_vis_inr in H1.
+        assert (e = e'). pinversion H1. subst. auto.
+        subst. exists k'. intros. eapply eqit_Vis_inv in H1. symmetry. eauto.
+  - dependent destruction H1. specialize (IHHstep e k Heqy).
+    rewrite H1 in Heqx. destruct (eq_itree_case t) as [ | [ | ]].
+    + destruct H2. rewrite H2 in Heqx. rewrite interp_mrec_ret in Heqx. pinversion Heqx.
+      inversion CHECK.
+    + destruct H2 as [t' Ht']. rewrite Ht', interp_mrec_tau in Heqx.
+      apply eqit_inv_Tau in Heqx. eauto.
+    + destruct H2 as [ [d | e'] [k' Hk'] ].
+      * rewrite Hk', interp_mrec_vis_inl in Heqx. apply eqit_inv_Tau in Heqx.
+        eauto.
+      * rewrite Hk', interp_mrec_vis_inr in Heqx. pinversion Heqx. inversion CHECK.
 Qed.
 
 End RecursionTrace.
-
 
 Lemma call_extract (MR : mfix_ctx) (d : denote_mrec_ctx (denote_mfix_ctx MR)) : 
   exists R (xR : var R MR) t1 t2 (x : var (t1,t2) R)  (vin : denote_type t1),
@@ -272,11 +201,12 @@ Proof.
     exists R', (VarS xR), t1, t2, x, vin. simp call_mrec. destruct (call_mrec x xR vin).
     cbn in H. subst. auto.
 Qed.
-(* did I already prove this somewhere else?
 
-   should these turn into rutts?
- *)
-
+Definition apply_bodies {R1 R2 MR} {tin tout : type} (bodies : forall arg : denote_call_frame R1, mtree (denote_mfix_ctx (R2 :: MR)) (encodes arg))
+           (x : var (tin, tout) R1) (vvin : denote_type tin) 
+  : mtree (denote_mfix_ctx (R2 :: MR)) (denote_type tout) :=
+    let '(d && f) := call_mrec_call_frame x vvin in
+    Functor.fmap f (bodies d).
 
 Section RecursionTraceDen.
   Context (R : call_frame) (MR : mfix_ctx).
@@ -286,45 +216,198 @@ Section RecursionTraceDen.
     | call_den_in (tin tout : type) (x : var (tin, tout) R)
                   (vvin : denote_type tin).
 
-  Definition apply_bodies {tin tout : type} (x : var (tin, tout) R) (vvin : denote_type tin) : mtree (denote_mfix_ctx (R :: MR)) (denote_type tout) :=
-    let '(d && f) := call_mrec_call_frame x vvin in
-    Functor.fmap f (bodies d).
+  
 
   Inductive recursion_trace_den {t : type} :
-    mtree (denote_mfix_ctx (R :: MR)) (denote_type t) -> list call_den -> mtree (denote_mfix_ctx MR) (denote_type t) -> Prop := 
-    | recursion_trace_den_ret_in m vv : comp_equiv_rutt m (ret vv) -> recursion_trace_den m [] (ret vv)
-    | recursion_trace_den_inr m R tin tout (x : var (tin, tout) R) (xR : var R MR)
-                              (vvin : denote_type tin) k1 k2 :
-      comp_equiv_rutt m (vv <- call_term x (VarS xR) vvin;; k1 vv) ->
-      (forall x, interp_mrec bodies (k1 x) ≈ interp_mrec bodies (k2 x)) ->
-      recursion_trace_den m [] (vv <- call_term x xR vvin;; (interp_mrec bodies (k2 vv)))
-    | recursion_trace_den_inl m1 tin tout (x : var (tin, tout) R) (xR : var R MR)
-                              (vvin : denote_type tin) k1 m2 l m3 : 
-      comp_equiv_rutt m1 (vv <- call_term x VarZ vvin;; k1 vv) ->
-      comp_equiv_rutt m2 (vv <- (apply_bodies x vvin);; k1 vv) ->
-      recursion_trace_den m2 l m3 ->
-      recursion_trace_den m1 (call_den_in tin tout x vvin :: l) m3
+    nat -> mtree (denote_mfix_ctx (R :: MR)) (denote_type t) -> list call_den -> mtree (denote_mfix_ctx MR) (denote_type t) -> Prop := 
+  | recursion_trace_den_ret_in t r n t' : t' ≅ ret r -> t ≅ ret r -> recursion_trace_den n t [] t'
+  | recursion_trace_den_inr_in t1 R tin tout (x : var (tin, tout) R) (xR : var R MR)
+                              (vvin : denote_type tin) k1 t2 n :
+    t2 ≅ vv <- call_term x xR vvin;; (interp_mrec bodies (k1 vv)) ->
+    t1 ≅ vv <- call_term x (VarS xR) vvin;; k1 vv ->
+    recursion_trace_den n t1 [] t2
+  | recursion_trace_den_inl_in tin tout (x : var (tin, tout) R) (vvin : denote_type tin) k1 n t1 t2 l :
+    t1 ≅ vv <- call_term x VarZ vvin;; k1 vv ->
+    recursion_trace_den n (bind (apply_bodies bodies x vvin) k1) l t2 ->
+    recursion_trace_den (S n) t1 (call_den_in tin tout x vvin :: l) t2
+  | recursion_trace_den_multistep n m t1 t2 t3 l :
+    multi_step n t1 t2 ->
+    recursion_trace_den m t2 l t3 ->
+    recursion_trace_den (n + m) t1 l t3
   .
 
-  Lemma recursion_trace_den_ret t (m : mtree (denote_mfix_ctx (R :: MR)) (denote_type t)) (vv : denote_type t) :
-    comp_equiv_rutt (interp_mrec bodies m) (ret vv) -> exists l, recursion_trace_den m l (ret vv).
-  Admitted.
+  Instance recursion_trace_den_eq_itree t : Proper (eq ==> eq_itree eq ==> eq ==> eq_itree eq ==> Basics.flip Basics.impl) (@recursion_trace_den t).
+  Proof.
+    repeat intro. subst. 
+    generalize dependent x0. generalize dependent x2. induction H3; intros.
+    - eapply recursion_trace_den_ret_in; eauto. rewrite H2. eauto. rewrite H1. auto.
+    - eapply recursion_trace_den_inr_in. rewrite H2. eauto. rewrite H1. auto.
+    - econstructor; eauto. rewrite H0. eauto. eapply IHrecursion_trace_den; eauto.
+      reflexivity.
+    - econstructor; eauto. 2 : eapply IHrecursion_trace_den; eauto; try reflexivity.
+      rewrite H0. auto.
+  Qed.
 
-  Lemma recursion_trace_den_call t (m : mtree (denote_mfix_ctx (R :: MR)) _) R' tin tout
-        (x : var (tin, tout) R') (xR' : var R' MR) vvin (k : denote_type tout -> mtree (denote_mfix_ctx (R :: MR)) (denote_type t)):
-    comp_equiv_rutt (interp_mrec bodies m) (vv <- call_term x xR' vvin;; interp_mrec bodies (k vv)) ->
-    exists l, recursion_trace_den m l (vv <- call_term x xR' vvin;; interp_mrec bodies (k vv)).
-  Admitted.
+  
+  Inductive call_den_list_rel : list (denote_call_frame R) -> list call_den -> Prop :=
+  | cdlr_nil : call_den_list_rel [] []
+  | cdlr_cons h1 tin tout x vvin t1 t2 :  call_den_list_rel t1 t2 ->
+    h1 = projT1 (call_mrec_call_frame x vvin) -> call_den_list_rel (h1 :: t1) (call_den_in tin tout x vvin :: t2).
+  
 
-(* wts that interp_mrec bodies (apply_bodies vvin) ≈ interp_mrec bodies (call_term x VarZ vvin)
-   I think there might be more needed for this to be used though
-   this is key for the inductive hypothesis
+  Lemma call_den_list_rel_ex1 l1 : exists l2, call_den_list_rel l1 l2.
+  Proof.
+    induction l1. exists []. constructor.
+    destruct IHl1 as [l2 Hl2].
+    specialize (call_extract (R :: MR) (inl a)) as [R' [xR [tin [tout [x [vvin Hcall]]]]] ].
+    dependent destruction xR.
+    2 : { simp call_mrec in Hcall. destruct (call_mrec x xR vvin). discriminate. }
+    simp call_mrec in Hcall.
+    exists (call_den_in _ _ x vvin :: l2). constructor; auto.
+    destruct (call_mrec_call_frame x vvin). injection Hcall. intros. subst. auto.
+ Qed.
+
+ Lemma call_den_list_rel_ex2 l2 : exists l1, call_den_list_rel l1 l2.
+ Proof.
+   induction l2. exists []. constructor.
+   destruct IHl2 as [l1 Hl1].
+   dependent destruction a. exists (projT1 (call_mrec_call_frame x vvin) :: l1).
+   constructor; auto.
+ Qed.
+  
+
+  Equations id_eq_refl {A B : Type} (Heq : A = B) (a : A) : B :=
+    id_eq_refl eq_refl a := a.
+  
+  Lemma id_eq_refl_id A B (Heq : A = B) (a : A) :
+    id_eq_refl Heq a ~= a.
+  Proof.
+    inversion Heq. subst. simp id_eq_refl. auto.
+  Qed.
+
+  Lemma JMeq_id_id_eq_refl A B (f : A -> B) (Heq : B = A) (a : A) :
+          f ~= @id B -> id_eq_refl Heq (f a) = a.
+  Proof.
+    intros. subst. simp id_eq_refl. auto.
+  Qed.
+  Lemma JMeq_id_id_eq_refl' A B (f : B -> A) (Heq : A = B) (a : A) :
+          f ~= @id A -> f (id_eq_refl Heq a) = a.
+  Proof.
+    intros. subst. simp id_eq_refl. auto.
+  Qed.
+  (* annoying mismatch of the actual traces *)
+  Lemma recursion_trace_trace_den1 t n 
+        (t1 : mtree (denote_mfix_ctx (R :: MR)) (denote_type t)) 
+        (t2 : mtree (denote_mfix_ctx MR) (denote_type t)) l1 l2 :
+    call_den_list_rel l1 l2 ->
+    recursion_trace _ (denote_mrec_ctx (denote_mfix_ctx MR)) bodies n t1 l1 t2 -> recursion_trace_den (t := t) n t1 l2 t2.
+  Proof.
+    intros Hl Hrec. generalize dependent l2. induction Hrec.
+    - intros. inversion Hl. subst. eapply recursion_trace_den_ret_in; eauto.
+    - intros. inversion Hl. subst. 
+      specialize (call_extract _ e) as [R' [xR [tin [tout [x [vvin Hcall]]]]] ].
+      specialize (call_mrec_encodes _ _ _ _ x xR vvin) as Henc1.
+      specialize (call_mrec_cont _ _ _ _ x xR vvin) as Henc2.
+      destruct (call_mrec x xR vvin) as [d f] eqn : Heq. cbn in Hcall, Henc1, Henc2.
+      subst. symmetry in Henc1.
+      eapply recursion_trace_den_inr_in with (k1 := fun x => k (id_eq_refl Henc1 x)) (x := x). Unshelve. all : eauto.
+      + rewrite H. unfold call_term. rewrite Heq. setoid_rewrite bind_trigger. setoid_rewrite bind_vis.
+        apply eqit_Vis. intros. setoid_rewrite bind_ret_l. rewrite JMeq_id_id_eq_refl.
+        reflexivity. auto.
+      + rewrite H0. unfold call_term. simp call_mrec. rewrite Heq.
+        setoid_rewrite bind_trigger. setoid_rewrite bind_vis. apply eqit_Vis.
+        intros. setoid_rewrite bind_ret_l.
+        rewrite JMeq_id_id_eq_refl; auto. reflexivity.
+    - intros l1 Hl1. inversion Hl1. subst. specialize (IHHrec _ H2).
+      specialize (call_mrec_call_frame_encodes _ _ _ x vvin) as Henc1.
+      specialize (call_mrec_call_frame_cont _ _ _ x vvin) as Henc2.
+      destruct (call_mrec_call_frame x vvin) as [d f] eqn : Heq. cbn in Henc1, Henc2, IHHrec, H, k1, Hl1.
+      symmetry in Henc1. cbn in Hrec.
+      eapply recursion_trace_den_inl_in with (k1 := fun x => k1 (id_eq_refl Henc1 x)).
+      + unfold call_term. simp call_mrec. rewrite Heq. rewrite H.
+        setoid_rewrite bind_trigger. setoid_rewrite bind_vis. apply eqit_Vis.
+        intros. setoid_rewrite bind_ret_l. rewrite JMeq_id_id_eq_refl; auto. reflexivity.
+      + unfold apply_bodies. rewrite Heq. setoid_rewrite bind_bind. 
+        setoid_rewrite bind_ret_l. 
+        assert ((EnTree.bind (bodies d) (fun r : encodes d => k1 (id_eq_refl Henc1 (f r)))) ≅ bind (bodies d) k1).
+        eapply eqit_bind. reflexivity. intros. subst. rewrite JMeq_id_id_eq_refl; auto. reflexivity.
+        rewrite H0. auto.
+    - intros. specialize (IHHrec _ Hl). eapply recursion_trace_den_multistep; eauto.
+  Qed.
+
+  Lemma recursion_trace_trace_den2 t n 
+        (t1 : mtree (denote_mfix_ctx (R :: MR)) (denote_type t)) 
+        (t2 : mtree (denote_mfix_ctx MR) (denote_type t)) l1 l2 :
+    call_den_list_rel l1 l2 ->
+    recursion_trace_den (t := t) n t1 l2 t2 -> recursion_trace _ (denote_mrec_ctx (denote_mfix_ctx MR)) bodies n t1 l1 t2.
+  Proof.
+    intros Hl Hrec. generalize dependent l1. induction Hrec.
+    - intros. inversion Hl. subst. eapply recursion_trace_ret_in; eauto.
+    - intros. inversion Hl. subst. unfold call_term in H, H0.
+      specialize (call_mrec_encodes _ _ _ _ x xR vvin) as Henc1.
+      specialize (call_mrec_cont _ _ _ _ x xR vvin) as Henc2.
+      simp call_mrec in H0.
+      destruct (call_mrec x xR vvin) as [d f] eqn : Heq. cbn in Henc1, Henc2.
+      setoid_rewrite bind_trigger in H. setoid_rewrite bind_vis in H.
+      setoid_rewrite bind_trigger in H0. setoid_rewrite bind_vis in H0.
+      eapply recursion_trace_inr_in; eauto. rewrite H. 
+      apply eqit_Vis. intros. setoid_rewrite bind_ret_l. reflexivity.
+    - intros l1 Hl1. inversion Hl1. subst. specialize (IHHrec _ H3). inj_existT. subst.
+      specialize (call_mrec_call_frame_encodes _ _ _ x vvin) as Henc1.
+      specialize (call_mrec_call_frame_cont _ _ _ x vvin) as Henc2.
+      unfold call_term in H. simp call_mrec in H.
+      destruct (call_mrec_call_frame x vvin) as [d f] eqn : Heq.
+      cbn. cbn in Henc1, Henc2. setoid_rewrite bind_trigger in H. setoid_rewrite bind_vis in H.
+      econstructor; eauto. eapply recursion_trace_eq_itree; try apply IHHrec; try reflexivity.
+      unfold apply_bodies. rewrite Heq. setoid_rewrite bind_bind. reflexivity.
+    - intros. specialize (IHHrec _ Hl). eapply recursion_trace_multi_step; eauto.
+  Qed.
+
+  Lemma recursion_trace_den_ret t (m : mtree (denote_mfix_ctx (R ::MR)) (denote_type t)) (r : denote_type t) n :
+  multi_step n (interp_mrec bodies m) (ret r) ->
+  exists l, recursion_trace_den n m l (ret r).
+  Proof.
+    intros. eapply recursion_trace_ret in H.
+    destruct H as [l Hl]. specialize (call_den_list_rel_ex1 l) as Hl'. 
+    destruct Hl' as [l2 Hl2]. exists l2. eapply recursion_trace_trace_den1; eauto.
+  Qed.
 
 
-   
- 
+  Lemma recursion_trace_den_vis (t : type) (m : mtree (denote_mfix_ctx (R :: MR)) (denote_type t)) 
+        R' tin tout (x : var (tin, tout) R') (xR : var R' MR) (vvin : denote_type tin) k n :
+    multi_step n (interp_mrec bodies m) (vv <- call_term x xR vvin;; (interp_mrec bodies (k vv))) ->
+    exists l, recursion_trace_den n m l (vv <- call_term x xR vvin;; (interp_mrec bodies (k vv))).
+  Proof.
+    intros. unfold call_term in H. unfold call_term. destruct (call_mrec x xR vvin) as [d f].
+    assert (Hd : (vv <- Functor.fmap f (EnTree.trigger d);; interp_mrec bodies (k vv)) ≅
+            Vis d (fun x => interp_mrec bodies (k (f x)))).
+    { setoid_rewrite bind_trigger. setoid_rewrite bind_vis. eapply eqit_Vis.
+      intros. setoid_rewrite bind_ret_l. reflexivity. }
+    rewrite Hd in H. setoid_rewrite Hd.
+    eapply recursion_trace_vis in H. destruct H as [l Hl].
+    specialize (call_den_list_rel_ex1 l) as Hl'. destruct Hl' as [l2 Hl2]. exists l2.
+    eapply recursion_trace_trace_den1; eauto.
+  Qed.
 
-*)
+  Lemma multi_step_interp_mrec_den_vis_inv 
+        (t : type) (m : mtree (denote_mfix_ctx (R :: MR)) (denote_type t)) 
+        R' tin tout (x : var (tin, tout) R') (xR : var R' MR) (vvin : denote_type tin) 
+        (k : denote_type tout -> mtree (denote_mfix_ctx MR) (denote_type t)) n :
+    multi_step n (interp_mrec bodies m) (vv <- call_term x xR vvin;; k vv) ->
+    exists k' : denote_type tout -> mtree (denote_mfix_ctx (R :: MR)) (denote_type t), 
+    forall x, k x ≅ interp_mrec bodies (k' x).
+  Proof.
+    unfold call_term. 
+    destruct (call_mrec x xR vvin) eqn : Heq. intros H.
+    setoid_rewrite bind_trigger in H. setoid_rewrite bind_vis in H.
+    eapply multi_step_interp_mrec_vis_inv in H. destruct H as [k' Hk'].
+    setoid_rewrite bind_ret_l in Hk'. 
+    specialize (call_mrec_encodes _ _ _ _ x xR vvin) as Henc1.
+    specialize (call_mrec_cont _ _ _ _ x xR vvin) as Hcont.
+    rewrite Heq in Henc1. cbn in Henc1. symmetry in Henc1.
+    rewrite Heq in Hcont. cbn in Hcont.
+    exists (fun x => k' (id_eq_refl Henc1 x)). intros. rewrite <- Hk'.
+    erewrite JMeq_id_id_eq_refl'; auto. reflexivity.
+  Qed.
 
 End RecursionTraceDen.
-*)

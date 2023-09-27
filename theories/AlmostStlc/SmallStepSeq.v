@@ -73,7 +73,7 @@ Definition weaken_l_bodies_single {R1 R2 MR G} t (bodies : mfix_bodies G MR R1 R
   weaken_l_bodies [t] bodies.
 Definition weaken_r_bodies {R MR G1 G2} (bodies : mfix_bodies G1 MR R R) : mfix_bodies (G1 ++ G2) MR R R :=
   bodies_map bodies (fun t' c' => weaken_var_r _ _ t' c').
-Definition weaken_r_comp MR G1 G2 t (e : comp t G1 MR ) : comp t (G1 ++ G2) MR
+Definition weaken_r_comp {MR} G1 {G2 t} (e : comp t G1 MR ) : comp t (G1 ++ G2) MR
   := comp_map e (fun t' e' => weaken_var_r _ _ t' e').
 Definition weaken_r_value {Γ1 t} Γ2 (e : value t Γ1) : value t (Γ1 ++ Γ2) :=
   val_map e (weaken_var_r _ _).
@@ -241,7 +241,7 @@ Equations subst_eval_context_ctx {b t1 t2 MR1 MR2 Γ} {r : bredex t2 MR2 + call 
           (c : comp t2 Γ MR2 ) : comp t1 Γ MR1 :=
   subst_eval_context_ctx ev_hole c := c;
   subst_eval_context_ctx (ev_let E1 c2) c := 
-    comp_let (subst_eval_context_ctx E1 c) (weaken_r_comp _ _ _ _ c2);
+    comp_let (subst_eval_context_ctx E1 c) (weaken_r_comp _ c2);
   subst_eval_context_ctx (ev_mfix _ R bodies E) c := 
     comp_mfix R (weaken_r_bodies bodies) (subst_eval_context_ctx E c);
   subst_eval_context_ctx (ev_perm _ Hperm E) c := comp_perm Hperm (subst_eval_context_ctx E c);

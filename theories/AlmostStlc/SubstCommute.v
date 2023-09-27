@@ -1019,3 +1019,37 @@ Proof.
   intros. destruct subst_comp_comm_mut_ind as [H _].
   setoid_rewrite H; eauto. auto.
 Qed.
+
+
+Lemma subst_comp_weaken_r:
+  forall (t1 t2 t3 : vtype) (MR : mfix_ctx) (c3 : comp t3 [t2] MR) (v1 : closed_value t1),
+    subst_comp (weaken_r_comp [t2] c3) v1 = c3.
+Proof.
+  intros t1 t2 t3 MR c3 v1. destruct (subst_weaken_mid_aux) as [H _].
+  specialize (H t3 [t2] MR c3 [t2] []). erewrite <- H  with (v2 := v1); eauto.
+  f_equal. unfold weaken_r_comp, weaken_mid_comp.
+  eapply comp_map_dep_f_equal; eauto. unfold weaken_var_r. red. cbn. intros.
+  dependent destruction b; try inversion b1. 
+  simp append_var. simp weaken_var_mid. auto.
+Qed.
+
+Lemma subst_value_weaken_r:
+  forall (t1 t3 : vtype) (v3 : value t3 []) (v1 : closed_value t1),
+    subst_value (weaken_r_value [t1] v3) v1 = v3.
+Proof.
+  intros. destruct subst_weaken_mid_aux as [_ [H _]].
+  specialize (H t3 [] v3 [] []). erewrite <- H with (v2 := v1); eauto.
+  f_equal. eapply val_map_dep_f_equal; eauto.
+  red. cbn. intros. inversion b. 
+Qed.
+(*
+Lemma subst_value_weaken_r' :
+  forall (t1 t2 t3 : vtype) Γ (v3 : value t3 (t2 :: Γ) ) (v1 : closed_value t1),
+    subst_value (weaken_r_value [t1] v3) v1 ~= v3.
+Proof.
+  intros. destruct subst_weaken_mid_aux as [_ [H _]].
+  specialize (H t3 (t2 :: Γ) v3 [t2] Γ).
+  erewrite <- H with (v1' := v3) (t2 := t2); auto.
+  Unshelve. 
+  at 2.
+  *)

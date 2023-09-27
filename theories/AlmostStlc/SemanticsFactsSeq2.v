@@ -1,3 +1,4 @@
+
 Require Export TypedVar.
 Require Export SyntaxSeq.
 Require Export SmallStepSeq.
@@ -370,7 +371,7 @@ Equations eval_context_comp_cont {t1 t2 MR1} (r : bredex t2 MR1 + call_syn t2 MR
       (E : eval_context t1 MR1 r true) : comp t1 [t2] MR1 :=
   eval_context_comp_cont r ev_hole := comp_ret (val_var VarZ);
   eval_context_comp_cont r (ev_let E c) := 
-    comp_let (eval_context_comp_cont r E) (weaken_r_comp _ [t3] [t2] _ c).
+    comp_let (eval_context_comp_cont r E) (weaken_r_comp [t3] c).
 
 Definition fcomp_hom {MR1 MR2} (f : forall t Γ, comp t Γ MR1 -> comp t Γ MR2) : Prop :=
   (forall t Γ (v : value t Γ) (hyps : denote_ctx Γ), 

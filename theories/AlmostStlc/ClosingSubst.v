@@ -246,6 +246,17 @@ Proof.
       discriminate.
 Qed.
 
+Lemma stuck_call_stuck' t1 MR c t2 (ca : call_syn t2 MR) (E : eval_context t1 MR (inr ca) true) :
+  stuck_call c ca E -> step c = inl None.
+Proof.
+  intros Hstuck. dependent induction Hstuck.
+  - unfold step. simp observe. unfold step in IHHstuck.
+    destruct (SmallStepSeq.observe c1); try destruct b; try discriminate.
+    destruct r; simp step_eval_context. simp step_eval_context in IHHstuck. cbn in IHHstuck. discriminate.
+    cbn. injection IHHstuck. intros H. rewrite H. auto. 
+  - unfold step. simp observe. simp step_eval_context. auto.
+Qed.
+
 Lemma stuck_call_denote t1 t2 MR (c : comp t1 [] MR) (ca : call_syn t2 MR) E : 
   stuck_call c ca E -> (denote_comp c tt) ≈ (vv <- denote_call ca;; denote_eval_context_cont (inr ca) E vv).
 Proof.
@@ -259,6 +270,8 @@ Proof.
     eapply eqit_bind. reflexivity. intros. subst. simp denote_eval_context_cont. reflexivity.
 Qed.
 
+
+
 Inductive eval_rel_stuck {t MR} : Rel (comp t [] MR) (closed_value t + comp t [] MR) :=
   | eval_rel_stuck_step c1 c2 cv :
     step_rel c1 c2 -> eval_rel_stuck c2 cv -> eval_rel_stuck  c1 cv
@@ -267,27 +280,47 @@ Inductive eval_rel_stuck {t MR} : Rel (comp t [] MR) (closed_value t + comp t []
   | eval_rel_stuck_stuck t' c ca E :
     stuck_call (t2 := t') c ca E -> eval_rel_stuck c (inr c)
 .
+(*
+Inductive eval_rel_stuck_n {t MR} : nat -> (comp t [] MR) -> (closed_value t + comp t [] MR) -> Prop :=
+  | eval_rel_stuck_n_val c v : 
+    step c = inr v -> eval_rel_stuck_n 0 c (inl v)
+  | eval_rel_stuck_n_stuck t' c ca E :
+    stuck_call (t2 := t') c ca E -> eval_rel_stuck_n 0 c (inr c)
+  | eval_rel_stuck_n_step c1 c2 cv n :
+    step_rel c1 c2 -> eval_rel_stuck_n n c2 cv -> eval_rel_stuck_n 
+.
+*)
+Definition close_comp_binder {t1 t2 MR Γ} (ρ : closing_subst Γ) (c : comp t2 (t1 :: Γ) MR) :
+  comp t2 [t1] MR := close_comp_app (Γ1 := [t1]) ρ c.
 
 Lemma close_value_abs: forall (t1 t2 : vtype) (Γ : ctx) (MR : mfix_ctx) (cbody : comp t2 (t1 :: Γ) MR)
     (ρ : closing_subst Γ), 
-    close_value Γ ρ (val_abs cbody) = val_abs (close_comp_app (Γ1 := [t1]) ρ cbody).
+    close_value Γ ρ (val_abs cbody) = val_abs (close_comp_binder ρ cbody).
 Proof.
   intros t1 t2 Γ MR cbody ρ. revert ρ. 
   induction Γ.
-  - intros. simp close_value. simp close_comp_app. unfold comp_app_nil.
+  - intros. simp close_value. unfold close_comp_binder. simp close_comp_app. unfold comp_app_nil.
     simpl. cbn. cbv. remember (List.app_nil_r [t1]) as e. clear Heqe. 
     dependent destruction e. auto.
   - intros [v ρ]. simp close_value.
 Qed.
 
+Lemma close_value_const Γ (ρ : closing_subst Γ) (n : nat) :
+  close_value Γ ρ (val_const n) = val_const n.
+Proof.
+  induction Γ; simp close_value; auto.
+  destruct ρ; simp close_value; auto.
+Qed.
+
+
 Lemma close_comp_let : forall (t1 t2 : vtype) (Γ : ctx) (MR : mfix_ctx)
                        (c1 : comp t1 Γ MR) (c2 : comp t2 (t1 :: Γ) MR)
                        (ρ : closing_subst Γ),
-      close_comp Γ ρ (comp_let c1 c2) = comp_let (close_comp Γ ρ c1) (close_comp_app (Γ1 := [t1]) ρ c2).
+      close_comp Γ ρ (comp_let c1 c2) = comp_let (close_comp Γ ρ c1) (close_comp_binder ρ c2).
 Proof.
   intros t1 t2 Γ MR c1 c2.
   induction Γ.
-  - intros []. simp close_comp. simp close_comp_app. unfold comp_app_nil.
+  - intros []. simp close_comp. unfold close_comp_binder. simp close_comp_app. unfold comp_app_nil.
     simpl. cbn. cbv. remember (List.app_nil_r [t1]) as e. clear Heqe. dependent destruction e. auto.
   - intros [v ρ]. simp close_comp. unfold subst_comp_cons at 1. simp subst_comp.
 Qed.
@@ -300,33 +333,61 @@ Admitted.
 (* example mutind subst_correct_aux_prod*)
 (* can try to prove this with an excessive amount of JMeq, I think trying that seems more promising than fixing the issue I was looking at  *)
 
+Lemma close_comp_mfix : forall Γ t R MR (bodies : mfix_bodies Γ MR R R) (c : comp t Γ (R :: MR))
+                          (ρ : closing_subst Γ),
+    close_comp Γ ρ (comp_mfix R bodies c) =  comp_mfix R (close_bodies Γ ρ bodies) (close_comp Γ ρ c).
+Proof.
+  intros Γ. induction Γ; intros.
+  - destruct ρ. simp close_comp. simp close_bodies. auto.
+  - destruct ρ as [v ρ]. simp close_comp. simp close_bodies.
+    unfold subst_comp_cons at 1. simp subst_comp.
+Qed.
 
   
 Lemma close_comp_open : forall Γ t1 t2 MR (c : comp t2 (t1 :: Γ) MR) (v : value t1 []) (ρ : closing_subst Γ),
-    close_comp (t1 :: Γ) (v, ρ) c = subst_comp_cons (close_comp_app (Γ1 := [t1]) ρ c) v.
+    close_comp (t1 :: Γ) (v, ρ) c = subst_comp_cons (close_comp_binder ρ c) v.
 Proof.
   intros Γ. induction Γ.
-  - intros. simp close_comp. destruct ρ. simp close_comp_app.
+  - intros. simp close_comp. destruct ρ. unfold close_comp_binder. simp close_comp_app.
     unfold comp_app_nil. simpl. remember ((List.app_nil_r [t1])) as e. dependent destruction e. simpl.
     unfold weaken_r_value. rewrite val_map_id; auto. cbn. intros. inversion x0.
-  - intros t1 t2 MR c v [v0 ρ]. simp close_comp. simp close_comp_app. rewrite <- IHΓ.
+  - intros t1 t2 MR c v [v0 ρ]. simp close_comp. unfold close_comp_binder. simp close_comp_app. 
+    setoid_rewrite <- IHΓ.
     simp close_comp. f_equal. rewrite subst_comp_cons_comm. auto.
 Qed.
-
-
 
 Lemma subst_comp_const_close:
   forall (t1 t2 : vtype) (Γ : ctx) (MR : mfix_ctx)
     (cbody : comp t2 (t1 :: Γ) MR) (ρ : closing_subst Γ) 
     (v : closed_value t1),
-    subst_comp_cons (close_comp_app (Γ1 := [t1]) ρ cbody) v =
+    subst_comp_cons (close_comp_binder ρ cbody) v =
       close_comp Γ ρ (subst_comp_cons cbody (weaken_r_value Γ v)).
 Proof.
   intros t1 t2 Γ. revert t1 t2. induction Γ.
-  - intros. simp close_comp. unfold weaken_r_value. unfold weaken_var_r. simp close_comp_app.
+  - intros. simp close_comp. unfold weaken_r_value. unfold weaken_var_r. 
+    unfold close_comp_binder. simp close_comp_app.
     unfold comp_app_nil. cbn. generalize ((List.app_nil_r [t1])). intros. cbn in e.
     dependent destruction e. cbn. rewrite val_map_id.
     auto. intros t x. inversion x.
-  - intros t1 t2 MR cbody [v1 ρ] v2. simp close_comp. simp close_comp_app.
-    rewrite IHΓ. f_equal. f_equal. rewrite subst_comp_cons_comm. auto.
+  - intros t1 t2 MR cbody [v1 ρ] v2. simp close_comp. unfold close_comp_binder. simp close_comp_app.
+    setoid_rewrite IHΓ. f_equal. rewrite subst_comp_cons_comm. auto.
+Qed.
+
+Lemma close_comp_comp_app t1 t2 MR Γ (vf : value (Arrow t1 MR t2) Γ) (varg : value t1 Γ)
+      (ρ : closing_subst Γ) :
+  close_comp Γ ρ (comp_app vf varg) = comp_app (close_value Γ ρ vf) (close_value Γ ρ varg).
+Proof.
+  generalize dependent ρ. induction Γ.
+  - intros []. simp close_comp. simp close_value. auto.
+  - intros [v ρ]. simp close_comp. unfold subst_comp_cons. simp subst_comp.
+Qed.
+
+Lemma close_comp_call t1 t2 Γ R MR (xR : var R MR) (x : var (t1,t2) R) 
+      (v : value t1 Γ) (ρ : closing_subst Γ) :
+  close_comp Γ ρ (comp_call xR x v) = comp_call xR x (close_value Γ ρ v).
+Proof.
+  generalize dependent ρ. induction Γ.
+  - intros []. simp close_comp. simp close_value. auto.
+  - intros [v0 ρ]. simp close_comp. simp close_value. unfold subst_comp_cons, subst_value_cons.
+    simp subst_comp.
 Qed.
