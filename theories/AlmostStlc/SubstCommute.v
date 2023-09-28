@@ -1042,6 +1042,16 @@ Proof.
   f_equal. eapply val_map_dep_f_equal; eauto.
   red. cbn. intros. inversion b. 
 Qed.
+
+Lemma subst_bodies_weaken_r : 
+  forall t1 R MR (bodies : mfix_bodies [] MR R R) (v : closed_value t1),
+    subst_bodies (weaken_r_bodies (G2 := [t1]) bodies ) v = bodies.
+Proof.
+  intros. destruct subst_weaken_mid_aux as [_ [_ H]].
+  erewrite <- H; eauto. f_equal. destruct comp_val_map_fequal as [_ [_ H']].
+  unfold weaken_r_bodies, weaken_mid_bodies. eapply H'.
+  red. intros. inversion b.
+Qed.
 (*
 Lemma subst_value_weaken_r' :
   forall (t1 t2 t3 : vtype) Γ (v3 : value t3 (t2 :: Γ) ) (v1 : closed_value t1),

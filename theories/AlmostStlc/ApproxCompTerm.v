@@ -338,7 +338,94 @@ Proof.
     + dependent destruction H.
 Qed.
 
-Lemma approx_comp_term_mfix_let:
+
+
+
+Lemma approx_comp_term_mfix_let :
+  forall n (t1 t2 : vtype) MR R (c1 : comp t1 [] (R :: MR)) (c2 : comp t2 [t1] (R :: MR)) bodies,
+    approx_comp_term n 
+                     (comp_mfix R bodies (comp_let c1 c2))
+                     (comp_let (comp_mfix R bodies c1) (comp_mfix R (weaken_r_bodies bodies) c2) ).
+Proof.
+  intros n. induction n as [n IHn] using (well_founded_induction lt_wf). 
+  intros. constructor. split.
+  - intros. dependent induction H.
+    + specialize (IHeval_rel_stuck IHn).
+      eapply step_mfix_inv in H as [ ?  | [ ? | [? | ?]]].
+      * destruct H; discriminate.
+      * destruct H as [c'' [Hc''1 Hc''2]]. subst.
+        apply step_let5 in Hc''1.
+        destruct Hc''1 as [ [v [Hv1 Hv2]] | [c1' [Hc1'1 Hc1'2]]]; subst.
+        -- eapply eval_rel_stuck_let1 with (v1 := v).
+           eapply eval_rel_stuck_mfix_ret. constructor. unfold step. simp observe. auto.
+            unfold subst_comp_cons. simp subst_comp.
+            rewrite subst_bodies_weaken_r. auto.
+        -- econstructor; try eapply IHeval_rel_stuck; eauto.
+           eapply step_let1.  eapply SmallStepSeqFacts.step_mfix. auto.
+      * destruct H as [tin [tout [x [vin [E [HE1 HE2]]]]]].
+        subst. dependent destruction HE1. simp subst_eval_context in H0.
+        simp subst_eval_context in IHeval_rel_stuck.
+        specialize (IHeval_rel_stuck _ _ _ _ _ _ eq_refl eq_refl).
+        econstructor; try eapply IHeval_rel_stuck. apply step_let1. 
+        apply stuck_call_step_VarZ. auto.
+      * destruct H as [tin [tout [R' [xR [x [vin [E [HE1 HE2]]]]]]]].
+        subst. dependent destruction HE1. simp push_eval_context in H0.
+        simp push_eval_context in IHeval_rel_stuck.
+        exfalso. clear IHeval_rel_stuck.
+        set (push_eval_context (inr (SmallStepSeq.callv (VarS xR) x vin)) E1 (comp_mfix_map bodies) (comp_call xR x vin)) as c'.
+        (* may want to lift to a lemma *)
+        assert (exists E, stuck_call c' ((SmallStepSeq.callv xR x vin))  E).
+        { unfold c'.
+          clear. dependent induction E1.
+          - simp push_eval_context. eexists. econstructor.
+          - specialize (IHE1 _ _ _ _ _ _ bodies _ _ eq_refl eq_refl JMeq_refl eq_refl JMeq_refl).
+            destruct IHE1 as [E' HE']. simp push_eval_context. eexists.
+            econstructor. eauto.
+        }
+        destruct H as [E Hstuck]. unfold c' in *.
+        eapply stuck_call_let with (c2 := (comp_mfix_map bodies t2 [t1] c2)) in Hstuck.
+        dependent destruction H0.
+        -- apply stuck_call_stuck' in Hstuck. dependent destruction H. rewrite Hstuck in H. 
+           discriminate.
+        -- dependent destruction H. apply stuck_call_stuck' in Hstuck.
+           rewrite x in Hstuck. discriminate.
+   + exfalso. specialize (step_mfix _ _ _ (comp_let c1 c2) bodies) as [c' Hc'].
+     rewrite Hc' in H. discriminate.
+ - intros. eapply eval_rel_stuck_inr_mfix_eval_ind in H.
+   dependent induction H.
+   + dependent destruction H. simp push_eval_context in H0. dependent destruction H0.
+     do 2 eexists. split; [ | split].
+     * eapply eval_rel_stuck_let2. eapply eval_rel_stuck_mfix_stuck_call_neq_VarZ; eauto;
+       eapply eval_rel_stuck_stuck; eauto. 
+     * econstructor; eauto.
+     * intros. simp subst_eval_context. unfold comp_mfix_map.
+       eapply approx_comp_term_let_cong; intros; eapply approx_comp_term_refl.
+   + specialize (IHmfix_eval_ind IHn). dependent destruction H.
+     simp subst_eval_context in IHmfix_eval_ind.
+     eapply IHmfix_eval_ind in H1; try reflexivity.
+     destruct H1 as [c2' [E2 [HE21 [HE22 HE23]]]].
+     exists c2', E2. split; [ | split]; eauto.
+     econstructor; eauto. apply step_let1.
+     apply stuck_call_step_VarZ. auto.
+   + specialize (IHmfix_eval_ind IHn).
+     eapply step_let4 in H as H'. destruct H' as [ [v [Hv1 Hv2]] | [c1'' Hc1'']].
+     * subst. clear IHmfix_eval_ind. exists c3, E1.
+       split; [ | split]; eauto.
+       -- eapply eval_rel_stuck_let1. eapply eval_rel_stuck_mfix_ret.
+          apply eval_rel_stuck_val. unfold step. simp observe. eauto.
+          eapply mfix_eval_ind_eval_rel_stuck_inr in H0.
+          unfold subst_comp_cons. simp subst_comp.
+          rewrite subst_bodies_weaken_r. auto.
+       -- intros. apply approx_comp_term_refl.
+     * subst. eapply IHmfix_eval_ind in H1 as H1''; try reflexivity.
+       destruct H1'' as [c2' [E2 [HE21 [HE22 HE23]]]].
+       exists c2', E2.
+       split; [ | split]; eauto. apply step_let3 in H.
+       econstructor; eauto. apply step_let1.  apply SmallStepSeqFacts.step_mfix.
+       auto.
+Qed.
+(*
+Lemma approx_comp_term_mfix_let':
   forall (t1 t2 t3 : vtype) (MR : mfix_ctx) (R1 : call_frame) (tin : vtype) (vcall : closed_value tin) 
     (R2 : call_frame) (x : var (tin, t3) R2) (xR : var R2 MR)
     (E : eval_context t1 (R1 :: MR) (inr (SmallStepSeq.callv (VarS (b := R1) xR) x vcall)) true) (c : comp t2 [t1] (R1 :: MR))
@@ -348,7 +435,9 @@ Lemma approx_comp_term_mfix_let:
                      (comp_let (subst_eval_context E' (comp_ret vvret)) (comp_mfix R1 (weaken_r_bodies bodies) c)).
 Proof.
   intros t1 t2 t3 MR R1 tin vcall R2 x xR E c bodies E' vvret n.
-Admitted.
+  eapply approx_comp_term_trans. eapply approx_comp_term_mfix_let.
+  eapply approx_comp_term_let_cong.
+Admitted. *)
 (* weird mismatch of *)
 Lemma stuck_call_push_eval_context_mfix:
   forall (t : vtype) (R1 R2 : call_frame) (MR : mfix_ctx) (bodies : mfix_bodies [] MR R1 R1)
@@ -372,6 +461,7 @@ Proof.
     specialize (IHE _ _ _ _ _ _ _ bodies _ eq_refl eq_refl JMeq_refl eq_refl JMeq_refl).
     destruct IHE as [E' [HE'1 HE'2]]. econstructor. split. econstructor. eauto.
     intros. simp subst_eval_context. unfold comp_mfix_map.
-    apply approx_comp_term_mfix_let.
+    eapply approx_comp_term_trans. eapply approx_comp_term_mfix_let.
+    eapply approx_comp_term_let_cong. eauto. intros. apply approx_comp_term_refl.
 Qed.
 

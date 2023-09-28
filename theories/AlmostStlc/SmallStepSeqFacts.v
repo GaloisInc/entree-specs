@@ -99,6 +99,24 @@ Proof.
     rewrite H1 in H at 2. lia.
 Qed.
 
+Lemma observe_inr t MR (c : comp t [] MR) v :
+  SmallStepSeq.observe c = inr v -> c = comp_ret v.
+Proof.
+  rename c into c1. intros Heqx.
+  dependent destruction c1; simp observe in Heqx; try discriminate.
+  + injection Heqx. intros. subst. auto.
+  + destruct (SmallStepSeq.observe c1_1); try destruct b; discriminate.
+  + dependent destruction vn; try inversion x. simp observe in Heqx.
+    discriminate.
+  + dependent destruction vn; try inversion x. simp observe in Heqx.
+    discriminate.
+  + dependent destruction vf; try inversion x. simp observe in Heqx.
+    discriminate.
+  + destruct (SmallStepSeq.observe c1); try destruct b; discriminate.
+  + destruct (SmallStepSeq.observe c1); try destruct b; discriminate.
+  + destruct (SmallStepSeq.observe c1); try destruct b; discriminate.
+Qed.
+
 Lemma step_let4 t1 t2 MR (c1 : comp t1 [] MR) (c2 : comp t2 [t1] MR) c3 :
   step_rel (comp_let c1 c2) c3 ->
   (exists v, c1 = comp_ret v /\ c3 = subst_comp_cons c2 v) \/ (exists c1', c3 = comp_let c1' c2).
@@ -110,20 +128,10 @@ Proof.
     cbn in H. injection H. intros. destruct (step_eval_context b (inr c) E).
     injection H0. intros. subst. right. eexists. eauto.
     discriminate.
-  - left. dependent destruction c1; simp observe in Heqx; try discriminate.
-    + injection Heqx. intros. subst. cbn in H. simp step_eval_context in H. 
-      cbn in H. simp subst_eval_context in H. simp step_bredex in H.
-      injection H. intros. subst. eexists. split; eauto.
-    + destruct (SmallStepSeq.observe c1_1); try destruct b; discriminate.
-    + dependent destruction vn; try inversion x. simp observe in Heqx.
-      discriminate.
-    + dependent destruction vn; try inversion x. simp observe in Heqx.
-      discriminate.
-    + dependent destruction vf; try inversion x. simp observe in Heqx.
-      discriminate.
-    + destruct (SmallStepSeq.observe c1); try destruct b; discriminate.
-    + destruct (SmallStepSeq.observe c1); try destruct b; discriminate.
-    + destruct (SmallStepSeq.observe c1); try destruct b; discriminate.
+  - left. apply observe_inr in Heqx. subst.
+    exists c. split; auto. cbn in H. simp step_eval_context in H.
+    simp subst_eval_context in H. simp step_bredex in H.
+    injection H. intros. subst. eexists.
 Qed.
 
 Lemma step_let5 t1 t2 MR (c1 : comp t1 [] MR) (c2 : comp t2 [t1] MR) c3 :
@@ -272,6 +280,81 @@ Proof.
   f_equal. injection H. intros.  eapply step_mfix_eval_context. auto.
 Qed.
 
+Lemma normalize_eval_context_callv (t1 t2 : vtype) R MR
+      (ca : call_syn t2 (R :: MR))
+      (E : eval_context t1 (R :: MR) (inr ca) true) :
+  normalize_eval_context ca E = (ca && E).
+Proof.
+  dependent induction E. simp normalize_eval_context. auto.
+  simp normalize_eval_context. erewrite IHE; eauto.
+Qed.
+
+Lemma observe_comp_bec_inr_stuck t1 t2 MR (c : comp t1 [] MR) (ca : call_syn t2 MR)
+      (E : eval_context t1 MR (inr ca) true) :
+  SmallStepSeq.observe c = inl (bec (inr ca) E) -> stuck_call c ca E.
+Proof.
+  generalize dependent t2. dependent induction c; simp observe; intros; try discriminate.
+  - destruct (SmallStepSeq.observe c1) eqn : Heq1; try destruct b.
+    + injection H. intros. subst. inj_existT. subst. inj_existT. subst.
+      constructor. eapply IHc1; eauto.
+    + injection H. intros. subst. inj_existT. discriminate.
+  - dependent destruction vn; try inversion x.
+    simp observe in H. injection H. intros. subst. inj_existT.
+    discriminate.
+  - dependent destruction vn; try inversion x.
+    simp observe in H. injection H. intros. subst. inj_existT.
+    discriminate.
+  - dependent destruction vf; try inversion x.
+    simp observe in H. injection H. intros. subst. inj_existT.
+    discriminate.
+  - injection H. intros. subst. inj_existT. subst.
+     inj_existT. subst. constructor.
+  - destruct (SmallStepSeq.observe c) eqn : Heq1; try destruct b.
+    + injection H. intros. discriminate.
+    + injection H. intros. subst. inj_existT. discriminate.
+  - destruct (SmallStepSeq.observe c) eqn : Heq1; try destruct b.
+    + injection H. intros. discriminate.
+    + injection H. intros. subst. inj_existT. discriminate.
+  - destruct (SmallStepSeq.observe c) eqn : Heq1; try destruct b.
+    + injection H. intros. discriminate.
+    + injection H. intros. subst. inj_existT. discriminate.
+Qed.
+
+Lemma step_mfix_inv t R MR (bodies : mfix_bodies [] MR R R) (c : comp t [] (R :: MR)) c' : 
+  step_rel (comp_mfix R bodies c) c' ->
+ (exists v, c = comp_ret v) \/ (exists c'', step_rel c c'' /\ c' = comp_mfix R bodies c'') \/
+ (exists tin tout (x : var (tin, tout) R ) (vin : closed_value tin) E, stuck_call c  (SmallStepSeq.callv VarZ x vin) E /\
+            c' = comp_mfix R bodies ((subst_eval_context E (subst_comp_cons (nth_body bodies x) vin)))) \/
+ (exists tin tout R' (xR : var R' MR) (x : var (tin, tout) R') (vin : closed_value tin) E,
+     stuck_call c (SmallStepSeq.callv (VarS xR) x vin) E /\
+       c' = push_eval_context _ E (comp_mfix_map bodies) (comp_call xR x vin)).
+Proof.
+  intros. dependent destruction H. unfold step in H. simp observe in H.
+  destruct (SmallStepSeq.observe c) eqn : Heqc; try destruct b; try destruct r.
+  - simp step_eval_context in H. simp subst_eval_context in H.
+    injection H. intros. subst. right. left. eexists. split; eauto.
+    constructor. unfold step. rewrite Heqc. simp step_eval_context. auto.
+  - simp step_eval_context in H. injection H. intros. 
+    destruct b.
+    + assert (MR' = R :: MR). 
+      { clear - E. dependent induction E; eauto. }
+      subst. (*now we know c is stuck on c0 maybe from Heqc? *)
+      simp step_eval_context in H. rewrite normalize_eval_context_callv in H.
+      destruct c0. cbn in *. dependent destruction xR.
+      * simp var_eq_neq in H. injection H. intros. subst. right. right.
+        left. simp var_eq_elim. repeat eexists.
+        apply observe_comp_bec_inr_stuck. auto.
+      * simp var_eq_neq in H. Transparent remove_var. cbn in H. Opaque remove_var. 
+        apply observe_comp_bec_inr_stuck in Heqc. do 3 right.
+        injection H. intros. subst. repeat eexists. auto.
+    + simp step_eval_context in H0.
+      right. left. simp step_eval_context in H. injection H. intros.
+      destruct (step_eval_context false (inr c0) E) eqn : Heq; try discriminate.
+      injection H1. intros. subst. eexists. split; eauto.
+      constructor. unfold step. rewrite Heqc. rewrite Heq. auto.
+  - clear H. left. rename c0 into v0. exists v0. apply observe_inr. auto.
+Qed.
+
 Lemma step_mfix_ret t R MR (bodies : mfix_bodies [] MR R R) (c : comp t [] (R :: MR)) v :
   step c = inr v ->
   step_rel (comp_mfix R bodies c) (comp_ret v).
@@ -282,14 +365,7 @@ Proof.
   simp step_bredex. injection H. intros. subst. auto.
 Qed.
 
-Lemma normalize_eval_context_callv (t1 t2 : vtype) R MR
-      (ca : call_syn t2 (R :: MR))
-      (E : eval_context t1 (R :: MR) (inr ca) true) :
-  normalize_eval_context ca E = (ca && E).
-Proof.
-  dependent induction E. simp normalize_eval_context. auto.
-  simp normalize_eval_context. erewrite IHE; eauto.
-Qed.
+
 
 Lemma step_focused_mfix_context_VarZ (t1 t2 t3 : vtype) R MR
       (x : var (t2, t3) R) (v : closed_value t2) (bodies : mfix_bodies [] MR R R)
@@ -388,7 +464,91 @@ Proof.
   - econstructor. eapply step_mfix_ret; eauto. apply eval_rel_stuck_val.
     unfold step. simp observe. auto.
 Qed.
+(*
+Lemma eval_rel_stuck_mfix_stuck t R MR (c : comp t [] (R :: MR)) bodies c' : 
+  *)
 
+
+Lemma push_eval_context_comp_call_stuck t tin tout R1 R2 MR
+      (xR : var R2 MR) (x : var (tin, tout) R2) (vin : closed_value tin) 
+      (E : eval_context t (R1 :: MR) (inr (SmallStepSeq.callv (VarS xR) x vin)) true) f : 
+      exists E', stuck_call (push_eval_context _ E f (comp_call xR x vin)) (SmallStepSeq.callv xR x vin) E'.
+Proof.
+  dependent induction E.
+  - simp push_eval_context. eexists. econstructor.
+  - simp push_eval_context.
+    specialize (IHE _ _ _ _ _ _ _ _ eq_refl eq_refl JMeq_refl eq_refl JMeq_refl f).
+    destruct IHE. eexists. econstructor. eauto.
+Qed.
+
+(*
+set (push_eval_context (inr (SmallStepSeq.callv (VarS xR) x vin)) E1 (comp_mfix_map bodies) (comp_call xR x vin)) as c'.
+        (* may want to lift to a lemma *)
+        assert (exists E, stuck_call c' ((SmallStepSeq.callv xR x vin))  E).
+        { unfold c'.
+          clear. dependent induction E1.
+          - simp push_eval_context. eexists. econstructor.
+          - specialize (IHE1 _ _ _ _ _ _ bodies _ _ eq_refl eq_refl JMeq_refl eq_refl JMeq_refl).
+            destruct IHE1 as [E' HE']. simp push_eval_context. eexists.
+            econstructor. eauto.
+        }
+        dest
+
+*)
+
+
+Inductive mfix_eval_ind t R MR (bodies : mfix_bodies [] MR R R) :
+  forall (c1 : comp t [] (R :: MR)) (c2 : comp t [] MR), Prop := 
+ | mei_stuck tin tout R' (xR : var R' MR) (x : var (tin, tout) R') (vin : closed_value tin) E c1:
+   stuck_call c1 (SmallStepSeq.callv (VarS xR) x vin) E ->
+   mfix_eval_ind t R MR bodies c1 (push_eval_context _ E (comp_mfix_map bodies) (comp_call xR x vin))
+ | mei_body tin tout (x : var (tin, tout) R) (vin : closed_value tin) E c1 c2 :
+   stuck_call c1 (SmallStepSeq.callv VarZ x vin) E ->
+   mfix_eval_ind t R MR bodies (subst_eval_context E (subst_comp_cons (nth_body bodies x) vin)) c2 ->
+   mfix_eval_ind t R MR bodies c1 c2
+ | mei_step c1 c1' c2 :
+   step_rel c1 c1' ->
+   mfix_eval_ind t R MR bodies c1' c2 ->
+   mfix_eval_ind t R MR bodies c1 c2.
+
+
+Lemma eval_rel_stuck_inr_mfix_eval_ind t R MR (bodies : mfix_bodies [] MR R R) c1 c2 :
+  eval_rel_stuck (t := t) (comp_mfix R bodies c1) (inr c2) -> mfix_eval_ind _ _ _ bodies c1 c2.
+Proof.
+  intros Heval.
+  (* something odd is going on here*)
+  dependent induction Heval.
+  - apply step_mfix_inv in H as H'.
+    destruct H' as [? | [? | [? | ?]]].
+    + destruct H0. subst.
+      dependent destruction H. simp subst_eval_context in Heval.
+      simp step_bredex in Heval. dependent destruction Heval.
+      dependent destruction H. inversion H.
+    + destruct H0 as [c1' [Hc1'1 Hc1'2]]. subst.
+      eapply mei_step; eauto.
+    + destruct H0 as [tin [tout [x [vin [E [HE1 HE2]]]]]].
+      subst. eapply mei_body; eauto.
+    + destruct H0 as [tin [tout [R' [xR [x [vin [E [HE1 HE2]]]]]]]].
+      subst. clear IHHeval. dependent destruction Heval.
+      * specialize (push_eval_context_comp_call_stuck _ _ _ _ _ _ xR x vin E (comp_mfix_map bodies))
+                   as [E' HE'].
+        apply stuck_call_stuck' in HE'. dependent destruction H. rewrite HE' in H.
+        discriminate.
+      * constructor; auto.
+  - dependent induction H.
+Qed.
+
+Lemma mfix_eval_ind_eval_rel_stuck_inr t R MR (bodies : mfix_bodies [] MR R R) c1 c2 :
+  mfix_eval_ind _ _ _ bodies c1 c2 -> eval_rel_stuck (t := t) (comp_mfix R bodies c1) (inr c2).
+Proof.
+  intros Heval. induction Heval.
+  - specialize push_eval_context_comp_call_stuck with (E := E) (f := comp_mfix_map bodies) 
+      as [E' HE'].
+    econstructor. eapply  stuck_call_step_neq_VarZ.
+    eauto. eapply eval_rel_stuck_stuck. eauto.
+  - econstructor; eauto. eapply stuck_call_step_VarZ. auto.
+  - econstructor; eauto. eapply step_mfix; eauto.
+Qed.
 (*
 Scheme Equality for vtype.
 *)
