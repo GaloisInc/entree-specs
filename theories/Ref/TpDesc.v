@@ -39,8 +39,10 @@ Inductive ArithUnOp : ArithKind -> ArithKind -> Type@{entree_u} :=
 .
 
 Inductive ArithBinOp : ArithKind -> ArithKind -> ArithKind -> Type@{entree_u} :=
-| BinOp_Add AK : ArithBinOp AK AK AK
-| BinOp_Mult AK : ArithBinOp AK AK AK
+| BinOp_AddNat : ArithBinOp Kind_nat Kind_nat Kind_nat
+| BinOp_MulNat : ArithBinOp Kind_nat Kind_nat Kind_nat
+| BinOp_AddBV w : ArithBinOp (Kind_bv w) (Kind_bv w) (Kind_bv w)
+| BinOp_MulBV w : ArithBinOp (Kind_bv w) (Kind_bv w) (Kind_bv w)
 .
 
 Lemma dec_eq_UnOp {AK1 AK2} (op1 op2 : ArithUnOp AK1 AK2) : {op1=op2} + {~op1=op2}.
@@ -70,11 +72,11 @@ Variant KindDesc : Type@{entree_u} :=
 
 (* Arithmetic expressions that can be used in type descriptions *)
 Inductive ArithExpr : ArithKind -> Type@{entree_u} :=
-| Arith_Const {K} (c:arithKindElem K) : ArithExpr K
-| Arith_Var {K} (ix:nat) : ArithExpr K
-| Arith_UnOp {K1 K2} (op:ArithUnOp K1 K2) (e:ArithExpr K1) : ArithExpr K2
-| Arith_BinOp {K1 K2 K3} (op:ArithBinOp K1 K2 K3)
-    (e1:ArithExpr K1) (e2:ArithExpr K2) : ArithExpr K3
+| Arith_Const {AK} (c:arithKindElem AK) : ArithExpr AK
+| Arith_Var {AK} (ix:nat) : ArithExpr AK
+| Arith_UnOp {AK1 AK2} (op:ArithUnOp AK1 AK2) (e:ArithExpr AK1) : ArithExpr AK2
+| Arith_BinOp {AK1 AK2 AK3} (op:ArithBinOp AK1 AK2 AK3)
+    (e1:ArithExpr AK1) (e2:ArithExpr AK2) : ArithExpr AK3
 .
 
 (* The natural number N as an ArithExpr *)
