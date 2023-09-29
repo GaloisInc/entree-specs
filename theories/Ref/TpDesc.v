@@ -337,23 +337,27 @@ Definition mkVecIndElem {env T} {e:ArithExpr Kind_nat}
 Defined.
 
 
-(* Elements of a type description *)
-Fixpoint tpElem env T : Type@{entree_u} :=
+(* Elements of a type description relative to an environment *)
+Fixpoint tpElemEnv env T : Type@{entree_u} :=
   match T with
   | Tp_M R => FunIx (tpSubst 0 env (Tp_M R))
   | Tp_Pi K B => FunIx (tpSubst 0 env (Tp_Pi K B))
   | Tp_Arr A B => FunIx (tpSubst 0 env (Tp_Arr A B))
   | Tp_Kind K => kindElem K
-  | Tp_Pair A B => tpElem env A * tpElem env B
-  | Tp_Sum A B => tpElem env A + tpElem env B
-  | Tp_Sigma K B => { elem: kindElem K & tpElem (envConsElem elem env) B }
-  | Tp_Vec A e => VectorDef.t (tpElem env A) (evalArithExpr env e)
+  | Tp_Pair A B => tpElemEnv env A * tpElemEnv env B
+  | Tp_Sum A B => tpElemEnv env A + tpElemEnv env B
+  | Tp_Sigma K B => { elem: kindElem K & tpElemEnv (envConsElem elem env) B }
+  | Tp_Vec A e => VectorDef.t (tpElemEnv env A) (evalArithExpr env e)
   | Tp_Ind A => indElem nil (unfoldIndTpDesc env A)
   | Tp_Var var => indElem nil (evalVar 0 env Kind_Tp var)
   | Tp_Void => Empty_set
   end.
 
-Fixpoint indToTpElem env {T} (elem : indElem env T) : tpElem env T.
+(* Elements of a type description = elements relative to the empty environment *)
+Definition tpElem := tpElemEnv nil.
+
+(* Convert an inductively-defined element to a recursively-defined one *)
+Fixpoint indToTpElem env {T} (elem : indElem env T) : tpElemEnv env T.
   destruct elem.
   - assumption.
   - assumption.
@@ -371,7 +375,8 @@ Fixpoint indToTpElem env {T} (elem : indElem env T) : tpElem env T.
   - apply elem.
 Defined.
 
-Fixpoint tpToIndElem env {T} : tpElem env T -> indElem env T.
+(* Convert a recursively-defined element to an inductively-defined one *)
+Fixpoint tpToIndElem env {T} : tpElemEnv env T -> indElem env T.
   destruct T; intro elem.
   - constructor; assumption.
   - constructor; assumption.
@@ -397,14 +402,14 @@ Fixpoint TpFunInput env (T:TpDesc) : Type@{entree_u} :=
   match T with
   | Tp_M _ => unit
   | Tp_Pi K B => { elem:kindElem K & TpFunInput (envConsElem elem env) B }
-  | Tp_Arr A B => tpElem env A * TpFunInput env B
+  | Tp_Arr A B => tpElemEnv env A * TpFunInput env B
   | _ => Empty_set
   end.
 
 (* The output type of a monadic function of type T with the given inputs *)
 Fixpoint TpFunOutput {env T} : TpFunInput env T -> Type@{entree_u} :=
   match T return TpFunInput env T -> Type with
-  | Tp_M R => fun _ => tpElem nil (tpSubst 0 env R)
+  | Tp_M R => fun _ => tpElemEnv nil (tpSubst 0 env R)
   | Tp_Pi K B => fun args => TpFunOutput (projT2 args)
   | Tp_Arr A B => fun args => TpFunOutput (snd args)
   | _ => fun _ => Empty_set
@@ -421,9 +426,9 @@ Global Instance IsTpDesc_TpDesc : IsTpDesc TpDesc :=
 (* A monadic function of a given type description *)
 Fixpoint funElem (E:EvType) env T : Type@{entree_u} :=
   match T with
-  | Tp_M R => fixtree TpDesc E (tpElem nil (tpSubst 0 env R))
+  | Tp_M R => fixtree TpDesc E (tpElemEnv nil (tpSubst 0 env R))
   | Tp_Pi K B => forall (elem:kindElem K), funElem E (envConsElem elem env) B
-  | Tp_Arr A B => tpElem env A -> funElem E env B
+  | Tp_Arr A B => tpElemEnv env A -> funElem E env B
   | _ => unit
   end.
 
