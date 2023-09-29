@@ -129,16 +129,16 @@ Proof.
   - destruct (Nat.eq_dec ix ix0).
     + rewrite e; left; reflexivity.
     + right; intro e; inversion e; apply n; assumption.
-  - destruct (dec_eq_ArithKind K0 K1).
-    + subst K0. destruct (dec_eq_UnOp op op0); [ destruct (IHe1 e2) | ].
+  - destruct (dec_eq_ArithKind AK0 AK1).
+    + subst AK0. destruct (dec_eq_UnOp op op0); [ destruct (IHe1 e2) | ].
       * subst op; subst e1; left; reflexivity.
       * right; intro e'; inversion e'; apply n.
         apply inj_pairT2 in H1. assumption.
       * right; intro e'; inversion e'; apply n.
         repeat apply inj_pairT2 in H0. assumption.
     + right; intro e; inversion e. apply n; symmetry; assumption.
-  - destruct (dec_eq_ArithKind K0 K1); [ destruct (dec_eq_ArithKind K3 K2) | ].
-    + subst K0; subst K3.
+  - destruct (dec_eq_ArithKind AK0 AK1); [ destruct (dec_eq_ArithKind AK3 AK2) | ].
+    + subst AK0; subst AK3.
       destruct (dec_eq_BinOp op op0);
         [ destruct (IHe1_1 e2_1); [ destruct (IHe1_2 e2_2) | ] | ].
       * subst op0; subst e1_1; subst e1_2. left; reflexivity.
@@ -205,9 +205,11 @@ Definition headTpEnv K (env:TpEnv) : kindElem K :=
   end.
 
 
-(* Evaluate a variable of a particular kind relative to an environment at a
-given lifting level n, meaning that the environment is a substitution for the
-variables starting at n *)
+(* Substitute an environment into a variable of a particular kind at lifting
+level n, meaning that the environment is a substitution for the variables
+starting at n. Return the new value of the variable if it was substituted for
+(meaning it has index n + i for some index i in the environment) or the new
+variable number if it was not. *)
 Fixpoint substVar n env K var {struct var} : kindElem K + nat :=
   match var with
   | 0 => match n with
@@ -293,9 +295,9 @@ Definition unfoldIndTpDesc env A : TpDesc :=
 
 (* Inductively defined elements of a type description *)
 Inductive indElem : TpEnv -> TpDesc -> Type@{entree_u} :=
-| Elem_M {env R} (f:FunIx (Tp_M R)) : indElem env (Tp_M R)
-| Elem_Pi {env A B} (f:FunIx (Tp_Pi A B)) : indElem env (Tp_Pi A B)
-| Elem_Arr {env A B} (f:FunIx (Tp_Arr A B)) : indElem env (Tp_Arr A B)
+| Elem_M {env R} (f:FunIx (tpSubst 0 env (Tp_M R))) : indElem env (Tp_M R)
+| Elem_Pi {env A B} (f:FunIx (tpSubst 0 env (Tp_Pi A B))) : indElem env (Tp_Pi A B)
+| Elem_Arr {env A B} (f:FunIx (tpSubst 0 env (Tp_Arr A B))) : indElem env (Tp_Arr A B)
 | Elem_Kind {env K} (elem:kindElem K) : indElem env (Tp_Kind K)
 | Elem_Pair {env A B} (elem1: indElem env A) (elem2: indElem env B)
   : indElem env (Tp_Pair A B)
@@ -338,9 +340,9 @@ Defined.
 (* Elements of a type description *)
 Fixpoint tpElem env T : Type@{entree_u} :=
   match T with
-  | Tp_M R => FunIx (Tp_M R)
-  | Tp_Pi K B => FunIx (Tp_Pi K B)
-  | Tp_Arr A B => FunIx (Tp_Arr A B)
+  | Tp_M R => FunIx (tpSubst 0 env (Tp_M R))
+  | Tp_Pi K B => FunIx (tpSubst 0 env (Tp_Pi K B))
+  | Tp_Arr A B => FunIx (tpSubst 0 env (Tp_Arr A B))
   | Tp_Kind K => kindElem K
   | Tp_Pair A B => tpElem env A * tpElem env B
   | Tp_Sum A B => tpElem env A + tpElem env B
