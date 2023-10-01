@@ -159,27 +159,27 @@ Fixpoint specFunsToMultiInterp {E Ts} : specFuns E Ts -> MultiFxInterp (SpecEv E
   end.
 
 (* The type of a tuple of spec functions of types Us that take in FunIxs Ts *)
-Fixpoint arrowSpecFuns E (Ts Us : list TpDesc) : Type@{entree_u} :=
+Fixpoint arrowIxsSpecFuns E (Ts Us : list TpDesc) : Type@{entree_u} :=
   match Us with
   | nil => unit
-  | U :: Us' => arrowIxs Ts (specFun E nil U) * arrowSpecFuns E Ts Us'
+  | U :: Us' => arrowIxs Ts (specFun E nil U) * arrowIxsSpecFuns E Ts Us'
   end.
 
-(* Apply an arrowSpecFuns list to a list of FunIxs to get a specFuns list *)
-Fixpoint applyArrowSpecFuns {E Ts Us} : arrowSpecFuns E Ts Us -> FunIxs Ts ->
-                                        specFuns E Us :=
-  match Us return arrowSpecFuns E Ts Us -> FunIxs Ts -> specFuns E Us with
+(* Apply an arrowIxsSpecFuns list to a list of FunIxs to get a specFuns list *)
+Fixpoint applyArrowIxsSpecFuns {E Ts Us} : arrowIxsSpecFuns E Ts Us -> FunIxs Ts ->
+                                           specFuns E Us :=
+  match Us return arrowIxsSpecFuns E Ts Us -> FunIxs Ts -> specFuns E Us with
   | nil => fun _ _ => tt
   | U :: Us' => fun fs ixs => (applyArrowIxs (fst fs) ixs,
-                                applyArrowSpecFuns (snd fs) ixs)
+                                applyArrowIxsSpecFuns (snd fs) ixs)
   end.
 
 Definition MultiFixBodies E Ts : Type@{entree_u} :=
-  arrowSpecFuns E Ts Ts.
+  arrowIxsSpecFuns E Ts Ts.
 
 Definition MultiFixS {E Ts} (funs : MultiFixBodies E Ts) : SpecM E (FunIxs Ts) :=
   Fx_MkFuns
-    (fun ixs => specFunsToMultiInterp (applyArrowSpecFuns funs ixs))
+    (fun ixs => specFunsToMultiInterp (applyArrowIxsSpecFuns funs ixs))
     (fun ixs => Fx_Ret ixs).
 
 Definition LetRecS {E Ts A}
