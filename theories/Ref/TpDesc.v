@@ -39,30 +39,30 @@ Definition defaultEKElem EK : exprKindElem EK :=
   | Kind_bv w => VectorDef.const false w
   end.
 
-Inductive ArithUnOp : ExprKind -> ExprKind -> Type@{entree_u} :=
-| UnOp_BVToNat w : ArithUnOp (Kind_bv w) Kind_nat
-| UnOp_NatToBV w : ArithUnOp Kind_nat (Kind_bv w)
+Inductive TpExprUnOp : ExprKind -> ExprKind -> Type@{entree_u} :=
+| UnOp_BVToNat w : TpExprUnOp (Kind_bv w) Kind_nat
+| UnOp_NatToBV w : TpExprUnOp Kind_nat (Kind_bv w)
 .
 
-Inductive ArithBinOp : ExprKind -> ExprKind -> ExprKind -> Type@{entree_u} :=
-| BinOp_AddNat : ArithBinOp Kind_nat Kind_nat Kind_nat
-| BinOp_MulNat : ArithBinOp Kind_nat Kind_nat Kind_nat
-| BinOp_AddBV w : ArithBinOp (Kind_bv w) (Kind_bv w) (Kind_bv w)
-| BinOp_MulBV w : ArithBinOp (Kind_bv w) (Kind_bv w) (Kind_bv w)
+Inductive TpExprBinOp : ExprKind -> ExprKind -> ExprKind -> Type@{entree_u} :=
+| BinOp_AddNat : TpExprBinOp Kind_nat Kind_nat Kind_nat
+| BinOp_MulNat : TpExprBinOp Kind_nat Kind_nat Kind_nat
+| BinOp_AddBV w : TpExprBinOp (Kind_bv w) (Kind_bv w) (Kind_bv w)
+| BinOp_MulBV w : TpExprBinOp (Kind_bv w) (Kind_bv w) (Kind_bv w)
 .
 
-Lemma dec_eq_UnOp {EK1 EK2} (op1 op2 : ArithUnOp EK1 EK2) : {op1=op2} + {~op1=op2}.
+Lemma dec_eq_UnOp {EK1 EK2} (op1 op2 : TpExprUnOp EK1 EK2) : {op1=op2} + {~op1=op2}.
 Admitted.
 
-Lemma dec_eq_BinOp {EK1 EK2 EK3} (op1 op2 : ArithBinOp EK1 EK2 EK3)
+Lemma dec_eq_BinOp {EK1 EK2 EK3} (op1 op2 : TpExprBinOp EK1 EK2 EK3)
   : {op1=op2} + {~op1=op2}.
 Admitted.
 
-Definition evalUnOp {EK1 EK2} (op: ArithUnOp EK1 EK2) :
+Definition evalUnOp {EK1 EK2} (op: TpExprUnOp EK1 EK2) :
   exprKindElem EK1 -> exprKindElem EK2.
 Admitted.
 
-Definition evalBinOp {EK1 EK2 EK3} (op: ArithBinOp EK1 EK2 EK3) :
+Definition evalBinOp {EK1 EK2 EK3} (op: TpExprBinOp EK1 EK2 EK3) :
   exprKindElem EK1 -> exprKindElem EK2 -> exprKindElem EK3.
 Admitted.
 
@@ -80,16 +80,16 @@ Variant KindDesc : Type@{entree_u} :=
 Inductive TpExpr : ExprKind -> Type@{entree_u} :=
 | TpExpr_Const {EK} (c:exprKindElem EK) : TpExpr EK
 | TpExpr_Var {EK} (ix:nat) : TpExpr EK
-| TpExpr_UnOp {EK1 EK2} (op:ArithUnOp EK1 EK2) (e:TpExpr EK1) : TpExpr EK2
-| TpExpr_BinOp {EK1 EK2 EK3} (op:ArithBinOp EK1 EK2 EK3)
+| TpExpr_UnOp {EK1 EK2} (op:TpExprUnOp EK1 EK2) (e:TpExpr EK1) : TpExpr EK2
+| TpExpr_BinOp {EK1 EK2 EK3} (op:TpExprBinOp EK1 EK2 EK3)
     (e1:TpExpr EK1) (e2:TpExpr EK2) : TpExpr EK3
 .
 
 (* The natural number N as a TpExpr *)
-Definition ArithN (n:nat) : TpExpr Kind_nat := @TpExpr_Const Kind_nat n.
+Definition TpExprN (n:nat) : TpExpr Kind_nat := @TpExpr_Const Kind_nat n.
 
 (* The natural number 0 as a TpExpr *)
-Definition ArithZ : TpExpr Kind_nat := @TpExpr_Const Kind_nat 0.
+Definition TpExprZ : TpExpr Kind_nat := @TpExpr_Const Kind_nat 0.
 
 (* Descriptions of types *)
 Inductive TpDesc : Type@{entree_u} :=
@@ -119,7 +119,7 @@ Inductive TpDesc : Type@{entree_u} :=
 Lemma dec_eq_ExprKind (EK1 EK2:ExprKind) : {EK1=EK2} + {~EK1=EK2}.
 Proof. repeat decide equality. Qed.
 
-Lemma dec_eq_arithKElem {EK} (elem1 elem2: exprKindElem EK)
+Lemma dec_eq_exprKElem {EK} (elem1 elem2: exprKindElem EK)
   : {elem1=elem2} + {~elem1=elem2}.
 Admitted.
 
@@ -129,7 +129,7 @@ Proof. repeat decide equality. Qed.
 Lemma dec_eq_TpExpr K (e1 e2 : TpExpr K) : {e1=e2} + {~e1=e2}.
 Proof.
   revert e2; induction e1; intro e2; destruct e2; try (right; intro H0; discriminate H0).
-  - destruct (dec_eq_arithKElem c c0).
+  - destruct (dec_eq_exprKElem c c0).
     + rewrite e; left; reflexivity.
     + right; intro e; inversion e; apply inj_pairT2 in H0; apply n; assumption.
   - destruct (Nat.eq_dec ix ix0).
@@ -158,7 +158,7 @@ Qed.
 
 Definition dec_eq_TpDesc (T U:TpDesc) : { T = U } + {~ T = U}.
 Proof.
-  repeat decide equality; try apply dec_eq_ArithK. apply dec_eq_TpExpr.
+  repeat decide equality; try apply dec_eq_ExprKind. apply dec_eq_TpExpr.
 Qed.
 
 
@@ -242,7 +242,7 @@ Definition evalVar n env K var : kindElem K :=
   | inr _ => defaultKindElem K
   end.
 
-(* Substitute an environment at lifting level n into arithmetic expression e *)
+(* Substitute an environment at lifting level n into type-level expression e *)
 Fixpoint substTpExpr n env {K} (e:TpExpr K) : TpExpr K :=
   match e in TpExpr K return TpExpr K with
   | TpExpr_Const _ c => TpExpr_Const c
@@ -256,7 +256,7 @@ Fixpoint substTpExpr n env {K} (e:TpExpr K) : TpExpr K :=
       TpExpr_BinOp op (substTpExpr n env e1) (substTpExpr n env e2)
   end.
 
-(* Evaluate an arithmetic expression to a value *)
+(* Evaluate a type-level expression to a value *)
 Fixpoint evalTpExpr (env:TpEnv) {K} (e:TpExpr K) : exprKindElem K :=
   match e in TpExpr K return exprKindElem K with
   | TpExpr_Const _ c => c
@@ -312,10 +312,10 @@ Inductive indElem : TpEnv -> TpDesc -> Type@{entree_u} :=
 | Elem_Sigma {env K B}
     (elem1: kindElem K) (elem2: indElem (envConsElem elem1 env) B)
   : indElem env (Tp_Sigma K B)
-| Elem_VecNil {env A} : indElem env (Tp_Vec A ArithZ)
+| Elem_VecNil {env A} : indElem env (Tp_Vec A TpExprZ)
 | Elem_VecCons {env A n} (elem1: indElem env A)
-    (elem2: indElem env (Tp_Vec A (ArithN n)))
-  : indElem env (Tp_Vec A (ArithN (S n)))
+    (elem2: indElem env (Tp_Vec A (TpExprN n)))
+  : indElem env (Tp_Vec A (TpExprN (S n)))
 | Elem_VecCast {env A e1 e2} (e: evalTpExpr env e1 = evalTpExpr env e2)
     (elem: indElem env (Tp_Vec A e1)) : indElem env (Tp_Vec A e2)
 | Elem_Ind {env A} (elem: indElem nil (unfoldIndTpDesc env A))
@@ -327,8 +327,8 @@ Inductive indElem : TpEnv -> TpDesc -> Type@{entree_u} :=
 
 (* Helper function to build a vector indElem with a constant size *)
 Fixpoint mkVecIndElemConst {env T n} :
-  VectorDef.t (indElem env T) n -> indElem env (Tp_Vec T (ArithN n)) :=
-  match n return VectorDef.t (indElem env T) n -> indElem env (Tp_Vec T (ArithN n)) with
+  VectorDef.t (indElem env T) n -> indElem env (Tp_Vec T (TpExprN n)) :=
+  match n return VectorDef.t (indElem env T) n -> indElem env (Tp_Vec T (TpExprN n)) with
   | 0 => fun _ => Elem_VecNil
   | S n' =>
        fun elems =>
@@ -338,7 +338,7 @@ Fixpoint mkVecIndElemConst {env T n} :
 (* Helper function to build a vector indElem from a vector of indElems *)
 Definition mkVecIndElem {env T} {e:TpExpr Kind_nat}
   (elems:VectorDef.t (indElem env T) (evalTpExpr env e)) : indElem env (Tp_Vec T e).
-  apply (Elem_VecCast (e1:=ArithN (evalTpExpr env e))); [ reflexivity | ].
+  apply (Elem_VecCast (e1:=TpExprN (evalTpExpr env e))); [ reflexivity | ].
   apply mkVecIndElemConst. assumption.
 Defined.
 
