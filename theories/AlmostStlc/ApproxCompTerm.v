@@ -339,7 +339,95 @@ Proof.
 Qed.
 
 
+Lemma approx_comp_term_perm_let :
+  forall n t1 t2 MR1 MR2 (Hperm : perm MR1 MR2) (c1 : comp t1 [] MR1) (c2 : comp t2 [t1] MR1),
+    approx_comp_term n (comp_perm Hperm (comp_let c1 c2)) (comp_let (comp_perm Hperm c1) (comp_perm Hperm c2)).
+Proof.
+  intros n. induction n as [n IHn] using (well_founded_induction lt_wf). 
+  intros. constructor. split.
+  - intros. eapply eval_rel_stuck_perm_ret_inv in H.
+    eapply eval_rel_stuck_let3 in H. destruct H as [v2 [Hv21 Hv22]].
+    eapply eval_rel_stuck_let1. eapply eval_rel_stuck_perm_ret. eauto.
+    unfold subst_comp_cons. simp subst_comp. eapply eval_rel_stuck_perm_ret.
+    eauto.
+  - intros. eapply  eval_rel_stuck_perm_stuck_inv in H as ?; eauto.
+    destruct H1 as [yR [E' [c'' [Hc''1 [Hc''2 Hxy]]]]]. subst.
+    eapply eval_rel_stuck_let4 in Hc''1 as Hc''3.
+    destruct Hc''3 as [ [c''' Hc'''] | [v1 [Hv11 Hv12]] ].
+    + (* first I need to prove that c''' gets stuck *)
+      assert (c'' = comp_let c''' c2).
+      { symmetry. eapply eval_rel_stuck_inj in Hc''1; eauto.
+        eapply eval_rel_stuck_let2; eauto. }
+      subst. dependent destruction Hc''2.
+      specialize push_eval_context_comp_call_stuck_perm with 
+        (E := E0) (Hperm := Hperm) (f := comp_perm_map Hperm) as [E' HE'].
+      eapply eval_rel_stuck_perm_stuck with (Hperm := Hperm) in Hc''1 as ?; eauto.
+      2 : econstructor; eauto.
+      eapply eval_rel_stuck_inj in H1; try eapply H. subst. 
+      do 2 eexists. split; [ | split].
+      * eapply eval_rel_stuck_let2. 
+        eapply eval_rel_stuck_perm_stuck; eauto.
+      * constructor. eauto.
+      * intros. simp push_eval_context in H0. dependent destruction H0.
+        simp subst_eval_context. eapply stuck_call_inj in H0; try apply HE'.
+        destruct H0 as [? [? ?]]. subst. unfold comp_perm_map.
+        apply approx_comp_term_refl.
+   + specialize push_eval_context_comp_call_stuck_perm with 
+        (E := E') (Hperm := Hperm) (f := comp_perm_map Hperm) as [E'' HE''].
+     do 2 eexists. split; [ | split]; eauto.
+     * eapply eval_rel_stuck_let1. eapply eval_rel_stuck_perm_ret. eauto.
+       unfold subst_comp_cons. simp subst_comp. eapply eval_rel_stuck_perm_stuck; eauto.
+     * intros.
+       eapply eval_rel_stuck_perm_stuck with (Hperm := Hperm )in Hc''1; eauto.
+       eapply eval_rel_stuck_inj in H; try eapply Hc''1. subst.
+       eapply stuck_call_inj in H0; try eapply HE''. decompose record H0. subst.
+       apply approx_comp_term_refl.
+Qed.
 
+Lemma approx_comp_term_lift_let :
+  forall n t1 t2 MR1 MR2 (c1 : comp t1 [] MR2) (c2 : comp t2 [t1] MR2),
+    approx_comp_term n (comp_lift (MR1 := MR1) (comp_let c1 c2)) (comp_let (comp_lift c1) (comp_lift c2)).
+Proof.
+  intros n. induction n as [n IHn] using (well_founded_induction lt_wf). 
+  intros. constructor. split.
+  - intros. eapply eval_rel_stuck_lift_ret_inv in H.
+    eapply eval_rel_stuck_let3 in H. destruct H as [v2 [Hv21 Hv22]].
+    eapply eval_rel_stuck_let1. eapply eval_rel_stuck_lift_ret. eauto.
+    unfold subst_comp_cons. simp subst_comp. eapply eval_rel_stuck_lift_ret.
+    eauto.
+  - intros. eapply  eval_rel_stuck_lift_stuck_inv in H as ?; eauto.
+    destruct H1 as [yR [E' [c'' [Hc''1 [Hc''2 Hxy]]]]]. subst.
+    eapply eval_rel_stuck_let4 in Hc''1 as Hc''3.
+    destruct Hc''3 as [ [c''' Hc'''] | [v1 [Hv11 Hv12]] ].
+    + (* first I need to prove that c''' gets stuck *)
+      assert (c'' = comp_let c''' c2).
+      { symmetry. eapply eval_rel_stuck_inj in Hc''1; eauto.
+        eapply eval_rel_stuck_let2; eauto. }
+      subst. dependent destruction Hc''2.
+      specialize push_eval_context_comp_call_stuck_lift with 
+        (E := E0) (MR1 := MR1) (f := comp_lift_map) as [E' HE'].
+      eapply eval_rel_stuck_lift_stuck with (MR1 := MR1) in Hc''1 as ?; eauto.
+      2 : econstructor; eauto.
+      eapply eval_rel_stuck_inj in H1; try eapply H. subst. 
+      do 2 eexists. split; [ | split].
+      * eapply eval_rel_stuck_let2. 
+        eapply eval_rel_stuck_lift_stuck; eauto.
+      * constructor. eauto.
+      * intros. simp push_eval_context in H0. dependent destruction H0.
+        simp subst_eval_context. eapply stuck_call_inj in H0; try apply HE'.
+        destruct H0 as [? [? ?]]. subst.
+        apply approx_comp_term_refl.
+   + specialize push_eval_context_comp_call_stuck_lift with 
+        (E := E') (MR1 := MR1) (f := comp_lift_map) as [E'' HE''].
+     do 2 eexists. split; [ | split]; eauto.
+     * eapply eval_rel_stuck_let1. eapply eval_rel_stuck_lift_ret. eauto.
+       unfold subst_comp_cons. simp subst_comp. eapply eval_rel_stuck_lift_stuck; eauto.
+     * intros.
+       eapply eval_rel_stuck_lift_stuck with (MR1 := MR1)in Hc''1; eauto.
+       eapply eval_rel_stuck_inj in H; try eapply Hc''1. subst.
+       eapply stuck_call_inj in H0; try eapply HE''. decompose record H0. subst.
+       apply approx_comp_term_refl.
+Qed.
 
 Lemma approx_comp_term_mfix_let :
   forall n (t1 t2 : vtype) MR R (c1 : comp t1 [] (R :: MR)) (c2 : comp t2 [t1] (R :: MR)) bodies,
@@ -424,20 +512,9 @@ Proof.
        econstructor; eauto. apply step_let1.  apply SmallStepSeqFacts.step_mfix.
        auto.
 Qed.
-(*
-Lemma approx_comp_term_mfix_let':
-  forall (t1 t2 t3 : vtype) (MR : mfix_ctx) (R1 : call_frame) (tin : vtype) (vcall : closed_value tin) 
-    (R2 : call_frame) (x : var (tin, t3) R2) (xR : var R2 MR)
-    (E : eval_context t1 (R1 :: MR) (inr (SmallStepSeq.callv (VarS (b := R1) xR) x vcall)) true) (c : comp t2 [t1] (R1 :: MR))
-    (bodies : mfix_bodies [] MR R1 R1) (E' : eval_context t1 MR (inr (SmallStepSeq.callv xR x vcall)) true) 
-    (vvret : value t3 []) (n : nat),
-    approx_comp_term n (comp_mfix R1 bodies (comp_let (subst_eval_context E (comp_ret vvret)) c))
-                     (comp_let (subst_eval_context E' (comp_ret vvret)) (comp_mfix R1 (weaken_r_bodies bodies) c)).
-Proof.
-  intros t1 t2 t3 MR R1 tin vcall R2 x xR E c bodies E' vvret n.
-  eapply approx_comp_term_trans. eapply approx_comp_term_mfix_let.
-  eapply approx_comp_term_let_cong.
-Admitted. *)
+
+
+(* need versions of this for perm and lift *)
 (* weird mismatch of *)
 Lemma stuck_call_push_eval_context_mfix:
   forall (t : vtype) (R1 R2 : call_frame) (MR : mfix_ctx) (bodies : mfix_bodies [] MR R1 R1)
@@ -465,3 +542,61 @@ Proof.
     eapply approx_comp_term_let_cong. eauto. intros. apply approx_comp_term_refl.
 Qed.
 
+
+Lemma stuck_call_push_eval_context_perm:
+  forall (t : vtype) (R : call_frame) (MR1 MR2 : mfix_ctx) (Hperm : perm MR1 MR2)
+    (tin tout : vtype) (x : var (tin, tout) R) (xR : var R MR1)
+    (vcall : closed_value tin)
+    (E : eval_context t MR1 (inr (SmallStepSeq.callv xR x vcall)) true),
+    exists E', 
+    stuck_call
+      (push_eval_context (inr (SmallStepSeq.callv xR x vcall)) E (comp_perm_map Hperm)
+                         (comp_call (perm_var xR Hperm) x vcall)) 
+      (SmallStepSeq.callv (perm_var xR Hperm) x vcall)
+      E' /\
+      (forall vvret n, approx_comp_term n (comp_perm Hperm (subst_eval_context E (comp_ret vvret)))  
+                  (subst_eval_context E' (comp_ret vvret))).
+Proof.
+  intros.
+  dependent induction E.
+  - simp push_eval_context. exists ev_hole. split. econstructor.
+    intros. simp subst_eval_context. eapply approx_comp_term_step1.
+    constructor. unfold step. simp observe. cbn. simp step_eval_context. simp subst_eval_context. auto.
+  - simp push_eval_context.
+    specialize (IHE _ Hperm _ _ _ _ _ eq_refl JMeq_refl eq_refl JMeq_refl).
+    destruct IHE as [E' [HE'1 HE'2]].
+    eexists. split. econstructor. eauto.
+    intros. simp subst_eval_context. unfold comp_perm_map.
+    eapply approx_comp_term_trans. eapply approx_comp_term_perm_let.
+    eapply approx_comp_term_let_cong. eauto.
+    intros. apply approx_comp_term_refl.
+Qed.
+
+Lemma stuck_call_push_eval_context_lift:
+  forall (t : vtype) (R : call_frame) (MR1 MR2 : mfix_ctx)
+    (tin tout : vtype) (x : var (tin, tout) R) (xR : var R MR2)
+    (vcall : closed_value tin)
+    (E : eval_context t MR2 (inr (SmallStepSeq.callv xR x vcall)) true),
+    exists E', 
+    stuck_call
+      (push_eval_context (inr (SmallStepSeq.callv xR x vcall)) E comp_lift_map
+                         (comp_call (weaken_var_l _ _ _ xR) x vcall)) 
+      (SmallStepSeq.callv (weaken_var_l _ _ _ xR)  x vcall)
+      E' /\
+      (forall vvret n, approx_comp_term n (comp_lift (MR1 := MR1) (subst_eval_context E (comp_ret vvret)))  
+                  (subst_eval_context E' (comp_ret vvret))).
+Proof.
+  intros.
+  dependent induction E.
+  - simp push_eval_context. exists ev_hole. split. econstructor.
+    intros. simp subst_eval_context. eapply approx_comp_term_step1.
+    constructor. unfold step. simp observe. cbn. simp step_eval_context. simp subst_eval_context. auto.
+  - simp push_eval_context.
+    specialize (IHE _  _ _ _ _ _ eq_refl JMeq_refl eq_refl JMeq_refl).
+    destruct IHE as [E' [HE'1 HE'2]].
+    eexists. split. econstructor. eauto.
+    intros. simp subst_eval_context. unfold comp_lift_map.
+    eapply approx_comp_term_trans. eapply approx_comp_term_lift_let.
+    eapply approx_comp_term_let_cong. eauto.
+    intros. apply approx_comp_term_refl.
+Qed.

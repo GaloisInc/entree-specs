@@ -60,6 +60,23 @@ Proof.
       specialize (H0 a b HAns). apply CIH. now pclearbot.
 Qed.
 
+Lemma rutt_ret_eutt {E1 E2 R1 R2} `{enc1 : EncodedType E1} `{enc2 : EncodedType E2} 
+      RPre RPost RR (t1: entree E1 R1) (r : R2) : 
+  rutt RPre RPost RR t1 (Ret r) <-> eutt RR t1 (Ret r).
+Proof.
+  split.
+  - intros Hrutt. punfold Hrutt. red in Hrutt.
+    pstep. red. cbn in *. genobs_clear t1 ot1.
+    remember (RetF r) as or. hinduction Hrutt before r; intros; try inv Heqor.
+    constructor. auto.
+    constructor; auto.
+  - intros Heutt. punfold Heutt. red in Heutt.
+    pstep. red. cbn in *. genobs_clear t1 ot1.
+    remember (RetF r) as or. hinduction Heutt before r; intros; try inv Heqor.
+    constructor. auto.
+    constructor; auto.
+Qed.
+
 (* Progressive [Proper] instances for [rutt] and congruence with eutt. *)
 
 #[global] Instance rutt_Proper_R {E1 E2 R1 R2} `{enc1 : EncodedType E1} 

@@ -40,7 +40,7 @@ Equations denote_comp {t Γ MR} (c : comp t Γ MR) (hyps : denote_ctx Γ) :
     denote_comp (comp_app vf varg) hyps :=
       vf' <- denote_value vf hyps;;
       varg' <- denote_value varg hyps;;
-      vf' varg';
+      Tau (vf' varg');
     denote_comp (comp_call xR x varg) hyps :=
       varg' <- denote_value varg hyps;;
       call_term x xR varg';

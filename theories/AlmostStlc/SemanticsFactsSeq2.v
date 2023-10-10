@@ -793,7 +793,7 @@ Proof.
     simp denote_bredex. setoid_rewrite denote_value_equation_5.
     red. setoid_rewrite bind_ret_l. eapply rutt_bind.
     eapply types_equiv_value_refl. constructor.
-    intros. eapply types_equiv_comp_refl. repeat constructor; auto.
+    intros. rewrite tau_eutt. eapply types_equiv_comp_refl. repeat constructor; auto.
   - simp denote_comp. simp observe.
     simpl denote_observed. simp denote_eval_context.
     simpl denote_call. eapply rutt_bind.

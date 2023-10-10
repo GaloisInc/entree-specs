@@ -4,6 +4,8 @@ From Equations Require Import Equations Signature.
 Require Import Coq.Program.Equality.
 Open Scope list_scope.
 Import ListNotations.
+Require Export Basics.Tactics.
+
 Inductive var {A : Type} : A -> list A -> Type := 
   | VarZ (a : A) l : var a (a :: l)
   | VarS (a b : A) l : var a l -> var a (b :: l).
@@ -185,12 +187,38 @@ Proof.
   - destruct l3; simp perm_var; auto.
 Qed.
 
+Lemma perm_var_inj A (l1 l2 : list A) (Hperm : perm l1 l2) (a : A) (x y : var a l1) :
+  perm_var x Hperm = perm_var y Hperm -> x = y.
+Proof.
+  generalize dependent a. dependent induction Hperm.
+  - intros. inversion x.
+  - intros. dependent destruction x0; dependent destruction y; auto.
+    + simp perm_var in H. discriminate.
+    + simp perm_var in H. discriminate.
+    + simp perm_var in H. injection H. intros. inj_existT. f_equal. auto.
+  - intros.
+    dependent destruction x0; try dependent destruction x0;
+    dependent destruction y0; try dependent destruction y0; auto;
+      simp perm_var in H; try discriminate.
+    injection H. intros. inj_existT. do 2 f_equal. auto.
+  - intros. repeat rewrite perm_var_trans in H.
+    eauto.
+Qed.
+
 Definition weaken_var_r {A} : forall (l1 l2 : list A) (a : A), var a l1 -> var a (l1 ++ l2) := @append_var A.
 
 Equations weaken_var_l {A} (l1 l2 : list A) (a : A) (x : var a l2) : var a (l1 ++ l2) :=
   weaken_var_l nil l2 a x := x;
   weaken_var_l (b :: l1) l2 a x := VarS (weaken_var_l l1 l2 a x). 
 Transparent weaken_var_l.
+
+Lemma weaken_var_l_inj A (l1 l2 : list A) (a : A) (x y : var a l2) :
+  weaken_var_l l1 l2 a x = weaken_var_l l1 l2 a y -> x = y.
+Proof.
+  induction l1; simp weaken_var_l. intros. injection H.
+  intros.  inj_existT. auto.
+Qed.
+
 Equations swap_var {A} (l: list A) (a b c: A) (x : var a ([b] ++ [c] ++ l) ) :
   var a ([c] ++ [b] ++ l) :=
   swap_var l a a c VarZ :=  VarS VarZ;

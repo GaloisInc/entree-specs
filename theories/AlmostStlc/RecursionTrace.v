@@ -182,26 +182,6 @@ Qed.
 
 End RecursionTrace.
 
-Lemma call_extract (MR : mfix_ctx) (d : denote_mrec_ctx (denote_mfix_ctx MR)) : 
-  exists R (xR : var R MR) t1 t2 (x : var (t1,t2) R)  (vin : denote_type t1),
-    projT1 (call_mrec x xR vin) = d.
-Proof.
-  revert d. induction MR.
-  intros [].
-  rename a into R. intros [dR | dMR].
-  - exists R, VarZ. clear IHMR. induction R.
-    inversion dR. destruct a as [tin tout].
-    destruct dR as [vvin | ?].
-    + exists tin, tout, VarZ, vvin. simp call_mrec. rewrite call_mrec_call_frame_equation_1. auto.
-    + specialize (IHR d). destruct IHR as [t1 [t2 [x [vin H] ]] ].
-      simp call_mrec in H.
-      exists t1,t2, (VarS x), vin. simp call_mrec. rewrite call_mrec_call_frame_equation_2.
-      destruct (call_mrec_call_frame x vin). cbn in *. injection H. intros. subst. auto.
-  - specialize (IHMR dMR). destruct IHMR as [R' [xR [t1 [t2 [x [vin H]]]]]].
-    exists R', (VarS xR), t1, t2, x, vin. simp call_mrec. destruct (call_mrec x xR vin).
-    cbn in H. subst. auto.
-Qed.
-
 Definition apply_bodies {R1 R2 MR} {tin tout : type} (bodies : forall arg : denote_call_frame R1, mtree (denote_mfix_ctx (R2 :: MR)) (encodes arg))
            (x : var (tin, tout) R1) (vvin : denote_type tin) 
   : mtree (denote_mfix_ctx (R2 :: MR)) (denote_type tout) :=

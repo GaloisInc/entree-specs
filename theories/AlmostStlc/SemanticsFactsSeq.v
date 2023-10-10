@@ -212,7 +212,8 @@ Proof.
                                               (hyps := (d2, hyps2)).
     apply H0. repeat split; auto.
   - simp comp_map. simp denote_comp. 
-    do 2 (eapply rutt_bind; eauto; intros).
+    do 2 (eapply rutt_bind; eauto; intros). setoid_rewrite tau_eutt. 
+    simp types_equiv in H1.
   - simp comp_map. simp denote_comp.
     eapply rutt_bind; eauto. intros. unfold call_term.
     (* maybe can write a better reasoning principle that encloses this *)
@@ -578,7 +579,8 @@ Proof.
    eapply H0; auto. repeat constructor; auto.
  - simp subst_comp. simp denote_comp.
    eapply rutt_bind; eauto. eapply H; eauto.
-   intros. eapply rutt_bind. eapply H0; eauto. intros. 
+   intros. eapply rutt_bind. eapply H0; eauto. intros.
+   setoid_rewrite tau_eutt.
    simp types_equiv in H3.
  - simp subst_comp. simp denote_comp.
    eapply rutt_bind. eapply H; eauto.

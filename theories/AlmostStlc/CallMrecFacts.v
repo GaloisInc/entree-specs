@@ -14,6 +14,26 @@ Import MonadNotation.
 Local Open Scope monad_scope.
 
 
+Lemma call_extract (MR : mfix_ctx) (d : denote_mrec_ctx (denote_mfix_ctx MR)) : 
+  exists R (xR : var R MR) t1 t2 (x : var (t1,t2) R)  (vin : denote_type t1),
+    projT1 (call_mrec x xR vin) = d.
+Proof.
+  revert d. induction MR.
+  intros [].
+  rename a into R. intros [dR | dMR].
+  - exists R, VarZ. clear IHMR. induction R.
+    inversion dR. destruct a as [tin tout].
+    destruct dR as [vvin | ?].
+    + exists tin, tout, VarZ, vvin. simp call_mrec. rewrite call_mrec_call_frame_equation_1. auto.
+    + specialize (IHR d). destruct IHR as [t1 [t2 [x [vin H] ]] ].
+      simp call_mrec in H.
+      exists t1,t2, (VarS x), vin. simp call_mrec. rewrite call_mrec_call_frame_equation_2.
+      destruct (call_mrec_call_frame x vin). cbn in *. injection H. intros. subst. auto.
+  - specialize (IHMR dMR). destruct IHMR as [R' [xR [t1 [t2 [x [vin H]]]]]].
+    exists R', (VarS xR), t1, t2, x, vin. simp call_mrec. destruct (call_mrec x xR vin).
+    cbn in H. subst. auto.
+Qed.
+
 Lemma JMeq_id_comp:
   forall A B C
     (e : A -> B) 
@@ -154,7 +174,7 @@ Lemma mapE_perm_handler_call_term_aux:
     h (vf : forall R, var R MR1 -> var R MR2),
     var_map_handler_rel h vf ->
     valid_handler h ->
-    (mapE h (call_term x xR r1)) ≈ (call_term x (vf _ xR) r1).
+    (mapE h (call_term x xR r1)) ≅ (call_term x (vf _ xR) r1).
 Proof.
   unfold call_term. intros.
   destruct (call_mrec x xR r1) eqn : Heq1.
@@ -179,7 +199,10 @@ Proof.
   eapply JMeq_comp'; eauto.
 Qed.
 
-Arguments perm_handler {_ _}.
+  
+
+Arguments perm_handler {_ _}
+.
 Lemma perm_var_map_handler_rel MR1 MR2 (Hperm : perm MR1 MR2) : 
   var_map_handler_rel (perm_handler (perm_denote Hperm))
                       (fun _ x => perm_var x Hperm ).
@@ -311,4 +334,67 @@ Proof.
   setoid_rewrite bind_trigger. apply rutt_Vis.
   eapply mfix_pre_call_mrec; eauto.
   intros. apply rutt_Ret. eapply mfix_post_equiv_types_equiv; eauto.
+Qed.
+
+
+Lemma call_term_bind_inv_aux1  : 
+ forall (MR : mfix_ctx)
+    (R0 : call_frame) (tin0 tout0 : vtype) (x0 : var (tin0, tout0) R0) (xR0 : var R0 MR)
+    (vvin : denote_type tin0)
+    (tin tout : vtype) (Rcall : call_frame)
+    (xR : var Rcall MR) (x : var (tin, tout) Rcall) (vvcall : denote_type tin),
+   projT1 (call_mrec x xR vvcall) = projT1 (call_mrec x0 xR0 vvin) ->
+   var_eq xR xR0.
+Proof.
+  intros. generalize dependent xR0.
+  dependent induction xR.
+  - simp call_mrec. intros.
+    dependent destruction xR0. constructor. simp call_mrec in H.
+    destruct (call_mrec_call_frame x vvcall). destruct (call_mrec x0 xR0 vvin).
+    discriminate.
+  - intros. dependent destruction xR0.
+    + simp call_mrec in H. destruct (call_mrec x xR vvcall). 
+      destruct (call_mrec_call_frame x0 vvin). discriminate.
+    + constructor. eapply IHxR with (x := x) (vvcall := vvcall).
+      simp call_mrec in H.
+      destruct (call_mrec x xR vvcall). destruct (call_mrec x0 xR0 vvin).
+      injection H. intros. subst. auto.
+Qed.
+
+Lemma call_term_bind_inv_aux2 : 
+ forall (MR : mfix_ctx)
+    
+    (tin tout : vtype) (Rcall : call_frame)
+    (tin0 tout0 : vtype) (x0 : var (tin0, tout0) Rcall)
+    (xR : var Rcall MR) (x : var (tin, tout) Rcall) (vvcall : denote_type tin) 
+    (vvin : denote_type tin0),
+   projT1 (call_mrec x xR vvcall) = projT1 (call_mrec x0 xR vvin) ->
+   (var_eq x x0 * (vvin ~= vvcall))%type.
+Proof.
+  intros. generalize dependent x0. generalize dependent x.
+  dependent induction xR.
+  - intros. simp call_mrec in H.
+    assert (projT1 (call_mrec_call_frame x vvcall) = projT1 (call_mrec_call_frame x0 vvin)).
+    destruct (call_mrec_call_frame x vvcall). destruct (call_mrec_call_frame x0 vvin).
+    injection H. intros. auto. clear H.
+    generalize dependent x0. dependent induction x.
+    + simp call_mrec_call_frame. intros.
+      dependent destruction x0. simp call_mrec_call_frame in H0. injection H0.
+      intros. subst. split; constructor. exfalso.
+      simp call_mrec_call_frame in H0. destruct (call_mrec_call_frame x0 vvin).
+      discriminate.
+    + intros.
+      dependent destruction x0.
+      * simp call_mrec_call_frame in H0. destruct (call_mrec_call_frame x vvcall).
+        discriminate.
+      * destruct b. simp call_mrec_call_frame in H0.
+        enough (var_eq x x0 * (vvin ~= vvcall)). destruct X. split; auto.
+        constructor. auto.
+        eapply IHx; eauto. 
+        destruct (call_mrec_call_frame x vvcall).
+        destruct (call_mrec_call_frame x0 vvin). injection H0. auto.
+  - intros. eapply IHxR. simp call_mrec in H.
+    destruct (call_mrec x xR vvcall).
+    destruct (call_mrec x0 xR vvin). injection H. intros. subst.
+    auto.
 Qed.

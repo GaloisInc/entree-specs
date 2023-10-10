@@ -630,7 +630,7 @@ Proof.
     apply Hes. repeat (split; auto).
   - intros ? ? ? ? ? Hvf ? Hvarg ? ? ?. simp denote_comp.
     eapply rutt_bind; try apply Hvf; auto. intros f g Hfg.
-    eapply rutt_bind. apply Hvarg; auto. exact Hfg.
+    eapply rutt_bind. apply Hvarg; auto. setoid_rewrite tau_eutt. exact Hfg.
   - intros. apply comp_equiv_call. repeat intro. eapply H. auto. auto.
   - intros t Γ MR R bodies Hbodies c Hc hyps1 hyps2 Hhyps.
     simp denote_comp. 

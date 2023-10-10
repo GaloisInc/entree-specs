@@ -48,4 +48,5 @@ theories/AlmostStlc/SmallStepSeqFacts.v
 theories/AlmostStlc/LogicalApprox.v
 theories/AlmostStlc/ApproxCompTerm.v
 theories/AlmostStlc/Compatibility.v
+theories/AlmostStlc/ContextEquiv.v
 theories/AlmostStlc/Adequacy.v
