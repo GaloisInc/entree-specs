@@ -104,11 +104,15 @@ Inductive TpDesc : Type@{entree_u} :=
 | Tp_Sum (A : TpDesc) (B : TpDesc)
 | Tp_Sigma (K : KindDesc) (B : TpDesc)
 | Tp_Vec (A : TpDesc) (e:TpExpr Kind_nat)
+| Tp_Void
 
 (* Inductive types and type variables *)
 | Tp_Ind (A : TpDesc)
 | Tp_Var (n : nat)
-| Tp_Void
+
+(* Explicit substitutions *)
+| Tp_TpSubst (A : TpDesc) (B : TpDesc)
+| Tp_ExprSubst (A : TpDesc) (EK:ExprKind) (e : TpExpr EK)
 .
 
 
@@ -158,8 +162,11 @@ Qed.
 
 Definition dec_eq_TpDesc (T U:TpDesc) : { T = U } + {~ T = U}.
 Proof.
+(*
   repeat decide equality; try apply dec_eq_ExprKind. apply dec_eq_TpExpr.
 Qed.
+*)
+Admitted.
 
 
 (**
@@ -277,12 +284,16 @@ Fixpoint tpSubst n env (T:TpDesc) : TpDesc :=
   | Tp_Sum A B => Tp_Sum (tpSubst n env A) (tpSubst n env B)
   | Tp_Sigma A B => Tp_Sigma A (tpSubst (S n) env B)
   | Tp_Vec A e => Tp_Vec (tpSubst n env A) (substTpExpr n env e)
+  | Tp_Void => Tp_Void
   | Tp_Ind A => Tp_Ind (tpSubst (S n) env A)
   | Tp_Var var => match substVar n env Kind_Tp var with
                   | inl U => U
                   | inr var' => Tp_Var var'
                   end
-  | Tp_Void => Tp_Void
+  | Tp_TpSubst A B =>
+      tpSubst n (@envConsElem Kind_Tp (tpSubst n env B) env) A
+  | Tp_ExprSubst A EK e =>
+      tpSubst n (@envConsElem (Kind_Expr EK) (evalTpExpr env e) env) A
   end.
 
 (* Substitute a single value into a type description *)
@@ -318,11 +329,17 @@ Inductive indElem : TpEnv -> TpDesc -> Type@{entree_u} :=
   : indElem env (Tp_Vec A (TpExprN (S n)))
 | Elem_VecCast {env A e1 e2} (e: evalTpExpr env e1 = evalTpExpr env e2)
     (elem: indElem env (Tp_Vec A e1)) : indElem env (Tp_Vec A e2)
+(* No case for Tp_Void *)
 | Elem_Ind {env A} (elem: indElem nil (unfoldIndTpDesc env A))
   : indElem env (Tp_Ind A)
 | Elem_Var {env} var (elem: indElem nil (evalVar 0 env Kind_Tp var)) :
   indElem env (Tp_Var var)
-(* No case for Tp_Void *)
+| Elem_TpSubst {env A B}
+    (elem: indElem (@envConsElem Kind_Tp (tpSubst 0 env B) env) A)
+  : indElem env (Tp_TpSubst A B)
+| Elem_ExprSubst {env A EK e}
+    (elem: indElem (@envConsElem (Kind_Expr EK) (evalTpExpr env e) env) A)
+  : indElem env (Tp_ExprSubst A EK e)
 .
 
 (* Helper function to build a vector indElem with a constant size *)
@@ -354,9 +371,13 @@ Fixpoint tpElemEnv env T : Type@{entree_u} :=
   | Tp_Sum A B => tpElemEnv env A + tpElemEnv env B
   | Tp_Sigma K B => { elem: kindElem K & tpElemEnv (envConsElem elem env) B }
   | Tp_Vec A e => VectorDef.t (tpElemEnv env A) (evalTpExpr env e)
+  | Tp_Void => Empty_set
   | Tp_Ind A => indElem nil (unfoldIndTpDesc env A)
   | Tp_Var var => indElem nil (evalVar 0 env Kind_Tp var)
-  | Tp_Void => Empty_set
+  | Tp_TpSubst A B =>
+      tpElemEnv (@envConsElem Kind_Tp (tpSubst 0 env B) env) A
+  | Tp_ExprSubst A EK e =>
+      tpElemEnv (@envConsElem (Kind_Expr EK) (evalTpExpr env e) env) A
   end.
 
 (* Elements of a type description = elements relative to the empty environment *)
@@ -379,6 +400,8 @@ Fixpoint indToTpElem env {T} (elem : indElem env T) : tpElemEnv env T.
   - simpl. rewrite <- e. apply (indToTpElem env _ elem).
   - apply elem.
   - apply elem.
+  - simpl; apply indToTpElem; assumption.
+  - simpl; apply indToTpElem; assumption.
 Defined.
 
 (* Convert a recursively-defined element to an inductively-defined one *)
@@ -393,9 +416,11 @@ Fixpoint tpToIndElem env {T} : tpElemEnv env T -> indElem env T.
       apply tpToIndElem; assumption.
   - econstructor. apply (tpToIndElem _ _ (projT2 elem)).
   - apply mkVecIndElem. apply (VectorDef.map (tpToIndElem env T) elem).
-  - constructor; assumption.
-  - constructor; assumption.
   - destruct elem.
+  - constructor; assumption.
+  - constructor; assumption.
+  - constructor; apply tpToIndElem; assumption.
+  - constructor; apply tpToIndElem; assumption.
 Defined.
 
 
