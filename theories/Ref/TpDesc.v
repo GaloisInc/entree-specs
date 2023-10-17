@@ -110,7 +110,9 @@ Inductive TpDesc : Type@{entree_u} :=
 | Tp_Ind (A : TpDesc)
 | Tp_Var (n : nat)
 
-(* Explicit substitutions *)
+(* Explicit substitutions; allow one to represent substitutions of expressions
+and types with free variables while only defining substitution of value
+environments *)
 | Tp_TpSubst (A : TpDesc) (B : TpDesc)
 | Tp_ExprSubst (A : TpDesc) (EK:ExprKind) (e : TpExpr EK)
 .
