@@ -51,6 +51,8 @@ Equations num_lets {t Γ MR} (c : comp t Γ MR) : nat :=
   num_lets (comp_succ vn) := 0;
   num_lets (comp_match_list vl c1 c2) := num_lets c1 + num_lets c2;
   num_lets (comp_split vp cs) := num_lets cs;
+  num_lets (comp_match_sum vs cinl cinr) :=
+    num_lets cinl + num_lets cinr;
   num_lets (comp_app vf varg) := 0;
   num_lets (comp_call _ _ _) := 0;
   num_lets (comp_mfix R bodies c) := num_lets c;
@@ -71,6 +73,8 @@ Proof.
   - erewrite IHc1 with (v := v); eauto. f_equal.
     eapply IHc2 with (Γ1 := _ :: _ :: Γ1); auto.
   - eapply IHc with (Γ1 := _ :: _ :: Γ1); auto.
+  - erewrite IHc1 with (Γ1 := t1 :: Γ1) (v := v); eauto.
+    erewrite IHc2 with (Γ1 := t0 :: Γ1) (v := v); eauto.
 Qed.
 
 (* remaining cases should be similarly easy *)

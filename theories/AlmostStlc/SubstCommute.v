@@ -56,6 +56,7 @@ Proof.
   - rewrite H, H0, H1; auto. apply var_map_skip_id; auto.
   - rewrite H, H0, H1; auto. repeat apply var_map_skip_id; auto.
   - rewrite H, H0; auto. repeat apply var_map_skip_id; auto.
+  - rewrite H, H0, H1; auto; try apply var_map_skip_id; auto.
   - rewrite H, H0; auto. apply var_map_skip_id; auto.
 Qed.
 
@@ -100,6 +101,7 @@ Proof.
     apply dep_f_equal_var_map_skip; auto.
   - erewrite H; eauto. erewrite H0; eauto; try apply dep_f_equal_var_map_skip; auto.
     apply dep_f_equal_var_map_skip; auto.
+  - erewrite H; eauto. erewrite H0, H1; eauto. all : apply dep_f_equal_var_map_skip; eauto.
 Qed.
 
 
@@ -145,6 +147,9 @@ Proof.
   - rewrite H; rewrite H0. f_equal; auto. eapply comp_map_dep_f_equal. auto.
     red. intros. dependent destruction b; simp var_map_skip; auto. f_equal.
     dependent destruction b1; simp var_map_skip; auto.
+  - rewrite H, H0, H1. f_equal; try eapply comp_map_dep_f_equal; eauto.
+    red. intros. dependent destruction b; simp var_map_skip; auto.
+    red. intros. dependent destruction b; simp var_map_skip; auto.
   - rewrite H; rewrite H0. f_equal. eapply comp_map_dep_f_equal. auto.
     red. intros. dependent destruction b; simp var_map_skip; auto.
 Qed.
@@ -284,76 +289,6 @@ Proof.
         symmetry. auto. subst. auto.
 Qed.
 
-(* if trivial subst holds then substitution is just renaming,
-   prove that the correct weakening implies trivial subst holds
-*)
-Inductive trivial_subst_value : forall {t1 Γ1 t2 Γ2}, value t1 (Γ1 ++ [t2] ++ Γ2) -> Prop :=
-| tsv_var t1 Γ1 t2 Γ2 (x : var t1 (Γ1 ++ [t2] ++ Γ2)) (Hneq : var_neq x (var_of Γ1)) :
-  trivial_subst_value (val_var x)
-| tsv_abs t1 t2 Γ1 t3 Γ2 MR (cbody : comp t2 ((t1 :: Γ1) ++ [t3] ++ Γ2) MR) :
-          trivial_subst_comp  cbody ->
-          trivial_subst_value (val_abs cbody)
-| tsv_const Γ1 t2 Γ2 (n : nat) :
-  @trivial_subst_value Nat Γ1 t2 Γ2 (val_const n)
-| tsv_nil t1 Γ1 t2 Γ2 :
-  @trivial_subst_value (List t1) Γ1 t2 Γ2 val_nil
-| tsv_cons t1 Γ1 t2 Γ2 (vh : value t1 (Γ1 ++ [t2] ++ Γ2)) (vt : value (List t1) (Γ1 ++ [t2] ++ Γ2)) :
-  trivial_subst_value vh -> trivial_subst_value vt ->
-  trivial_subst_value (val_cons vh vt)
-| tsv_pair t1 t2 Γ1 t3 Γ2 
-           (v1 : value t1 (Γ1 ++ [t3] ++ Γ2)) (v2 : value t2 (Γ1 ++ [t3] ++ Γ2)) :
-  trivial_subst_value v1 -> trivial_subst_value v2 ->
-  trivial_subst_value (val_pair v1 v2)
-with trivial_subst_comp  : forall {t1 MR Γ1 t2 Γ2}, comp t1 (Γ1 ++ [t2] ++ Γ2) MR -> Prop :=
-| tsv_ret t1 Γ1 t2 Γ2 MR (v : value t1 (Γ1 ++ [t2] ++ Γ2)) :
-  trivial_subst_value v -> trivial_subst_comp (comp_ret (MR := MR) v)
-| tsv_let t1 t2 Γ1 t3 Γ2 MR 
-          (c1 : comp t1 ((Γ1 ++ [t3] ++ Γ2)) MR) (c2 : comp t2 ((t1 :: Γ1) ++ [t3] ++ Γ2) MR) :
-  trivial_subst_comp c1 -> trivial_subst_comp c2 ->
-  trivial_subst_comp (comp_let c1 c2)
-| tsv_match_nat t1 Γ1 t2 Γ2 MR (vn : value Nat (Γ1 ++ [t2] ++ Γ2))
-                (cZ : comp t1 (Γ1 ++ [t2] ++ Γ2) MR) 
-                (cS : comp t1 ((Nat :: Γ1) ++ [t2] ++ Γ2) MR) :
-  trivial_subst_value vn -> trivial_subst_comp cZ -> trivial_subst_comp cS ->
-  trivial_subst_comp (comp_match_nat vn cZ cS)
-| tsv_succ Γ1 t2 Γ2 MR (vn : value Nat (Γ1 ++ [t2] ++ Γ2)) :
-  trivial_subst_value vn -> trivial_subst_comp (comp_succ (MR := MR) vn)
-| tsv_match_list t1 t2 Γ1 t3 Γ2 MR (vl : value (List t1) (Γ1 ++ [t3] ++ Γ2))
-                 (cnil : comp t2 (Γ1 ++ [t3] ++ Γ2) MR)
-                 (ccons : comp t2 ((t1 :: (List t1) :: Γ1) ++ [t3] ++ Γ2) MR) :
-  trivial_subst_value vl -> trivial_subst_comp cnil -> trivial_subst_comp ccons ->
-  trivial_subst_comp (comp_match_list vl cnil ccons)
-| tsv_split t1 t2 t3 Γ1 t4 Γ2 MR (vp : value (Pair t1 t2) (Γ1 ++ [t4] ++ Γ2))
-            (cs : comp t3 (((t1 :: t2 :: Γ1) ++ [t4] ++ Γ2)) MR) :
-  trivial_subst_value vp -> trivial_subst_comp cs ->
-  trivial_subst_comp (comp_split vp cs)
-| tsv_app t1 t2 Γ1 t3 Γ2 MR 
-          (vf : value (Arrow t1 MR t2) (Γ1 ++ [t3] ++ Γ2)) 
-          (varg : value t1 (Γ1 ++ [t3] ++ Γ2)) :
-  trivial_subst_value vf -> trivial_subst_value varg ->
-  trivial_subst_comp (comp_app vf varg)
-| tsv_call t1 t2 Γ1 t3 Γ2 MR R (xR : var R MR) (x : var (t1, t2) R) 
-           (v : value t1 (Γ1 ++ [t3] ++ Γ2)) : 
-  trivial_subst_value v -> trivial_subst_comp (comp_call xR x v)
-| tsv_mfix t1 Γ1 t2 Γ2 MR R
-           (bodies : mfix_bodies (Γ1 ++ [t2] ++ Γ2) MR R R)
-           (c : comp t1 (Γ1 ++ [t2] ++ Γ2) (R :: MR)) :
-  trivial_subst_bodies bodies -> trivial_subst_comp c ->
-  trivial_subst_comp (comp_mfix R bodies c)
-| tsv_lift t1 Γ1 t2 Γ2 MR1 MR2 (c : comp t1 (Γ1 ++ [t2] ++ Γ2) MR2) : 
-  trivial_subst_comp c -> trivial_subst_comp (comp_lift (MR1 := MR1) c)
-| tsv_perm t1 Γ1 t2 Γ2 MR1 MR2 (Hperm : perm MR1 MR2)
-           (c : comp t1 (Γ1 ++ [t2] ++ Γ2) MR1) :
-  trivial_subst_comp c -> trivial_subst_comp (comp_perm Hperm c)
-with trivial_subst_bodies : forall {MR R1 R2 Γ1 t2 Γ2}, mfix_bodies (Γ1 ++ [t2] ++ Γ2) MR R1 R2 -> Prop :=
-| tsv_bodies_nil MR R1 Γ1 t2 Γ2 : trivial_subst_bodies 
-                                    (@mfix_bodies_nil (Γ1 ++ [t2] ++ Γ2) MR R1)
-| tsv_bodies_cons MR t1 t2 R1 R2 Γ1 t3 Γ2 
-                  (cbody : comp t2 (((t1 :: Γ1) ++ [t3] ++ Γ2)) (R1 :: MR))
-                  (bodies : mfix_bodies (Γ1 ++ [t3] ++ Γ2) MR R1 R2) :
-  trivial_subst_comp cbody -> trivial_subst_bodies bodies ->
-  trivial_subst_bodies (mfix_bodies_cons cbody bodies)
-.
 
 (* need a lemma with neq_var var_of Γ1*)
 
@@ -431,7 +366,23 @@ Proof.
   intros. subst. do 2 eexists. repeat (split; eauto).
 Qed.
 
+Lemma val_inl_JMeq Γ1 Γ2 t1 t2 (v : value (Sum t1 t2) Γ2)
+      (v1 : value t1 Γ1) :
+  Γ1 = Γ2 ->
+  val_inl (t2 := t2) v1 ~= v ->
+  exists v1', v1' ~= v1 /\ v = val_inl v1'.
+Proof.
+  intros. subst. eexists. split; eauto.
+Qed.
 
+Lemma val_inr_JMeq Γ1 Γ2 t1 t2 (v : value (Sum t1 t2) Γ2)
+      (v2 : value t2 Γ1) :
+  Γ1 = Γ2 ->
+  val_inr (t1 := t1) v2 ~= v ->
+  exists v2', v2' ~= v2 /\ v = val_inr v2'.
+Proof.
+  intros. subst. eexists. split; eauto.
+Qed.
 
 Lemma val_abs_JMeq Γ1 Γ2 MR t1 t2 (v : value (Arrow t1 MR t2) Γ2)
       (cbody : comp t2 (t1 :: Γ1) MR) :
@@ -508,6 +459,18 @@ Lemma comp_split_JMeq Γ1 Γ2 MR t1 t2 t3 (c : comp t3 Γ2 MR) (vp : value (Pair
   exists vp' cs', vp' ~= vp /\ cs' ~= cs /\ c = comp_split (t1 := t1) (t2:= t2) vp' cs'.
 Proof.
   intros. subst. do 2 eexists. repeat (split; eauto).
+Qed.
+
+Lemma comp_match_sum_JMeq Γ1 Γ2 MR t1 t2 t3 (c : comp t3 Γ2 MR)
+      (vs : value (Sum t1 t2) Γ1) 
+      (cinl : comp t3 (t1 :: Γ1) MR) (cinr : comp t3 (t2 :: Γ1) MR) :
+  Γ1 = Γ2 ->
+  comp_match_sum vs cinl cinr ~= c ->
+  exists vs' cinl' cinr', vs' ~= vs /\ cinl' ~= cinl /\ cinr' ~= cinr /\
+                      c =  comp_match_sum (t1 := t1) (t2 := t2) (t3 := t3)
+                                      vs' cinl' cinr'.
+Proof.
+  intros. subst. do 3 eexists. repeat (split; eauto).
 Qed.
 
 
@@ -594,6 +557,10 @@ Ltac comp_val_inv :=
   | H : val_var ?x ~= ?v |- _ => learn_type H; eapply val_var_JMeq in H;
                                      try subst_comp_list_solve; 
                                      decompose record H; clear H; subst 
+  | H : val_inl ?x ~= ?v |- _ => eapply val_inl_JMeq in H; try subst_comp_list_solve;
+                               decompose record H; clear H; subst
+  | H : val_inr ?x ~= ?v |- _ => eapply val_inr_JMeq in H; try subst_comp_list_solve;
+                               decompose record H; clear H; subst
   | H : comp_ret ?v ~= ?c |- _ => learn_type H; eapply comp_ret_JMeq in H;
                                      try subst_comp_list_solve; 
                                      decompose record H; clear H; subst 
@@ -614,6 +581,9 @@ Ltac comp_val_inv :=
   | H : comp_split ?vp ?cs ~= ?c |- _ => learn_type H; eapply comp_split_JMeq in H; 
                                      try subst_comp_list_solve; 
                                      decompose record H; clear H; subst 
+  | H : comp_match_sum ?vs ?cinl ?cinr ~= ?c |- _ =>
+      eapply comp_match_sum_JMeq in H; try subst_comp_list_solve;
+      decompose record H; clear H; subst
   | H : comp_app ?vf ?varg ~= ?c |- _ => learn_type H; eapply comp_app_JMeq in H; 
                                      try subst_comp_list_solve; 
                                      decompose record H; clear H; subst 
@@ -697,6 +667,10 @@ Proof.
   - unfold weaken_mid_value. simp comp_map. simp subst_comp. f_equal.
     erewrite <- H with (v2 := v2); eauto.
   - unfold weaken_mid_value. simp comp_map. simp subst_comp.
+    f_equal. erewrite <- H with (v2 := v2); eauto. 
+  - unfold weaken_mid_value. simp comp_map. simp subst_comp.
+    f_equal. erewrite <- H with (v2 := v2); eauto. 
+  - unfold weaken_mid_value. simp comp_map. simp subst_comp.
     apply subst_var_weaken_var_mid.
   - unfold weaken_mid_comp. simp comp_map. simp subst_comp.
     f_equal. eauto.
@@ -710,6 +684,9 @@ Proof.
     f_equal; eauto. erewrite <- H1 with (v2 := v2); eauto.
   - unfold weaken_mid_comp. simp comp_map. simp subst_comp.
     f_equal; eauto. erewrite <- H0 with (v2 := v2); eauto.
+  - unfold weaken_mid_comp. simp comp_map. simp subst_comp.
+    f_equal; eauto. erewrite <- H0 with (v2 := v2); eauto. 
+    erewrite <- H1 with (v2 := v2); eauto.
   - unfold weaken_mid_comp. simp comp_map. simp subst_comp.
     f_equal; eauto.
   - unfold weaken_mid_comp. simp comp_map. simp subst_comp.
@@ -890,6 +867,12 @@ Proof.
   - intros t1 t2 Γ v1 Hv1 v2 Hv2.  red. intros. subst.
     comp_val_inv. simp subst_comp in H2. symmetry in H2. comp_val_inv.
     simp subst_comp. erewrite Hv1; eauto. erewrite Hv2; eauto.
+  - intros t1 t2 Γ v Hv. red. intros. subst. comp_val_inv.
+    subst. simp subst_comp in H2. symmetry in H2. comp_val_inv.
+    simp subst_comp. f_equal. eauto.
+  - intros t1 t2 Γ v Hv. red. intros. subst. comp_val_inv.
+    subst. simp subst_comp in H2. symmetry in H2. comp_val_inv.
+    simp subst_comp. f_equal. eauto.
   - intros t1 t2 Γ MR cbody Hcbody. red. intros. subst.
     comp_val_inv. simp subst_comp in H2. symmetry in H2.
     comp_val_inv. simp subst_comp. erewrite Hcbody; eauto.
@@ -982,6 +965,10 @@ Proof.
     comp_val_inv. simp subst_comp in H2. symmetry in H2.
     comp_val_inv. simp subst_comp. erewrite Hvp; eauto.
     erewrite Hes; eauto.
+  - intros t1 t2 t3 Γ MR vs Hvs cinl Hcinl cinr Hinr.
+    red. intros. subst. comp_val_inv.
+    subst. simp subst_comp in H2. symmetry in H2.
+    comp_val_inv. simp subst_comp. f_equal; eauto.
   - intros t1 t2 Γ MR vf Hvf varg Hvarg. red. intros.
     subst. comp_val_inv. simp subst_comp in H2. symmetry in H2.
     comp_val_inv. simp subst_comp. erewrite Hvarg; eauto.

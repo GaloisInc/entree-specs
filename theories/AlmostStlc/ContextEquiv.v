@@ -60,6 +60,21 @@ Inductive comp_context : vtype -> ctx -> mfix_ctx -> vtype -> ctx -> mfix_ctx ->
   | ctx_split2 {t1 t2 Γ1 MR1 t3 t4 Γ2 MR2} (vp : value (Pair t1 t2) Γ1)
                (Cs : comp_context t3 (t1 :: t2 :: Γ1) MR1 t4 Γ2 MR2) :
     comp_context t3 Γ1 MR1 t4 Γ2 MR2
+  | ctx_match_sum1 {t1 t2 t3 Γ1 MR1 t4 Γ2 MR2} 
+                   (Vl : value_context (Sum t1 t2) Γ1 t4 Γ2 MR2)
+                   (cinl : comp t3 (t1 :: Γ1) MR1)
+                   (cinr : comp t3 (t2 :: Γ1) MR1) :
+    comp_context t3 Γ1 MR1 t4 Γ2 MR2
+  | ctx_match_sum2 {t1 t2 t3 Γ1 MR1 t4 Γ2 MR2}
+                   (vl : value (Sum t1 t2) Γ1)
+                   (Cinl : comp_context t3 (t1 :: Γ1) MR1 t4 Γ2 MR2)
+                   (cinr : comp t3 (t2 :: Γ1) MR1) :
+    comp_context t3 Γ1 MR1 t4 Γ2 MR2
+  | ctx_match_sum3 {t1 t2 t3 Γ1 MR1 t4 Γ2 MR2}
+                   (vl : value (Sum t1 t2) Γ1)
+                   (Cinl : comp t3 (t1 :: Γ1) MR1)
+                   (cinr : comp_context t3 (t2 :: Γ1) MR1 t4 Γ2 MR2) :
+    comp_context t3 Γ1 MR1 t4 Γ2 MR2
   | ctx_app1 {t1 t2 Γ1 MR1 t3 Γ2 MR2} (Vf : value_context (Arrow t1 MR1 t2) Γ1 t3 Γ2 MR2)
             (varg : value t1 Γ1) :
     comp_context t2 Γ1 MR1 t3 Γ2 MR2
@@ -101,6 +116,12 @@ with value_context : vtype -> ctx -> vtype -> ctx -> mfix_ctx -> Type :=
               (v1 : value t1 Γ1)
               (V2 : value_context t2 Γ1 t3 Γ2 MR) : 
     value_context (Pair t1 t2) Γ1 t3 Γ2 MR
+  | ctx_inl {t1 t2 Γ1 t3 Γ2 MR}
+            (V : value_context t1 Γ1 t3 Γ2 MR) : 
+    value_context (Sum t1 t2) Γ1 t3 Γ2 MR
+  | ctx_inr {t1 t2 Γ1 t3 Γ2 MR}
+            (V : value_context t2 Γ1 t3 Γ2 MR) : 
+    value_context (Sum t1 t2) Γ1 t3 Γ2 MR
   | ctx_abs {t1 MR1 t2 Γ1 t3 Γ2 MR2}
             (cbody : comp_context t2 (t1 :: Γ1) MR1 t3 Γ2 MR2) :
       value_context (Arrow t1 MR1 t2) Γ1 t3 Γ2 MR2
@@ -139,6 +160,12 @@ Equations subst_comp_context {t1 Γ1 MR1 t2 Γ2 MR2}
     comp_split (subst_value_context Vp c) cs;
   subst_comp_context (ctx_split2 vp Cs) c :=
     comp_split vp (subst_comp_context Cs c);
+  subst_comp_context (ctx_match_sum1 Vs cinl cinr) c :=
+    comp_match_sum (subst_value_context Vs c) cinl cinr;
+  subst_comp_context (ctx_match_sum2 vs Cinl cinr) c :=
+    comp_match_sum vs (subst_comp_context Cinl c) cinr;
+  subst_comp_context (ctx_match_sum3 vs cinl Cinr) c :=
+    comp_match_sum vs cinl (subst_comp_context Cinr c);
   subst_comp_context (ctx_app1 Vf varg) c :=
     comp_app (subst_value_context Vf c) varg;
   subst_comp_context (ctx_app2 vf Varg) c :=
@@ -161,6 +188,8 @@ where subst_value_context {t1 Γ1 t2 Γ2 MR2}
   subst_value_context (ctx_cons2 vh Vt) c := val_cons vh (subst_value_context Vt c);
   subst_value_context (ctx_pair1 V1 v2) c := val_pair (subst_value_context V1 c) v2;
   subst_value_context (ctx_pair2 v1 V2) c := val_pair v1 (subst_value_context V2 c);
+  subst_value_context (ctx_inl V) c := val_inl (subst_value_context V c);
+  subst_value_context (ctx_inr V) c := val_inr (subst_value_context V c);
   subst_value_context (ctx_abs Cbody) c := val_abs (subst_comp_context Cbody c);
 }
 where subst_bodies_context {Γ1 MR1 R1 R2 t2 Γ2 MR2}
@@ -254,6 +283,22 @@ Proof.
     destruct r1. destruct r2. eapply H; auto.
     repeat constructor; auto.
   - red. intros. simp denote_comp.
+    eapply rutt_bind; eauto. eapply H; eauto. simp types_equiv.
+    intros vv1 vv2 Hvv12. dependent destruction Hvv12;
+      eapply types_equiv_comp_refl; constructor; eauto.
+  - red. intros. simp denote_comp.
+    eapply rutt_bind; eauto. eapply types_equiv_value_refl. eauto.
+    simp types_equiv.
+    intros vv1 vv2 Hvv12. dependent destruction Hvv12.
+    eapply H. eauto. constructor; auto.
+    eapply types_equiv_comp_refl. constructor; auto.
+  - red. intros. simp denote_comp.
+    eapply rutt_bind; eauto. eapply types_equiv_value_refl. eauto.
+    simp types_equiv.
+    intros vv1 vv2 Hvv12. dependent destruction Hvv12.
+    eapply types_equiv_comp_refl. constructor; auto.
+    eapply H. auto. constructor; auto.
+  - red. intros. simp denote_comp.
     eapply rutt_bind; eauto. eapply H; auto.
     intros. simp types_equiv in H2. eapply rutt_bind.
     eapply types_equiv_value_refl; eauto. intros.
@@ -308,6 +353,10 @@ Proof.
     eapply rutt_bind. eapply types_equiv_value_refl; auto.
     intros. eapply rutt_bind. eapply H; eauto.
     intros. apply rutt_Ret. constructor; auto.
+  - red. intros. simp denote_comp. eapply rutt_bind.
+    eapply H; eauto. intros. apply rutt_Ret. constructor; auto.
+  - red. intros. simp denote_comp. eapply rutt_bind.
+    eapply H; eauto. intros. apply rutt_Ret. constructor; auto.
   - red. intros. simp denote_comp.
     apply rutt_Ret. simp types_equiv. intros. eapply H; eauto.
     constructor; auto.

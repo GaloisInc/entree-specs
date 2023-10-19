@@ -30,6 +30,7 @@ Fixpoint denote_type (t : type) : Type@{entree_u} :=
   | Nat => nat
   | List t => list (denote_type t)
   | Pair t1 t2 => (denote_type t1 * denote_type t2)%type
+  | Sum t1 t2 => (denote_type t1 + denote_type t2)%type
   | Arrow t1 MR t2 =>
       let MR' := List.map (
                      fun cf : call_frame => 
@@ -129,7 +130,7 @@ Proof.
     + simp remove_denote in H. injection H. intros. subst. constructor. setoid_rewrite remove_denote_equation_2 in H.
  intros.
 *)
-
+(*
 Equations denote_term {t : type} (Γ : ctx) (MR : mfix_ctx) (e : term t Γ MR) (hyps : denote_ctx Γ)
   : mtree (denote_mfix_ctx MR) (denote_type t) :=
   denote_term Γ MR (term_const n _ _) _ := ret n;
@@ -211,3 +212,4 @@ Arguments mfix_bodies_cons {_ _ _ _ _}.
 Arguments term_lift {_ _} (_) {_}.
 
 
+*)

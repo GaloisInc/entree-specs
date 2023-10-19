@@ -703,6 +703,34 @@ Proof.
   destruct n; simp approx_val; auto.
 Qed.
 
+Lemma inl_compat MR Γ t1 t2 m1 (v1 : value t1 Γ) :
+  val_rel (MR := MR) m1 v1 ->
+  val_rel (MR := MR) (t := Sum t1 t2)
+          (fun hyps => vv1 <- m1 hyps;; ret (inl vv1))
+          (val_inl v1).
+Proof.
+  intros H1 n hyps ρ Hhρ.
+  specialize (H1 _ _ _ Hhρ). destruct H1 as [vv [Hvv1 Hvv2]].
+  setoid_rewrite Hvv1. setoid_rewrite bind_ret_l. eexists.
+  split. reflexivity. destruct n. simp approx_val. auto.
+  rewrite close_value_inl.
+  simp approx_val.
+Qed.
+
+Lemma inr_compat MR Γ t1 t2 m2 (v2 : value t2 Γ) :
+  val_rel (MR := MR) m2 v2 ->
+  val_rel (MR := MR) (t := Sum t1 t2)
+          (fun hyps => vv1 <- m2 hyps;; ret (inr vv1))
+          (val_inr v2).
+Proof.
+  intros H1 n hyps ρ Hhρ.
+  specialize (H1 _ _ _ Hhρ). destruct H1 as [vv [Hvv1 Hvv2]].
+  setoid_rewrite Hvv1. setoid_rewrite bind_ret_l. eexists.
+  split. reflexivity. destruct n. simp approx_val. auto.
+  rewrite close_value_inr.
+  simp approx_val.
+Qed.
+
 Lemma var_compat MR Γ t (x : var t Γ) :
   val_rel (MR := MR) (fun hyps : denote_ctx Γ => ret (index_ctx x hyps)) (val_var x).
 Proof.
@@ -885,6 +913,36 @@ Proof.
     simp subst_eval_context. simp step_bredex. reflexivity.
     rewrite <- close_comp_open. eapply HcS. constructor; auto.
     simp approx_val. auto.
+Qed.
+
+Lemma match_sum_compat MR Γ t1 t2 t3 fs minl minr
+      (vs : value (Sum t1 t2) Γ)
+      (cinl : comp t3 (t1 :: Γ) MR)
+      (cinr : comp t3 (t2 :: Γ) MR) :
+  val_rel (MR := MR) fs vs ->
+  comp_rel minl cinl ->
+  comp_rel minr cinr ->
+  comp_rel
+    (fun hyps => vv <- fs hyps;; match vv with | inl vv1 => minl (vv1, hyps) | inr vv2 => minr (vv2, hyps) end)
+    (comp_match_sum vs cinl cinr).
+Proof.
+  intros Hs Hinl Hinr n hyps ρ Hhρ.
+  rewrite close_comp_match_sum.
+  destruct n. constructor. intros. lia.
+  specialize (Hs _ _ _ Hhρ). destruct Hs as [vv [Hvv1 Hvv2]].
+  setoid_rewrite Hvv1. setoid_rewrite bind_ret_l.
+  remember (close_value Γ ρ vs) as vs'. clear Heqvs' vs.
+  dependent destruction vs'; try inversion x.
+  + simp approx_val in Hvv2. destruct vv; try contradiction.
+    eapply approx_comp_approx_comp_term. 2 : eapply Hinl; constructor; eauto.
+    eapply approx_comp_term_step2. constructor. unfold step. simp observe. cbn.
+    simp step_eval_context. simp subst_eval_context. simp step_bredex.
+    rewrite close_comp_open. auto.
+  + simp approx_val in Hvv2. destruct vv; try contradiction.
+    eapply approx_comp_approx_comp_term. 2 : eapply Hinr; constructor; eauto.
+    eapply approx_comp_term_step2. constructor. unfold step. simp observe. cbn.
+    simp step_eval_context. simp subst_eval_context. simp step_bredex.
+    rewrite close_comp_open. auto.
 Qed.
 
 Lemma succ_compat MR Γ fn (vn : value Nat Γ) :

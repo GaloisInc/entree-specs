@@ -7,6 +7,8 @@ Inductive value : vtype -> ctx -> Type :=
   | val_nil t Γ : value (List t) Γ
   | val_cons t Γ (vh : value t Γ) (vt : value (List t) Γ) : value (List t) Γ
   | val_pair t1 t2 Γ (v1 : value t1 Γ) (v2 : value t2 Γ) : value (Pair t1 t2) Γ
+  | val_inl t1 t2 Γ (v : value t1 Γ) : value (Sum t1 t2) Γ
+  | val_inr t1 t2 Γ (v : value t2 Γ) : value (Sum t1 t2) Γ
   | val_abs t1 t2 Γ MR (cbody : comp t2 (t1 :: Γ) MR) : value (Arrow t1 MR t2) Γ
   | val_var t Γ (x : var t Γ) : value t Γ
 
@@ -21,6 +23,10 @@ with comp : vtype -> ctx -> mfix_ctx -> Type :=
                     (cS : comp t2 (t1 :: (List t1) :: Γ ) MR) :
     comp t2 Γ MR
   | comp_split t1 t2 t3 Γ MR (vp : value (Pair t1 t2) Γ) (es : comp t3 (t1 :: t2 :: Γ) MR) :
+    comp t3 Γ MR
+  | comp_match_sum t1 t2 t3 Γ MR (vs : value (Sum t1 t2) Γ) 
+                   (cinl : comp t3 (t1 :: Γ) MR)
+                   (cinr : comp t3 (t2 :: Γ) MR) :
     comp t3 Γ MR
   | comp_app t1 t2 Γ MR (vf : value (Arrow t1 MR t2) Γ) (varg : value t1 Γ) : 
     comp t2 Γ MR
@@ -46,6 +52,8 @@ Arguments val_const n {_}.
 Arguments val_nil {_ _}.
 Arguments val_cons {_ _}.
 Arguments val_pair {_ _ _}.
+Arguments val_inl {_ _ _}.
+Arguments val_inr {_ _ _}.
 Arguments val_abs {_ _ _ _}.
 Arguments val_var {_ _}.
 Arguments comp_ret {_ _ _}.
@@ -54,6 +62,7 @@ Arguments comp_match_nat {_ _ _}.
 Arguments comp_succ {_ _}.
 Arguments comp_match_list {_ _ _ _}.
 Arguments comp_split {_ _ _ _ _}.
+Arguments comp_match_sum {_ _ _ _ _}.
 Arguments comp_app {_ _ _ _}.
 Arguments comp_call {_ _ _ _ _}.
 Arguments comp_mfix {_ _ _}.

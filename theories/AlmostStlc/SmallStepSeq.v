@@ -26,6 +26,9 @@ Equations comp_map {t : vtype} {Γ1 Γ2} {MR : mfix_ctx} (c : comp t Γ1 MR)
       comp_match_list (val_map vl f) (comp_map cnil f) (comp_map ccons (var_map_skip (var_map_skip f)));
     comp_map (comp_split vp cs) f :=
       comp_split (val_map vp f) (comp_map cs (var_map_skip (var_map_skip f)) );
+    comp_map (comp_match_sum vs cinl cinr) f :=
+      comp_match_sum (val_map vs f) 
+                     (comp_map cinl (var_map_skip f)) (comp_map cinr (var_map_skip f));
     comp_map (comp_app v1 v2) f :=
       comp_app (val_map v1 f) (val_map v2 f);
     comp_map (comp_call xR x v) f := comp_call xR x (val_map v f);
@@ -41,6 +44,8 @@ where val_map {t : vtype} {Γ1 Γ2} (v : value t Γ1)
     val_map val_nil f := val_nil;
     val_map (val_cons vh vt) f := val_cons (val_map vh f) (val_map vt f);
     val_map (val_pair v1 v2) f := val_pair (val_map v1 f) (val_map v2 f);
+    val_map (val_inl v) f := val_inl (val_map v f);
+    val_map (val_inr v) f := val_inr (val_map v f);
     val_map (val_abs cbody) f := val_abs (comp_map cbody (var_map_skip f));
     val_map (val_var x) f := val_var (f _ x);
  }
@@ -104,6 +109,8 @@ Equations subst_comp {t u Γ2 MR} Γ1 (c1 : comp u (Γ1 ++ [t] ++ Γ2) MR) (v : 
       comp_match_list (subst_value vl v) (subst_comp _ cnil v) (subst_comp (_ :: _ :: _) ccons v); 
     subst_comp _ (comp_split vp cs) v :=
       comp_split (subst_value vp v) (subst_comp (_ :: _ :: _) cs v );
+    subst_comp _ (comp_match_sum vs cinl cinr) v :=
+      comp_match_sum (subst_value vs v) (subst_comp (_ :: _) cinl v) (subst_comp (_ :: _) cinr v);
     subst_comp _ (comp_app vf varg) v :=
       comp_app (subst_value vf v) (subst_value varg v);
     subst_comp _ (comp_call xR x varg) v :=
@@ -120,6 +127,8 @@ where subst_value {t u Γ1 Γ2} (v1 : value u (Γ1 ++ [t] ++ Γ2) ) (v : value t
     subst_value val_nil _ := val_nil;
     subst_value (val_cons vh vt) v := val_cons (subst_value vh v) (subst_value vt v);
     subst_value (val_pair v1 v2) v := val_pair (subst_value v1 v) (subst_value v2 v);
+    subst_value (val_inl vl) v := val_inl (subst_value vl v);
+    subst_value (val_inr vr) v := val_inr (subst_value vr v);
     subst_value (val_abs cbody) v := val_abs (subst_comp (_ ::_) (cbody) v);
     subst_value (val_var x) v := subst_var _ _ v x;
 }
@@ -148,6 +157,10 @@ Inductive bredex : vtype -> mfix_ctx -> Type :=
     bredex t2 MR
   | bredex_split t1 t2 t3 MR (vp : closed_value (Pair t1 t2)) (cs : comp t3 [t1; t2] MR) : 
     bredex t3 MR
+  | bredex_match_sum t1 t2 t3 MR (vl : closed_value (Sum t1 t2)) 
+                     (cinl : comp t3 [t1] MR)
+                     (cinr : comp t3 [t2] MR) : 
+    bredex t3 MR
   | bredex_mfix t MR R (bodies : mfix_bodies [] MR R R) (v : closed_value t) : 
     bredex t MR
   | bredex_perm t MR1 MR2 (Hperm : perm MR1 MR2) (v : closed_value t) :
@@ -161,6 +174,7 @@ Arguments bredex_app {t1 t2 MR}.
 Arguments bredex_match_nat {t MR}.
 Arguments bredex_match_list {t1 t2 MR}.
 Arguments bredex_split {t1 t2 t3 MR}.
+Arguments bredex_match_sum {t1 t2 t3 MR}.
 Arguments bredex_mfix {t MR}.
 Arguments bredex_perm {t MR1 MR2}.
 Arguments bredex_lift {t MR1 MR2}.
@@ -169,16 +183,9 @@ Arguments bredex_lift {t MR1 MR2}.
 Inductive call (t2 : vtype) (MR : mfix_ctx) : Type :=
   callv t1 R (xR : var R MR) (x : var (t1,t2) R) (v : closed_value t1).
 Arguments callv {_ _ _ _}.
-(* I think I could rewrite this definition to exclude stuck calls,
-   first step is to only associate the exposedness boolean with calls (that is already all it is used for 
-   and then add a second boolean for coveredness
 
-   and then we have two ev_hole constructors, one for bredexes that ignored coveredness
-     one for calls that 
-
-)
-
- *)
+(* in order to complete the tail recursion feature,
+   will need to add an eval_context here *)
 Inductive eval_context : vtype -> mfix_ctx -> forall t MR, bredex t MR + call t MR -> bool -> Type := 
   | ev_hole t MR (r : bredex t MR + call t MR) : eval_context t MR t MR r true
   | ev_let b t1 t2 t3 MR1 MR2 (r : bredex t3 MR2 + call t3 MR2) (E : eval_context t1 MR1 _ _ r b) (c : comp t2 [t1] MR1) : 
@@ -225,6 +232,10 @@ Equations step_bredex {t MR} (br : bredex t MR) : comp t [] MR :=
     subst_comp_cons (subst_comp_cons ccons (weaken_l_value_single vh)) vt;
   step_bredex (bredex_split (val_pair v1 v2) cs) :=
     subst_comp_cons (subst_comp_cons cs (weaken_l_value_single v1)) v2;
+  step_bredex (bredex_match_sum (val_inl v) cinl _) :=
+    subst_comp_cons cinl v;
+  step_bredex (bredex_match_sum (val_inr v) _ cinr) :=
+    subst_comp_cons cinr v;
   step_bredex (bredex_mfix _ _ v) := comp_ret v;
   step_bredex (bredex_perm _ v) := comp_ret v;
   step_bredex (bredex_lift v) := comp_ret v.
@@ -349,6 +360,8 @@ Equations observe {t MR} (c : comp t [] MR) : boxed_eval_context t MR + closed_v
     inl (bec_of_bredex (bredex_match_list vl cnil ccons) );
   observe (comp_split vp cs) :=
     inl (bec_of_bredex (bredex_split vp cs) );
+  observe (comp_match_sum vs cinl cinr) :=
+    inl (bec_of_bredex (bredex_match_sum vs cinl cinr));
   observe (comp_app (val_abs cbody) varg) :=
     inl (bec_of_bredex (bredex_app cbody varg) );
   (* this case is the only one which can get stuck *)

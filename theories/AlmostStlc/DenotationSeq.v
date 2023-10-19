@@ -37,6 +37,12 @@ Equations denote_comp {t Γ MR} (c : comp t Γ MR) (hyps : denote_ctx Γ) :
     denote_comp (comp_split vp es) hyps :=
       '(v1,v2) <- denote_value vp hyps;;
       denote_comp es (v1, (v2, hyps));
+    denote_comp (comp_match_sum vs cinl cinr) hyps :=
+      vs' <- denote_value vs hyps;;
+      match vs' with
+      | inl v1 => denote_comp cinl (v1, hyps)
+      | inr v2 => denote_comp cinr (v2, hyps)
+      end;
     denote_comp (comp_app vf varg) hyps :=
       vf' <- denote_value vf hyps;;
       varg' <- denote_value varg hyps;;
@@ -64,6 +70,12 @@ where denote_value {t Γ MR} (v : value t Γ) (hyps : denote_ctx Γ) :
       v1' <- denote_value v1 hyps;;
       v2' <- denote_value v2 hyps;;
       ret (v1',v2');
+    denote_value (val_inl v) hyps :=
+      v' <- denote_value v hyps;;
+      ret (inl v');
+    denote_value (val_inr v) hyps :=
+      v' <- denote_value v hyps;;
+      ret (inr v');
     denote_value (val_abs cbody) hyps :=
       ret (fun x => denote_comp cbody (x,hyps));
     denote_value (val_var x) hyps := ret (index_ctx x hyps);

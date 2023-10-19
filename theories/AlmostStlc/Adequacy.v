@@ -36,6 +36,8 @@ Proof.
   - apply nil_compat.
   - apply cons_compat; auto.
   - apply pair_compat; auto.
+  - apply inl_compat; auto.
+  - apply inr_compat; auto.
   - apply abs_compat; auto.
   - apply var_compat; auto.
   - specialize (H MR). apply ret_compat in H. eauto.
@@ -44,6 +46,7 @@ Proof.
   - specialize (H MR). eapply succ_compat in H. eauto.
   - eapply match_list_compat in H0; eauto. eauto.
   - eapply split_compat in H0; eauto. eauto.
+  - specialize (H MR). eapply match_sum_compat in H; eauto. eauto.
   - specialize (H0 MR). eapply app_compat in H0; eauto.
     eauto.
   - specialize (H MR). eapply call_compat with (xR := xR) (x := x) in H; eauto.
@@ -93,5 +96,5 @@ Proof.
   - red. intros [] [] _. etransitivity. symmetry. eauto. apply eval_stable. auto.
   - red. intros [] [] _. etransitivity. eauto. apply eval_stable; auto.
 Qed.
-(* Print Assumptions adequacy. close_comp_open2 *) 
+
 

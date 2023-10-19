@@ -40,6 +40,7 @@ Qed.
 Equations types_equiv (t : type) : Rel (denote_type t) (denote_type t) := {
     types_equiv Nat := eq;
     types_equiv (Pair t1 t2) := prod_rel (types_equiv t1) (types_equiv t2);
+    types_equiv (Sum t1 t2) := sum_rel (types_equiv t1) (types_equiv t2);
     types_equiv (List t) := list_rel (types_equiv t);
     types_equiv (Arrow t1 MR t2) :=
     fun f g => forall x y, types_equiv t1 x y -> 
@@ -234,6 +235,7 @@ Proof.
   - auto.
   - intros l1 l2 Hl. induction Hl. constructor. econstructor; eauto.
   - repeat intro. destruct H1. constructor; auto.
+  - repeat intro. destruct H1; constructor; auto.
   - intros f g Hfg x y Hxy. destruct H0. apply rutt_sym; auto.
   - split; repeat intro; contradiction.
   - destruct H. destruct H0. split.
@@ -260,6 +262,8 @@ Proof.
   - apply transitive_list_rel. auto. 
   - repeat intro. dependent destruction H1. dependent destruction H2.
     constructor; eauto.
+  - repeat intro. dependent destruction H1; dependent destruction H2;
+      constructor; eauto.
   - intros f g h Hfg Hgh x y Hxy.
     destruct H0.
     eapply rutt_trans'; eauto.
@@ -608,9 +612,13 @@ Proof.
   - intros t1 t2 Γ v1 Hv1 v2 Hv2 MR hyps1 hyps2 Hhyps. setoid_rewrite denote_value_equation_4.
     eapply rutt_bind; try eapply Hv1; eauto. intros. eapply rutt_bind; try eapply Hv2; eauto.
     intros. apply rutt_Ret. constructor; auto.
-  - intros t1 t2 Γ MR cbody Hcbody MR' hyps1 hyps2 Hhyps. setoid_rewrite denote_value_equation_5.
+  - intros t1 t2 Γ v Hv MR hyps1 hyps2 Hhyps. simp denote_comp.
+    eapply rutt_bind; try eapply Hv; eauto. intros. apply rutt_Ret. constructor; auto.
+  - intros t1 t2 Γ v Hv MR hyps1 hyps2 Hhyps. simp denote_comp.
+    eapply rutt_bind; try eapply Hv; eauto. intros. apply rutt_Ret. constructor; auto.
+  - intros t1 t2 Γ MR cbody Hcbody MR' hyps1 hyps2 Hhyps. simp denote_comp.
     apply rutt_Ret. simp types_equiv. intros. apply Hcbody. split; auto.
-  - intros t Γ x MR hyps1 hyps2 Hhyps. setoid_rewrite denote_value_equation_6.
+  - intros t Γ x MR hyps1 hyps2 Hhyps. simp denote_comp.
     apply rutt_Ret. apply types_equiv_index_ctx; auto.
   - repeat intro. simp denote_comp.
   - intros t1 t2 Γ MR c1 Hc1 c2 Hc2 hyps1 hyps2 Hhyps.
@@ -628,6 +636,11 @@ Proof.
     eapply rutt_bind; try apply Hvp; auto. intros. simp types_equiv in H0.
     dependent destruction H0. destruct r1. destruct r2. cbn in *.
     apply Hes. repeat (split; auto).
+  - intros ? ? ? ? ? ? Hvs ? Hcinl ? Hcinr ? ? ?. simp denote_comp.
+    eapply rutt_bind; try eapply Hvs; eauto. simp types_equiv.
+    intros v1 v2 Hv12. dependent destruction Hv12.
+    eapply Hcinl. constructor; auto.
+    eapply Hcinr. constructor; auto.
   - intros ? ? ? ? ? Hvf ? Hvarg ? ? ?. simp denote_comp.
     eapply rutt_bind; try apply Hvf; auto. intros f g Hfg.
     eapply rutt_bind. apply Hvarg; auto. setoid_rewrite tau_eutt. exact Hfg.

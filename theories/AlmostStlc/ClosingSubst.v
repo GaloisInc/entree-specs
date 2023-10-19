@@ -90,78 +90,6 @@ Equations close_bodies {MR R1 R2} Γ (ρ : closing_subst Γ) (bodies : mfix_bodi
   close_bodies [] _ bodies := bodies;
   close_bodies (t :: Γ) (v,ρ) bodies := close_bodies Γ ρ (subst_bodies_cons bodies (weaken_r_value Γ v)).
 
-
-(*
-Equations close_value {t Γ2} Γ1(vs : open_subst Γ1 Γ2) (v : value t (Γ1 ++ Γ2))  : value t Γ2 := 
-  close_value [] _ v := v;
-  close_value (t0 :: Γ1) (v0, vs) v := close_value Γ1 vs (subst_value_cons v (weaken_l_value Γ1 v0) ).
-
-Equations close_comp {t MR Γ2} Γ1 (vs : open_subst Γ1 Γ2) (c : comp t (Γ1 ++ Γ2) MR) : comp t Γ2 MR :=
-  close_comp [] _ c := c;
-  close_comp (t0 :: Γ1) (v0, vs) c := close_comp Γ1 vs (subst_comp_cons c (weaken_l_value Γ1 v0)).
-
-Equations close_bodies {MR R1 R2 Γ2} Γ1 (ρ : open_subst Γ1 Γ2) (bodies : mfix_bodies (Γ1 ++ Γ2) MR R1 R2) :
-  mfix_bodies Γ2 MR R1 R2 :=
-  close_bodies [] _ bodies := bodies;
-  close_bodies (t :: Γ1) (v,ρ) bodies := close_bodies Γ1 ρ (subst_bodies_cons bodies (weaken_l_value Γ1 v)).
-*)
-(*
-Inductive closing_subst_equiv : forall Γ, closing_subst Γ -> denote_ctx Γ -> Prop :=
-  | closing_subst_equiv_nil : closing_subst_equiv [] tt tt 
-  | closing_subst_equiv_cons t Γ (v : closed_value t) (vs : closing_subst Γ)
-                             (vv : denote_type t) (hyps : denote_ctx Γ) :
-    (forall MR, comp_equiv_rutt (MR := MR) (denote_value v tt) (ret vv)) ->
-    closing_subst_equiv Γ vs hyps ->
-    closing_subst_equiv (t :: Γ) (v,vs) (vv,hyps)
-.
-
-Lemma closing_subst_equiv_ctx_equiv Γ vs hyps :
-  closing_subst_equiv Γ vs hyps -> ctx_equiv Γ hyps hyps.
-Proof.
-  revert vs hyps. induction Γ.
-  intros. destruct hyps. constructor.
-  intros [v vs] [vv hyps] H. dependent destruction H.
-  apply IHΓ in H0. constructor; auto.
-  simpl. specialize (H []). 
-  assert (comp_equiv_rutt (MR := []) (ret vv) (ret vv)).
-  { etransitivity; eauto. symmetry. auto. }
-  apply rutt_inv_Ret in H1. auto.
-Qed.
-
-(*do I need these *)
-Theorem close_value_correct t Γ MR (vs : closing_subst Γ) (hyps : denote_ctx Γ) (v : value t Γ) :
-  closing_subst_equiv Γ vs hyps ->
-  comp_equiv_rutt (MR := MR) (denote_value v hyps) (denote_value (close_value Γ vs v) tt).
-Proof.
-  revert hyps v vs MR. generalize dependent t.
-  induction Γ.
-  - setoid_rewrite close_value_equation_1. intros. apply types_equiv_value_refl. destruct hyps. 
-    constructor.
-  - intros t [vv hyps] v [v0 vs] MR Hsubst. simp close_value.
-    dependent destruction Hsubst.
-    rewrite <- IHΓ; eauto. apply closing_subst_equiv_ctx_equiv in Hsubst as Hhyps.
-    rewrite <- subst_value_cons_correct1 with (hyps1 := hyps) (v := (weaken_r_value Γ v0)); eauto.
-    eapply types_equiv_value_refl; auto.
-    unfold weaken_r_value. setoid_rewrite val_map_correct with (hyps2 := hyps); auto.
-Qed.
-
-Theorem close_comp_correct t Γ MR (vs : closing_subst Γ) (hyps : denote_ctx Γ) (c : comp t Γ MR) :
-  closing_subst_equiv Γ vs hyps ->
-  comp_equiv_rutt (MR := MR) (denote_comp c hyps) (denote_comp (close_comp Γ vs c) tt).
-Proof.
-  revert hyps c vs. generalize dependent t.
-  induction Γ.
-  - setoid_rewrite close_comp_equation_1. intros ? [] ? ? ?. apply types_equiv_comp_refl.
-    constructor.
-  - intros t [vv hyps] c [v0 vs] Hsubst.
-    simp close_comp. dependent destruction Hsubst.
-    rewrite <- IHΓ; eauto. apply closing_subst_equiv_ctx_equiv in Hsubst as Hhyps.
-    rewrite <- subst_correct1 with (hyps1 := hyps) (v := (weaken_r_value Γ v0)); eauto.
-    eapply types_equiv_comp_refl; auto.
-    setoid_rewrite val_map_correct with (hyps2 := hyps); auto.
-Qed.
-*)
-
 (* define stuck call, relate stuck call with *)
 Inductive stuck_call : forall {t1 t2 MR} (c : comp t1 [] MR) (ca : call_syn t2 MR), eval_context t1 MR (inr ca) true -> Prop := 
   | stuck_call_let t1 t2 t3 MR (ca : call_syn t3 MR)  (c1 : comp t1 [] MR) E1 (c2 : comp t2 [t1] MR) (S : stuck_call c1 ca E1) : 
@@ -236,6 +164,8 @@ Proof.
       simp step_eval_context. simpl. intros. discriminate.
     + simp observe. simpl. intros. discriminate.
     + simp observe. simpl. intros. discriminate.
+    + simp observe. simpl. intros. simp step_eval_context in H.
+      discriminate.
     + intros. dependent destruction vf; try inversion x. simp observe in H.
       simpl in H. injection H. intros. simp step_eval_context in H0. discriminate.
     + simp observe. simp step_eval_context. intros.
@@ -494,6 +424,26 @@ Proof.
     simp subst_comp.
 Qed.
 
+Lemma close_comp_match_sum t1 t2 t3 Γ MR
+      (vs : value (Sum t1 t2) Γ)
+      (cinl : comp t3 (t1 :: Γ) MR) (cinr : comp t3 (t2 :: Γ) MR) 
+      (ρ : closing_subst Γ) : 
+  close_comp Γ ρ (comp_match_sum vs cinl cinr) =
+    comp_match_sum (close_value Γ ρ vs)
+                   (close_comp_app ρ (Γ1 := [t1]) cinl)
+                   (close_comp_app ρ (Γ1 := [t2]) cinr).
+Proof.
+  generalize dependent Γ. intros Γ. induction Γ.
+  - intros. simp close_comp.
+    destruct ρ. simp close_value.
+    simp close_comp_app. unfold comp_app_nil.
+    cbn. remember (List.app_nil_r [t1]) as e1.
+    remember (List.app_nil_r [t2]) as e2. dependent destruction e1.
+    dependent destruction e2. cbn. auto.
+  - intros vs cinl cinr [v ρ].  simp close_comp.
+    simp close_value. unfold subst_comp_cons. simp subst_comp.
+Qed.
+
 Lemma close_comp_split t1 t2 t3 Γ MR
       (vp : value (Pair t1 t2) Γ) (cs : comp t3 (t1 :: t2 :: Γ) MR)
       (ρ : closing_subst Γ) :
@@ -529,6 +479,24 @@ Qed.
 Lemma close_value_pair t1 t2 Γ (v1 : value t1 Γ) (v2 : value t2 Γ)
       (ρ : closing_subst Γ) :
   close_value Γ ρ (val_pair v1 v2) = val_pair (close_value Γ ρ v1) (close_value Γ ρ v2).
+Proof.
+  revert ρ. induction Γ.
+  - intros []. simp close_value. auto.
+  - intros [v ρ]. simp close_value.
+Qed.
+
+Lemma close_value_inl t1 t2 Γ (v1 : value t1 Γ)
+      (ρ : closing_subst Γ) :
+  close_value Γ ρ (val_inl v1) = val_inl (t2 := t2) (close_value Γ ρ v1).
+Proof.
+  revert ρ. induction Γ.
+  - intros []. simp close_value. auto.
+  - intros [v ρ]. simp close_value.
+Qed.
+
+Lemma close_value_inr t1 t2 Γ (v2 : value t2 Γ)
+      (ρ : closing_subst Γ) :
+  close_value Γ ρ (val_inr v2) = val_inr (t1 := t1) (close_value Γ ρ v2).
 Proof.
   revert ρ. induction Γ.
   - intros []. simp close_value. auto.

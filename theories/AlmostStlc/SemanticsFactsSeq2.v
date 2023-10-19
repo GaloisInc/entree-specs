@@ -55,6 +55,12 @@ Equations denote_bredex {t MR} (br : bredex t MR) : mtree (denote_mfix_ctx MR) (
     vv1 <- denote_value v1 tt;;
     vv2 <- denote_value v2 tt;;
     denote_comp cs (vv1, (vv2, tt));
+  denote_bredex (bredex_match_sum (val_inl v) cinl _) :=
+    vv <- denote_value v tt;;
+    denote_comp cinl (vv, tt);
+  denote_bredex (bredex_match_sum (val_inr v) _ cinr) :=
+    vv <- denote_value v tt;;
+    denote_comp cinr (vv, tt);
   denote_bredex (bredex_mfix R bodies v) :=
     interp_mrec (denote_bodies bodies tt) (denote_value (MR := R :: MR) v tt);
   denote_bredex (bredex_lift v) :=
@@ -136,6 +142,15 @@ Proof.
       setoid_rewrite val_map_correct with (Γ2 := [t2]) (hyps2 := (vv2, tt) ).
       simp var_map_weaken. repeat constructor; auto.
     + inversion x.
+  - red in vl. dependent destruction vl; try inversion x; simp step_bredex; simp denote_bredex.
+    + specialize (denote_value_terminates _ _ vl tt) as [vvl Hvvl].
+      red. rewrite Hvvl. setoid_rewrite bind_ret_l. symmetry.
+      eapply subst_correct1. constructor. eapply denote_value_eutt_rutt; eauto.
+      constructor.
+    + specialize (denote_value_terminates _ _ vl tt) as [vvl Hvvl].
+      red. rewrite Hvvl. setoid_rewrite bind_ret_l. symmetry.
+      eapply subst_correct1. constructor. eapply denote_value_eutt_rutt; eauto.
+      constructor.
   - simp denote_comp.
     specialize (denote_value_terminates _ _ v tt) as [vv Hvv].
     red. repeat rewrite Hvv.
@@ -788,9 +803,19 @@ Proof.
     intros. setoid_rewrite bind_bind. setoid_rewrite bind_ret_l.
     eapply rutt_bind. eapply types_equiv_value_refl. constructor.
     intros. eapply types_equiv_comp_refl. repeat constructor; auto.
+  - dependent destruction vs; try inversion x.
+    + simp observe. cbn. simp denote_eval_context. simp denote_bredex.
+      simp denote_comp. red. setoid_rewrite bind_bind. setoid_rewrite bind_ret_l.
+      eapply rutt_bind. eapply types_equiv_value_refl. constructor.
+      intros. eapply types_equiv_comp_refl. constructor; auto. constructor.
+    + simp observe. cbn. simp denote_eval_context. simp denote_bredex.
+      simp denote_comp. red. setoid_rewrite bind_bind. setoid_rewrite bind_ret_l.
+      eapply rutt_bind. eapply types_equiv_value_refl. constructor.
+      intros. eapply types_equiv_comp_refl. constructor; auto.
+      constructor.
   - simp denote_comp. dependent destruction vf; try inversion x.
     simp observe. simpl denote_observed. simp denote_eval_context.
-    simp denote_bredex. setoid_rewrite denote_value_equation_5.
+    simp denote_bredex. simp denote_comp.
     red. setoid_rewrite bind_ret_l. eapply rutt_bind.
     eapply types_equiv_value_refl. constructor.
     intros. rewrite tau_eutt. eapply types_equiv_comp_refl. repeat constructor; auto.

@@ -175,11 +175,15 @@ Proof.
   - rewrite val_map_equation_4. repeat rewrite denote_value_equation_4.
     repeat (eapply rutt_bind; eauto; intros).
     apply rutt_Ret. constructor; auto.
-  - rewrite val_map_equation_5. repeat rewrite denote_value_equation_5.
+  - rewrite val_map_equation_5. simp denote_comp.
+    eapply rutt_bind; eauto. intros. apply rutt_Ret. constructor; auto.
+  - simp comp_map. simp denote_comp.
+    eapply rutt_bind; eauto. intros. apply rutt_Ret. constructor; auto.
+  - simp comp_map. simp denote_comp.
     apply rutt_Ret. simp types_equiv.
     intros g h Hgh. rewrite <- var_map_weaken_skip. 
     apply H. constructor; auto.
-  - rewrite val_map_equation_6. repeat rewrite denote_value_equation_6.
+  - simp comp_map. simp denote_comp.
     apply rutt_Ret. rewrite <- index_weaken.
     apply types_equiv_index_ctx. auto.
   - simp comp_map. simp denote_comp.
@@ -211,6 +215,11 @@ Proof.
                                               (f := var_map_skip f)
                                               (hyps := (d2, hyps2)).
     apply H0. repeat split; auto.
+  - simp comp_map. simp denote_comp.
+    eapply rutt_bind; eauto. simp types_equiv.
+    intros v1 v2 Hv12. dependent destruction Hv12;
+    rewrite <- var_map_weaken_skip; simp denote_comp; 
+      try eapply H0; try eapply H1; constructor; auto.
   - simp comp_map. simp denote_comp. 
     do 2 (eapply rutt_bind; eauto; intros). setoid_rewrite tau_eutt. 
     simp types_equiv in H1.
@@ -308,8 +317,14 @@ Proof.
     eexists. intros.
     rewrite Hvv1. setoid_rewrite bind_ret_l.
     rewrite Hvv2. setoid_rewrite bind_ret_l. reflexivity.
-  - eexists. setoid_rewrite denote_value_equation_5. reflexivity.
-  - eexists. setoid_rewrite denote_value_equation_6. reflexivity.
+  - specialize (IHv hyps) as [vv Hvv].
+    eexists. intros. simp denote_comp. 
+    rewrite Hvv. setoid_rewrite bind_ret_l. reflexivity.
+  - specialize (IHv hyps) as [vv Hvv].
+    eexists. intros. simp denote_comp. 
+    rewrite Hvv. setoid_rewrite bind_ret_l. reflexivity.
+  - eexists. intros. simp denote_comp. reflexivity.
+  - eexists. intros. simp denote_comp. reflexivity.
 Qed.
 
 Lemma denote_value_ret_equiv:
@@ -405,26 +420,26 @@ Proof.
   induction Γ1.
   - simpl app. intros Γ2 x v [] [] hyps21 hyps22 _ Hhyps2 vv Hvv. simp hyps_app.
     dependent destruction x.
-    + simp subst_var. setoid_rewrite denote_value_equation_6. 
+    + simp subst_var. simp denote_comp.
       setoid_rewrite hyps_app_equation_2.
       setoid_rewrite index_ctx_equation_1.
       destruct (denote_value_terminates _ _ v hyps22) as [vv' Hvv'].
       rewrite Hvv'. apply rutt_Ret. eapply denote_value_ret_equiv; eauto.
-    + setoid_rewrite hyps_app_equation_2. setoid_rewrite denote_value_equation_6.
+    + setoid_rewrite hyps_app_equation_2. simp denote_comp.
       simp hyps_app. 
       setoid_rewrite index_ctx_equation_2. destruct Γ2.
       * inversion x.
-      * simp subst_var. setoid_rewrite denote_value_equation_6.
+      * simp subst_var. simp denote_comp.
         apply rutt_Ret. apply types_equiv_index_ctx. auto.
   - simpl app. intros Γ2 x v hyps11 hyps12 hyps21 hyps22 Hhyps1 Hhyps2 vv Hvv.
     dependent destruction x.
-    + simp subst_var. setoid_rewrite denote_value_equation_6. clear IHΓ1.
+    + simp subst_var. simp denote_comp. clear IHΓ1.
       apply rutt_Ret. destruct hyps11. destruct hyps12. red in Hhyps1. dependent destruction Hhyps1.
       simp hyps_app.
     + simp subst_var. red in Hhyps1. dependent destruction Hhyps1.
       eapply IHΓ1 with (x := x) in Hvv; eauto. 
-      setoid_rewrite denote_value_equation_6. 
-      setoid_rewrite denote_value_equation_6 in Hvv. 
+      simp denote_comp.
+      simp denote_comp in Hvv. 
       destruct hyps11 as [t0 hyps11]. simp hyps_app. simp index_ctx.
       simpl snd in Hvv. rewrite Hvv.
       clear Hvv. unfold weaken_l_value_single,weaken_l_value.
@@ -505,8 +520,14 @@ Proof.
     eapply rutt_bind. eapply H; eauto.
     intros. eapply rutt_bind. eapply H0; eauto.
     intros. apply rutt_Ret. constructor; auto.
-  - setoid_rewrite subst_value_equation_5.
-    setoid_rewrite denote_value_equation_5.
+  - simp subst_comp. simp denote_comp.
+    eapply rutt_bind; try eapply H; eauto. intros.
+    apply rutt_Ret. constructor; auto.
+  - simp subst_comp. simp denote_comp.
+    eapply rutt_bind; try eapply H; eauto. intros.
+    apply rutt_Ret. constructor; auto.
+  - simp subst_comp.
+    simp denote_comp.
     apply rutt_Ret. simp types_equiv.
     intros x y Hxy.
     specialize (H (t1 :: Γ1) t Γ2 v (x, hyps11) (y, hyps12) hyps21 hyps22 vv). 
@@ -525,7 +546,7 @@ Proof.
     eapply denote_value_ret_equiv with 
       (v := v) (hyps1 := hyps21) (hyps2 := hyps21); eauto.
     etransitivity; eauto; symmetry; auto.
-  - setoid_rewrite subst_value_equation_6.
+  - simp subst_comp.
     specialize (H3 MR).
     eapply subst_var_correct with (x := x)in H3 as H4; eauto.
     assert (Hsubst : comp_equiv_rutt (MR := MR)
@@ -577,6 +598,15 @@ Proof.
    setoid_rewrite hyps_app_equation_1 in H0.
    setoid_rewrite hyps_app_equation_2. setoid_rewrite hyps_app_equation_1. 
    eapply H0; auto. repeat constructor; auto.
+ - simp subst_comp. simp denote_comp.
+   eapply rutt_bind; try eapply H; eauto. simp types_equiv.
+   intros v1 v2 Hv12. dependent destruction Hv12.
+   specialize (H0 (t1 :: Γ1) t Γ2 v (a1, hyps11) (a2, hyps12)). 
+   setoid_rewrite hyps_app_equation_2 in H0. eapply H0; eauto.
+   constructor; eauto.
+   specialize (H1 (t2 :: Γ1) t Γ2 v (b1, hyps11) (b2, hyps12)).
+   setoid_rewrite hyps_app_equation_2 in H1. eapply H1; eauto.
+   constructor; auto.
  - simp subst_comp. simp denote_comp.
    eapply rutt_bind; eauto. eapply H; eauto.
    intros. eapply rutt_bind. eapply H0; eauto. intros.

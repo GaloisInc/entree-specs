@@ -74,6 +74,14 @@ Equations approx_val (n : nat) (t : type) (vv : denote_type t) (v : closed_value
   approx_val 0 _ _ _ := True;
   approx_val (S m') Nat n (val_const m) := n = m;
   approx_val (S m) (Pair t1 t2) (vv1, vv2) (val_pair v1 v2)  := approx_val (S m) t1 vv1 v1 /\ approx_val (S m) t2 vv2 v2;
+  approx_val (S m) (Sum t1 t2) vv (val_inl v1) := match vv with
+                                                  | inl vv1 => approx_val (S m) t1 vv1 v1
+                                                  | inr _ => False 
+                                                  end;
+  approx_val (S m) (Sum t1 t2) vv (val_inr v2) := match vv with
+                                                  | inl _ => False
+                                                  | inr vv2 => approx_val (S m) t2 vv2 v2
+                                                  end;
   approx_val (S m) (List t) l vl := log_rel_list (fun vv v => approx_val (S m) t vv v) l vl;
   approx_val (S m) (Arrow t1 MR t2) f (val_abs c) := 
     forall vv v m' (H : m' < S m), approx_val m' t1 vv v -> 
@@ -90,12 +98,17 @@ Next Obligation.
   right. constructor. constructor.
 Qed.
 Next Obligation.
+  right. constructor. constructor.
+Qed.
+Next Obligation.
+  right. constructor. constructor.
+Qed.
+Next Obligation.
   left. auto.
 Qed.
 Next Obligation.
   left. auto.
 Qed.
-
 
 Lemma lower_approx_comp_aux1 : forall (P : nat -> Prop) n t MR c m R1 R2,
     P n ->
@@ -142,6 +155,11 @@ Proof.
     + red in v. dependent destruction v; try inversion x.
       destruct vv as [vv1 vv2]. simp approx_val in H. simp approx_val.
       destruct H. split; auto.
+    + red in v. dependent destruction v; try inversion x.
+      * simp approx_val. simp approx_val in H. destruct vv; try contradiction.
+        auto.
+      * simp approx_val. simp approx_val in H. destruct vv; try contradiction.
+        auto.
     + red in v. dependent destruction v; try inversion x.
       rename vv into f. simp approx_val in H. simp approx_val.
       intros vv v m' Hm' Hv. eapply H in Hv; eauto.
