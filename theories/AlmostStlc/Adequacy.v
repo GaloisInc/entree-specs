@@ -90,8 +90,8 @@ Proof.
   remember (subst_comp_context C c2) as c2'. clear Heqc1' Heqc2' Hden c1 c2.
   specialize (Hden' tt tt I).
   split; intros Hstep; apply adequacy_aux.
-  - red. intros [] [] _. etransitivity. symmetry. eauto. eapply eval_stable. auto.
-  - red. intros [] [] _. etransitivity. eauto. eapply eval_stable; auto.
+  - red. intros [] [] _. etransitivity. symmetry. eauto. apply eval_stable. auto.
+  - red. intros [] [] _. etransitivity. eauto. apply eval_stable; auto.
 Qed.
 (* Print Assumptions adequacy. close_comp_open2 *) 
 

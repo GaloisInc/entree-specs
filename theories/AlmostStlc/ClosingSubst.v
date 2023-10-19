@@ -39,6 +39,10 @@ Fixpoint open_subst (Γ1 Γ2 : ctx) : Type :=
 
 Definition closing_subst (Γ : ctx) : Type := open_subst Γ [].
 
+Equations extend_closing_subst {t} Γ (ρ : closing_subst Γ) (v : closed_value t) : closing_subst (Γ ++ [t]) :=
+  extend_closing_subst [] tt v := (v, tt);
+  extend_closing_subst (t0 :: Γ) (v0, ρ) v := (v0, extend_closing_subst Γ ρ v).
+
 Equations weaken_subst Γ1 {Γ2} (ρ : closing_subst Γ1) : open_subst Γ1 Γ2 :=
   weaken_subst nil tt := tt;
   weaken_subst (t :: Γ1) (v, ρ) := (weaken_r_value _ v, weaken_subst Γ1 ρ).
@@ -377,15 +381,12 @@ Proof.
     + unfold weaken_l_value_single, weaken_l_value, weaken_r_value.
       f_equal. eapply val_map_dep_f_equal. auto. red. intros. inversion b.
     + unfold weaken_r_value. rewrite val_map_id. auto. intros. inversion x0.
-  - intros t1 t2 t3 MR c v1 v2 [v3 ρ]. simp close_comp_app. rewrite IHΓ.
-    simp close_comp. f_equal.
-    rewrite <- subst_comp_cons_comm.
-    (* I am not sure what to do about this, is it really not derivable from the two element case?
-       try to see if there is another proof for a bit, but if not I should be able to do a new induction just like before
-       hopefully a lot of the original stuff is still effective
-       could part of the problem be that I am missing an associativity?
-     *)
-Admitted.
+  - intros t1 t2 t3 MR c v1 v2 [v3 ρ]. simp close_comp_app. setoid_rewrite IHΓ.
+    setoid_rewrite close_comp_open. f_equal.  unfold close_comp_binder.
+    simp close_comp_app. f_equal.
+    destruct subst_comp_comm_mut_ind as [H _]. red in H. setoid_rewrite H; eauto.
+Qed.
+
 
 Lemma subst_comp_const_close:
   forall (t1 t2 : vtype) (Γ : ctx) (MR : mfix_ctx)
