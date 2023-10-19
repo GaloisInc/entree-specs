@@ -118,12 +118,14 @@ Definition FixS {E T} (f: FunIx T -> specFun E nil T) : SpecM E (FunIx T) :=
  ** Defining a multi-way fixed point
  **)
 
+(* Build the multi-arity function type FunIx T1 -> ... FunIx Tn -> A *)
 Fixpoint arrowIxs (Ts : list TpDesc) (A : Type@{entree_u}) : Type@{entree_u} :=
   match Ts with
   | nil => A
   | T :: Ts' => FunIx T -> arrowIxs Ts' A
   end.
 
+(* Apply a multi-arity function over indexes to a list of indexes *)
 Fixpoint applyArrowIxs {Ts A} : arrowIxs Ts A -> FunIxs Ts -> A :=
   match Ts return arrowIxs Ts A -> FunIxs Ts -> A with
   | nil => fun f _ => f
@@ -158,6 +160,7 @@ Fixpoint specFunsToMultiInterp {E Ts} : specFuns E Ts -> MultiFxInterp (SpecEv E
         consMultiFxInterp (funElemToInterp (fst fs)) (specFunsToMultiInterp (snd fs))
   end.
 
+(*
 (* The type of a tuple of spec functions of types Us that take in FunIxs Ts *)
 Fixpoint arrowIxsSpecFuns E (Ts Us : list TpDesc) : Type@{entree_u} :=
   match Us with
@@ -173,13 +176,14 @@ Fixpoint applyArrowIxsSpecFuns {E Ts Us} : arrowIxsSpecFuns E Ts Us -> FunIxs Ts
   | U :: Us' => fun fs ixs => (applyArrowIxs (fst fs) ixs,
                                 applyArrowIxsSpecFuns (snd fs) ixs)
   end.
+*)
 
 Definition MultiFixBodies E Ts : Type@{entree_u} :=
-  arrowIxsSpecFuns E Ts Ts.
+  arrowIxs Ts (specFuns E Ts).
 
 Definition MultiFixS {E Ts} (funs : MultiFixBodies E Ts) : SpecM E (FunIxs Ts) :=
   Fx_MkFuns
-    (fun ixs => specFunsToMultiInterp (applyArrowIxsSpecFuns funs ixs))
+    (fun ixs => specFunsToMultiInterp (applyArrowIxs funs ixs))
     (fun ixs => Fx_Ret ixs).
 
 Definition LetRecS {E Ts A}
