@@ -187,5 +187,5 @@ Definition MultiFixS {E Ts} (funs : MultiFixBodies E Ts) : SpecM E (FunIxs Ts) :
     (fun ixs => Fx_Ret ixs).
 
 Definition LetRecS {E Ts A}
-  (funs : MultiFixBodies E Ts) (body : FunIxs Ts -> SpecM E A) : SpecM E A :=
-  BindS (MultiFixS funs) body.
+  (funs : MultiFixBodies E Ts) (body : arrowIxs Ts (SpecM E A)) : SpecM E A :=
+  BindS (MultiFixS funs) (applyArrowIxs body).
