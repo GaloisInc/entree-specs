@@ -71,7 +71,7 @@ Admitted.
  ** Type descriptions themselves
  **)
 
-Variant KindDesc : Type@{entree_u} :=
+Inductive KindDesc : Type@{entree_u} :=
 | Kind_Expr (EK:ExprKind)
 | Kind_Tp
 .
