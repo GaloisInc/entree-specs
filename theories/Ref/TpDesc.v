@@ -110,11 +110,14 @@ environments *)
  ** Deciding equality of type descriptions
  **)
 
-Lemma dec_eq_ExprKind (EK1 EK2:ExprKind) : {EK1=EK2} + {~EK1=EK2}.
-Proof. repeat decide equality. Qed.
+Definition dec_eq_ExprKind (EK1 EK2:ExprKind) : {EK1=EK2} + {~EK1=EK2}.
+Proof. repeat decide equality. Defined.
 
 Lemma dec_eq_exprKElem {EK} (elem1 elem2: exprKindElem EK)
   : {elem1=elem2} + {~elem1=elem2}.
+Proof.
+  revert elem1 elem2; destruct EK; intros; try decide equality.
+  revert elem1 elem2; induction w; simpl; intros.
 Admitted.
 
 Lemma dec_eq_KindDesc (K1 K2:KindDesc) : {K1=K2} + {~K1=K2}.
@@ -158,6 +161,36 @@ Qed.
 *)
 Admitted.
 
+(* NOTE: we use this simpler version of dec_eq_ExprKind in type-level
+computations because it computes faster and is easier to write *)
+Definition proveEqExprKind (EK1 EK2 : ExprKind) : option (EK1 = EK2) :=
+  match EK1, EK2 return option (EK1 = EK2) with
+  | Kind_unit, Kind_unit => Some eq_refl
+  | Kind_bool, Kind_bool => Some eq_refl
+  | Kind_nat, Kind_nat => Some eq_refl
+  | Kind_bv w1, Kind_bv w2 =>
+      match Nat.eq_dec w1 w2 with
+      | left e =>
+          Some (eq_rect w1 (fun y => Kind_bv w1 = Kind_bv y) eq_refl w2 e)
+      | right _ => None
+      end
+  | _, _ => None
+  end.
+
+(* NOTE: we use this simpler version of dec_eq_KindDesc in type-level
+computations because it computes faster and is easier to write *)
+Definition proveEqKindDesc (K1 K2 : KindDesc) : option (K1 = K2) :=
+  match K1, K2 return option (K1 = K2) with
+  | Kind_Expr EK1, Kind_Expr EK2 =>
+      match proveEqExprKind EK1 EK2 with
+      | Some e =>
+          Some (eq_rect EK1 (fun ek => Kind_Expr EK1 = Kind_Expr ek) eq_refl EK2 e)
+      | None => None
+      end
+  | Kind_Tp, Kind_Tp => Some eq_refl
+  | _, _ => None
+  end.
+
 
 (**
  ** Elements of kind descriptions
@@ -194,9 +227,9 @@ Definition envConsElem {K} (elem:kindElem K) (env:TpEnv) : TpEnv :=
 (* Eliminate a TpEnvElem at a particular kind, returning the default element of
 that kind if the kind of the head does not match *)
 Definition elimTpEnvElem K (elem:TpEnvElem) : kindElem K :=
-  match dec_eq_KindDesc (projT1 elem) K with
-  | left e => eq_rect (projT1 elem) kindElem (projT2 elem) K e
-  | right _ => defaultKindElem K
+  match proveEqKindDesc (projT1 elem) K with
+  | Some e => eq_rect (projT1 elem) kindElem (projT2 elem) K e
+  | None => defaultKindElem K
   end.
 
 (* Get the head value of a TpEnv at a particular kind, returning the default
