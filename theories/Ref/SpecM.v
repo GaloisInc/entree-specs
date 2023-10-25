@@ -55,6 +55,10 @@ Global Instance ReSumRet_SpecE_Error (E : EvType) : ReSumRet ErrorE (SpecE E) :=
  ** The SpecM monad
  **)
 
+Section SpecM.
+Context {Ops:TpExprOps}.
+
+
 (* The SpecM monad is an entree spec over SpecE events *)
 Definition SpecM (E:EvType) A : Type := fixtree TpDesc (SpecEv E) A.
 
@@ -189,3 +193,6 @@ Definition MultiFixS {E Ts} (funs : MultiFixBodies E Ts) : SpecM E (FunIxs Ts) :
 Definition LetRecS {E Ts A}
   (funs : MultiFixBodies E Ts) (body : arrowIxs Ts (SpecM E A)) : SpecM E A :=
   BindS (MultiFixS funs) (applyArrowIxs body).
+
+
+End SpecM.

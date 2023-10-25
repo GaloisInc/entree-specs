@@ -8,8 +8,9 @@ From EnTree Require Import
      Basics.HeterogeneousRelations
      Ref.FixTree
 .
-From Bits Require Import operations spec.
 
+
+Section TpDesc.
 
 (**
  ** Expression Kinds
@@ -39,32 +40,19 @@ Definition defaultEKElem EK : exprKindElem EK :=
   | Kind_bv w => VectorDef.const false w
   end.
 
-Inductive TpExprUnOp : ExprKind -> ExprKind -> Type@{entree_u} :=
-| UnOp_BVToNat w : TpExprUnOp (Kind_bv w) Kind_nat
-| UnOp_NatToBV w : TpExprUnOp Kind_nat (Kind_bv w)
-.
-
-Inductive TpExprBinOp : ExprKind -> ExprKind -> ExprKind -> Type@{entree_u} :=
-| BinOp_AddNat : TpExprBinOp Kind_nat Kind_nat Kind_nat
-| BinOp_MulNat : TpExprBinOp Kind_nat Kind_nat Kind_nat
-| BinOp_AddBV w : TpExprBinOp (Kind_bv w) (Kind_bv w) (Kind_bv w)
-| BinOp_MulBV w : TpExprBinOp (Kind_bv w) (Kind_bv w) (Kind_bv w)
-.
-
-Lemma dec_eq_UnOp {EK1 EK2} (op1 op2 : TpExprUnOp EK1 EK2) : {op1=op2} + {~op1=op2}.
-Admitted.
-
-Lemma dec_eq_BinOp {EK1 EK2 EK3} (op1 op2 : TpExprBinOp EK1 EK2 EK3)
-  : {op1=op2} + {~op1=op2}.
-Admitted.
-
-Definition evalUnOp {EK1 EK2} (op: TpExprUnOp EK1 EK2) :
-  exprKindElem EK1 -> exprKindElem EK2.
-Admitted.
-
-Definition evalBinOp {EK1 EK2 EK3} (op: TpExprBinOp EK1 EK2 EK3) :
-  exprKindElem EK1 -> exprKindElem EK2 -> exprKindElem EK3.
-Admitted.
+Class TpExprOps : Type :=
+  {
+    TpExprUnOp : ExprKind -> ExprKind -> Type@{entree_u};
+    TpExprBinOp : ExprKind -> ExprKind -> ExprKind -> Type@{entree_u};
+    dec_eq_UnOp : forall {EK1 EK2} (op1 op2 : TpExprUnOp EK1 EK2), {op1=op2} + {~op1=op2};
+    dec_eq_BinOp : forall {EK1 EK2 EK3} (op1 op2 : TpExprBinOp EK1 EK2 EK3), 
+      {op1=op2} + {~op1=op2};
+    evalUnOp : forall {EK1 EK2} (op: TpExprUnOp EK1 EK2),
+      exprKindElem EK1 -> exprKindElem EK2;
+    evalBinOp : forall {EK1 EK2 EK3} (op: TpExprBinOp EK1 EK2 EK3),
+      exprKindElem EK1 -> exprKindElem EK2 -> exprKindElem EK3;
+  }.
+Context {Ops:TpExprOps}.
 
 
 (**
@@ -254,24 +242,24 @@ Definition evalVar n env K var : kindElem K :=
 (* Substitute an environment at lifting level n into type-level expression e *)
 Fixpoint substTpExpr n env {K} (e:TpExpr K) : TpExpr K :=
   match e in TpExpr K return TpExpr K with
-  | TpExpr_Const _ c => TpExpr_Const c
-  | TpExpr_Var _ ix =>
+  | @TpExpr_Const _ c => TpExpr_Const c
+  | @TpExpr_Var _ ix =>
       match substVar n env (Kind_Expr _) ix with
       | inl e' => TpExpr_Const e'
       | inr ix' => TpExpr_Var ix'
       end
-  | TpExpr_UnOp _ _ op e' => TpExpr_UnOp op (substTpExpr n env e')
-  | TpExpr_BinOp _ _ _ op e1 e2 =>
+  | @TpExpr_UnOp _ _ op e' => TpExpr_UnOp op (substTpExpr n env e')
+  | @TpExpr_BinOp _ _ _ op e1 e2 =>
       TpExpr_BinOp op (substTpExpr n env e1) (substTpExpr n env e2)
   end.
 
 (* Evaluate a type-level expression to a value *)
 Fixpoint evalTpExpr (env:TpEnv) {K} (e:TpExpr K) : exprKindElem K :=
   match e in TpExpr K return exprKindElem K with
-  | TpExpr_Const _ c => c
-  | TpExpr_Var _ ix => evalVar 0 env (Kind_Expr _) ix
-  | TpExpr_UnOp _ _ op e => evalUnOp op (evalTpExpr env e)
-  | TpExpr_BinOp _ _ _ op e1 e2 =>
+  | @TpExpr_Const _ c => c
+  | @TpExpr_Var _ ix => evalVar 0 env (Kind_Expr _) ix
+  | @TpExpr_UnOp _ _ op e => evalUnOp op (evalTpExpr env e)
+  | @TpExpr_BinOp _ _ _ op e1 e2 =>
       evalBinOp op (evalTpExpr env e1) (evalTpExpr env e2)
   end.
 
@@ -500,3 +488,5 @@ Fixpoint funInterpToElemEnv {E env T} : (forall args:TpFunInput env T,
 (* Convert an FxInterp to a monadic function in the top-level environment *)
 Definition funInterpToElem {E T} : @FxInterp TpDesc _ E T -> funElem E nil T :=
   funInterpToElemEnv.
+
+End TpDesc.
