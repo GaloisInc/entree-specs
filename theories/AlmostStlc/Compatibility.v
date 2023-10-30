@@ -226,6 +226,281 @@ Proof.
   intros. red. intros. eapply let_compat_aux; try red; eauto.
 Qed.
 
+Lemma call_term_bind_inv1:
+  forall (t : vtype) (MR : mfix_ctx)
+    (R0 : call_frame) (tin0 tout0 : vtype) (x0 : var (tin0, tout0) R0) (xR0 : var R0 MR)
+    (vvin : denote_type tin0)
+    (k1 : denote_type tout0 -> mtree (denote_mfix_ctx (MR)) (denote_type t)) 
+    (tin tout : vtype) (Rcall : call_frame)
+    (xR : var Rcall MR) (x : var (tin, tout) Rcall) (vvcall : denote_type tin)
+    (k' : denote_type tout -> mtree (denote_mfix_ctx (MR)) (denote_type t)) b1 b2,
+    eqit eq b1 b2 (vv <- call_term x xR vvcall;; (k' vv)) (vv <- call_term x0 xR0 vvin;; (k1 vv)) ->
+    tin = tin0 /\ tout = tout0 /\ x ~= x0 /\ xR ~= xR0 /\ Rcall = R0 /\ vvcall ~= vvin.
+Proof.
+  intros t MR R0 tin0 tout0 x0 xR0 vvin k1 tin tout Rcall xR x vvcall k'.
+  unfold call_term. destruct (call_mrec x xR vvcall) eqn : Heq1.
+  destruct (call_mrec x0 xR0 vvin) eqn : Heq2. setoid_rewrite bind_trigger.
+  setoid_rewrite bind_vis. 
+  intros. assert (x1 = x2). pinversion H. auto. subst.
+  specialize (eqit_Vis_inv _ _ _ _ _ _ H) as H'. setoid_rewrite bind_ret_l in H'.
+  clear H H'. 
+  assert (var_eq xR xR0).
+  { eapply call_term_bind_inv_aux1. rewrite Heq1, Heq2. auto. }
+  apply var_eq_surj in X as ?. subst. apply var_eq_eq in X. subst.
+  assert ((var_eq x x0 * (vvin ~= vvcall))%type).
+  eapply call_term_bind_inv_aux2. rewrite Heq1, Heq2. auto.
+  destruct X as [Heq HJMeq]. apply var_eq_surj in Heq as ?. injection X.
+  intros. subst. rewrite HJMeq. apply var_eq_eq in Heq.  subst.
+  repeat split; auto.
+Qed.
+
+Lemma call_term_bind_inv_JMeq_aux :
+forall (t : vtype) (MR : mfix_ctx) A B
+  (k1 k2 : B -> mtree (denote_mfix_ctx MR) (denote_type t))
+  (d : A -> B)
+  (x0 : B) b1 b2 ,
+  (forall x , eqit eq b1 b2 (k1 (d x)) (k2 (d x))) ->
+  d ~= @id B -> A = B -> eqit eq b1 b2 (k1 x0)  (k2 x0).
+Proof.
+  intros. subst. rewrite H0 in H. unfold id in *. auto.
+Qed.
+
+Lemma call_term_bind_inv2:
+  forall (t : vtype) (MR : mfix_ctx)
+    (tin tout : vtype) (Rcall : call_frame)
+    (xR : var Rcall MR) (x : var (tin, tout) Rcall) (vvcall : denote_type tin)
+    (k1 k2 : denote_type tout -> mtree (denote_mfix_ctx MR) (denote_type t)) b1 b2,
+    eqit eq b1 b2 (vv <- call_term x xR vvcall;; (k1 vv))  (vv <- call_term x xR vvcall;; (k2 vv)) ->
+    forall x, eqit eq b1 b2 (k1 x) (k2 x).
+Proof.
+  unfold call_term. intros. destruct (call_mrec x xR vvcall) eqn : Heq1.
+  setoid_rewrite bind_trigger in H. setoid_rewrite bind_vis in H.
+   specialize (call_mrec_encodes _ _ _ _ x xR vvcall) as Henc.
+  specialize (call_mrec_cont _ _ _ _ x xR vvcall) as Hcont.
+  rewrite Heq1 in Hcont. cbn in Hcont. rewrite Heq1 in Henc. cbn in Henc.
+  assert (forall x, eqit eq b1 b2 (k1 (d x)) (k2 (d x))). intros. eapply eqit_Vis_inv in H.
+  setoid_rewrite bind_ret_l in H. eauto. eapply call_term_bind_inv_JMeq_aux; eauto.
+Qed.
+ 
+
+
+Lemma tfix_compat_aux n : forall Γ MR t1 t2
+        mbody minit
+        (cbody : comp (Sum t1 t2) (t1 :: Γ) MR) (vinit : value t1 Γ),
+    bounded_comp_rel n mbody cbody ->
+    bounded_val_rel n minit vinit ->
+    bounded_comp_rel n (fun hyps => vv <- minit hyps;; EnTree.iter (fun x => mbody (x, hyps)) vv) (comp_tfix cbody vinit).
+Proof.
+  induction n as [n IHn] using (well_founded_induction lt_wf).
+  intros Γ MR t1 t2 mbody minit cbody vinit Hbody Hinit j hyps ρ Hj Hhρ.
+  rewrite close_comp_tfix. red in Hbody. red in Hinit.
+  specialize (Hinit j hyps ρ Hj Hhρ). destruct Hinit as [vv [Hvv1 Hvv2]].
+  setoid_rewrite Hvv1. setoid_rewrite bind_ret_l.
+  assert (Hhρ' : closing_subst_approx j (t1 :: Γ) (vv,hyps) (close_value Γ ρ vinit, ρ)).
+  constructor; auto.
+  remember (fun vv => mbody (vv,hyps)) as mbody'.
+  assert (Hbody' : forall j' vv v, j' <= j ->
+            approx_val j' _ vv v -> 
+            approx_comp j' approx_val (mbody' vv) (subst_comp_cons (close_comp_binder ρ cbody) v)).
+  {
+    intros j' vv' v' Hj' Hvv'. 
+    rewrite <- close_comp_open. subst. eapply Hbody. lia.
+    constructor; auto. inversion Hj'. subst. auto.
+    subst. eapply lower_closing_subst_approx; eauto. lia.
+  }
+  clear Hbody.
+  remember (close_comp_binder ρ cbody) as cbody'.
+  clear Heqmbody' Heqcbody'.
+  remember (close_value Γ ρ vinit) as vinit'. clear Heqvinit'. constructor.
+  intros. clear Hvv1 ρ Hhρ Hhρ' hyps cbody vinit mbody minit Γ. split.
+  - clear Hj n IHn. intros vv0 Hstep. eapply tail_rec_trace_multi_step2 in Hstep as Hrec.
+    clear Hstep. generalize dependent j. dependent induction Hrec.
+    + intros. 
+      eapply Hbody' in Hvv2 as Hbody''; auto. rewrite H0 in H1.
+      dependent destruction Hbody''. assert (Hj1 : j1 < j). lia.
+      specialize (H2 j1 Hj1). destruct H2 as [Hret _]. specialize (Hret _ H1).
+      destruct Hret as [v1 [Hv11 Hv12]].
+      red in v1. assert (exists v1', v1 = val_inl v1').
+      { clear - Hv12 H. assert (j - j1 > 0). lia.
+        destruct (j - j1); try lia. dependent destruction v1; try inversion x;
+          simp approx_val in Hv12; try contradiction. eexists. eauto.
+      }
+      destruct H2 as [v1' ?]. subst.
+      assert (Hv12' : approx_val (j - j1) t1 r' v1').
+      assert (j - j1 > 0). lia.
+        destruct (j - j1); try lia. simp approx_val in Hv12. auto.
+      clear Hv12. eapply IHHrec with (cbody' := cbody') in Hv12'; eauto. 3 : lia.
+      * destruct Hv12' as [v [Hv1 Hv2]]. exists v. split.
+        eapply eval_rel_stuck_comp_tfix1; eauto.
+        eapply lower_approx_val; try apply Hv2. lia.
+      * intros. eapply Hbody'. lia. auto.
+    + intros. rewrite H0 in H2. apply eqit_Ret_inv in H1. subst s.
+      eapply Hbody' in Hvv2; auto.
+      dependent destruction Hvv2. specialize (H _ H1). destruct H as [Hret _].
+      specialize (Hret _ H2).
+      destruct Hret as [v1 [Hv1 Hv2]].
+      assert (exists v1', v1 = val_inr v1').
+      { assert (j0 - j > 0). lia.
+        destruct (j0 - j); try lia. red in v1.
+        dependent destruction v1; try inversion x;
+        simp approx_val in Hv2; try contradiction. eexists. eauto.
+      } destruct H as [v1' ?]. subst.
+      exists v1'. split.
+      * eapply eval_rel_stuck_comp_tfix2. eauto.
+      * assert (j0 - j > 0). lia.
+        destruct (j0 - j); try lia. simp approx_val in Hv2.
+    + pinversion H1.
+  - intros tin tout Rcall xR x vvcall k Hstep.
+    eapply multi_step_iter_call_term in Hstep as Hstep'.
+    destruct Hstep' as [j1 [j2 [vv' [k' [? [Hstep1 Hstep2]]]]]].
+    subst.
+    assert (Hstep' : multi_step (j1 + j2) 
+                               (EnTree.iter mbody' vv)
+                               (x <- call_term x xR vvcall;; 
+                                y <- k' x;;
+                                match y with | inl a'' => Tau (EnTree.iter mbody' a'') | inr b => Ret b end)).
+    { eapply multi_step_add. eauto. setoid_rewrite <- bind_bind. eapply multi_step_bind.
+      eauto. }
+    clear Hstep1 Hstep2.
+    assert (forall x, k x ≅ y <- k' x;; match y with 
+                                  | inl a'' => Tau (EnTree.iter mbody' a'')
+                                  | inr b => Ret b
+                                  end).
+    {
+      eapply multi_step_inj_r in Hstep; eauto.
+      intros. clear - Hstep. 
+      eapply call_term_bind_inv2 with (k2 := fun x0 => y <- k' x0;; match y with
+                      | inl a'' => Tau (EnTree.iter mbody' a'')
+                      | inr b => Ret b
+                      end). symmetry. eauto.
+    }
+    setoid_rewrite H0. clear H0 Hstep k.
+    (* here is where I need info about k, k ≅ k' >>=case (Tau iter) ret,
+       then can substitute in and things should work 
+     *)
+    eapply tail_rec_trace_multi_step4 in Hstep'.
+    2 : reflexivity.
+    apply tail_rec_trace_call1 in Hstep'.
+    remember (j1 + j2) as j'. clear Heqj'. generalize dependent j'. intros j'.
+    generalize dependent vv. generalize dependent vinit'. generalize dependent j.
+    induction j' as [j' IHj'] using (well_founded_induction lt_wf).
+    intros. dependent destruction Hstep'.
+    + fold (denote_type t2) in t'.
+      rewrite H0 in H1.
+      eapply Hbody' in Hvv2; auto. dependent destruction Hvv2.
+      assert (Hj0 : j0 < j). lia.
+      specialize (H j0 Hj0). destruct H as [Hret _].
+      apply Hret in H2 as [v [Hv1 Hv2]]. 
+      assert (exists v1, v = val_inl v1).
+      { destruct (j -j0) eqn : ?. lia.
+        red in v. dependent destruction v; try inversion x0.
+        eauto. simp approx_val in Hv2. contradiction.
+      } destruct H as [vl Hvl]. subst.
+      assert (Hv2' : approx_val (j - j0) t1 r' vl).
+      { destruct (j - j0) eqn : ?. lia. simp approx_val in Hv2. }
+      clear Hv2. rename Hv2' into Hv2.
+      eapply IHj' with (j := j- j0) in Hstep';
+      (* I think this induction is set up wrong *)
+      eauto; try lia.
+      2 : intros; eapply Hbody'; eauto; try lia. 
+      destruct Hstep' as [vcall [E [c' [Hvcall [Hstep [HE1 HE2]]]]]].
+      exists vcall, E, c'. split; [ | split; [ | split]]; eauto.
+      * eapply lower_approx_val; try apply Hvcall. lia.
+      * eapply eval_rel_stuck_comp_tfix1; eauto.
+      * intros. eapply HE2. lia. auto.
+    + clear - H1. exfalso. unfold call_term in H1.
+      destruct (call_mrec x xR vvcall). setoid_rewrite bind_trigger in H1.
+      setoid_rewrite bind_vis in H1. pinversion H1.
+    +
+      (* I think I need to edit the tail rec in order to get this working well *)
+      rewrite H0 in H2. apply call_term_bind_inv1 in H1 as ?.
+      decompose record H3. subst. subst. clear H3.
+      (* eapply call_term_bind_inv2 in H1. *)
+      apply Hbody' in Hvv2; auto.
+      dependent destruction Hvv2.
+      specialize (H _ H0). destruct H as [_ Hstuck].
+      clear H1 t'.
+      eapply Hstuck in H3.
+      destruct H3 as [vcall [E [c' [Hvcall [Hstep [HE1 HE2]]]]]].
+      exists vcall. eexists. eexists.  split; [ | split; [ | split]]; eauto.
+      eapply eval_rel_stuck_comp_tfix3. eauto. econstructor. eauto.
+      intros. simp subst_eval_context.
+      eapply call_term_bind_inv2 in H2. Unshelve.
+      2 : exact vvret. rewrite H2. clear H2.
+      specialize let_approx with (t1 := Sum t1 t2) (m1 := k vvret) as H'.
+      eapply H'. eauto. intros. unfold subst_comp_cons. simp subst_comp. 
+      simp subst_var.
+      destruct vv1.
+      * destruct n0. constructor. intros. lia.
+        assert (exists vl, v1 = val_inl vl).
+        { red in v1. dependent destruction v1; try inversion x.
+          eexists. eauto. simp approx_val in H3. contradiction. }
+        destruct H4 as [vl ?]. subst. eapply approx_comp_approx_comp_term.
+        eapply approx_comp_term_step2. econstructor. unfold step.
+        simp observe. cbn. simp step_eval_context. simp subst_eval_context.
+        simp step_bredex. reflexivity.
+        unfold subst_comp_cons. simp subst_comp. simp subst_var.
+        match goal with |- approx_comp _ _ _ (comp_tfix ?cbody'' _) => assert (cbody'' = cbody') end.
+        {
+            destruct (subst_weaken_mid_aux) as [Hs _].
+            erewrite <- Hs with (v2 := vl); eauto.
+            f_equal. erewrite <- Hs; eauto. f_equal.
+            unfold weaken_mid_comp, weaken_r_comp. destruct comp_val_map_fusion as [H'' _].
+            rewrite H''. eapply comp_map_dep_f_equal; eauto. red. cbn.
+            intros. unfold weaken_var_r. dependent destruction b.
+            simp append_var. simp weaken_var_mid. auto.
+            dependent destruction b1.
+        }
+        rewrite H4. eapply approx_comp_multi_step_1.
+        econstructor. constructor. reflexivity.
+        constructor. pstep. constructor. left. enough ((EnTree.iter mbody' d) ≅ (EnTree.iter mbody' d)).
+        eauto. reflexivity. clear H4. (* lost info about n*)
+        assert (Hn0 : n0 < n). lia.
+        simp approx_val in H3.
+        specialize (IHn _ Hn0 [] MR t1 t2 (fun '(vv, _) => mbody' vv) (fun _ => ret d) cbody' vl).
+        match type of IHn with ?P1 -> ?P2 -> _ => assert (P1 /\ P2); [split | ] end.
+        -- red. intros j0' [vv'' []] [v'' []] Hj0'.
+           intros H''. dependent destruction H''. simp close_comp. rewrite weaken_r_value_nil_nil.
+           eapply Hbody'. lia. auto.
+        -- red. intros j3 [] [] Hj3 _. simp close_value. 
+           eexists. split. reflexivity. eapply lower_approx_val; try apply H3.
+           lia.
+        -- destruct H4 as [Hbody Hvl]. specialize (IHn Hbody Hvl).
+           clear - IHn. red in IHn. specialize (IHn n0 tt tt). simp close_comp in IHn.
+           setoid_rewrite bind_ret_l in IHn. eapply IHn. auto.
+           constructor.
+      * destruct n0. constructor. intros. lia.
+        assert (exists vr, v1 = val_inr vr).
+        { red in v1. dependent destruction v1; try inversion x.
+          simp approx_val in H3. contradiction. eexists. eauto. }
+        destruct H4 as [vr ?]. subst.
+        eapply approx_comp_approx_comp_term.
+        eapply approx_comp_term_step2. econstructor. unfold step.
+        simp observe. cbn. simp step_eval_context. simp step_bredex. simp subst_eval_context.
+        unfold subst_comp_cons. simp subst_comp. simp subst_var. reflexivity.
+        constructor. intros. split.
+        -- intros. simp approx_val in H3.
+           exists vr. split. apply eval_rel_stuck_val. unfold step. simp observe. auto.
+           apply multi_step_eutt in H5. apply eqit_Ret_inv in H5. subst.
+           eapply lower_approx_val'; try apply H3. lia.
+        -- intros. exfalso. clear - H5. unfold call_term in H5.
+           destruct (call_mrec x xR vvcall). setoid_rewrite bind_trigger in H5.
+           setoid_rewrite bind_vis in H5. apply multi_step_eutt in H5.
+           pinversion H5.
+Qed.
+
+
+Lemma tfix_compat Γ MR t1 t2
+        mbody minit
+        (cbody : comp (Sum t1 t2) (t1 :: Γ) MR) (vinit : value t1 Γ) :
+    comp_rel mbody cbody ->
+    val_rel minit vinit ->
+    comp_rel (fun hyps => vv <- minit hyps;; EnTree.iter (fun x => mbody (x, hyps)) vv) (comp_tfix cbody vinit).
+Proof.
+  intros. red. intros. eapply tfix_compat_aux with (n := n); auto.
+  all : red; intros; eauto.
+Qed.
+  
 (* replace eq with beta equivalence  *)
 Lemma subst_eval_context__ctx n t1 MR1 t2 r (E : @eval_context t1 MR1 t2 MR1 r true) (c : comp t2 [] MR1) :
   approx_comp_term n (subst_eval_context E c) (comp_let c (subst_eval_context_ctx E (comp_ret (val_var VarZ)))).
@@ -314,64 +589,6 @@ Qed.
 (* hoist these lemmas to CallMrecFacts or somewhere else they could be used by *)
 
 
-
-
-Lemma call_term_bind_inv1:
-  forall (t : vtype) (MR : mfix_ctx)
-    (R0 : call_frame) (tin0 tout0 : vtype) (x0 : var (tin0, tout0) R0) (xR0 : var R0 MR)
-    (vvin : denote_type tin0)
-    (k1 : denote_type tout0 -> mtree (denote_mfix_ctx (MR)) (denote_type t)) 
-    (tin tout : vtype) (Rcall : call_frame)
-    (xR : var Rcall MR) (x : var (tin, tout) Rcall) (vvcall : denote_type tin)
-    (k' : denote_type tout -> mtree (denote_mfix_ctx (MR)) (denote_type t)) b1 b2,
-    eqit eq b1 b2 (vv <- call_term x xR vvcall;; (k' vv)) (vv <- call_term x0 xR0 vvin;; (k1 vv)) ->
-    tin = tin0 /\ tout = tout0 /\ x ~= x0 /\ xR ~= xR0 /\ Rcall = R0 /\ vvcall ~= vvin.
-Proof.
-  intros t MR R0 tin0 tout0 x0 xR0 vvin k1 tin tout Rcall xR x vvcall k'.
-  unfold call_term. destruct (call_mrec x xR vvcall) eqn : Heq1.
-  destruct (call_mrec x0 xR0 vvin) eqn : Heq2. setoid_rewrite bind_trigger.
-  setoid_rewrite bind_vis. 
-  intros. assert (x1 = x2). pinversion H. auto. subst.
-  specialize (eqit_Vis_inv _ _ _ _ _ _ H) as H'. setoid_rewrite bind_ret_l in H'.
-  clear H H'. 
-  assert (var_eq xR xR0).
-  { eapply call_term_bind_inv_aux1. rewrite Heq1, Heq2. auto. }
-  apply var_eq_surj in X as ?. subst. apply var_eq_eq in X. subst.
-  assert ((var_eq x x0 * (vvin ~= vvcall))%type).
-  eapply call_term_bind_inv_aux2. rewrite Heq1, Heq2. auto.
-  destruct X as [Heq HJMeq]. apply var_eq_surj in Heq as ?. injection X.
-  intros. subst. rewrite HJMeq. apply var_eq_eq in Heq.  subst.
-  repeat split; auto.
-Qed.
-
-Lemma call_term_bind_inv_JMeq_aux :
-forall (t : vtype) (MR : mfix_ctx) A B
-  (k1 k2 : B -> mtree (denote_mfix_ctx MR) (denote_type t))
-  (d : A -> B)
-  (x0 : B) b1 b2 ,
-  (forall x , eqit eq b1 b2 (k1 (d x)) (k2 (d x))) ->
-  d ~= @id B -> A = B -> eqit eq b1 b2 (k1 x0)  (k2 x0).
-Proof.
-  intros. subst. rewrite H0 in H. unfold id in *. auto.
-Qed.
-
-Lemma call_term_bind_inv2:
-  forall (t : vtype) (MR : mfix_ctx)
-    (tin tout : vtype) (Rcall : call_frame)
-    (xR : var Rcall MR) (x : var (tin, tout) Rcall) (vvcall : denote_type tin)
-    (k1 k2 : denote_type tout -> mtree (denote_mfix_ctx MR) (denote_type t)) b1 b2,
-    eqit eq b1 b2 (vv <- call_term x xR vvcall;; (k1 vv))  (vv <- call_term x xR vvcall;; (k2 vv)) ->
-    forall x, eqit eq b1 b2 (k1 x) (k2 x).
-Proof.
-  unfold call_term. intros. destruct (call_mrec x xR vvcall) eqn : Heq1.
-  setoid_rewrite bind_trigger in H. setoid_rewrite bind_vis in H.
-   specialize (call_mrec_encodes _ _ _ _ x xR vvcall) as Henc.
-  specialize (call_mrec_cont _ _ _ _ x xR vvcall) as Hcont.
-  rewrite Heq1 in Hcont. cbn in Hcont. rewrite Heq1 in Henc. cbn in Henc.
-  assert (forall x, eqit eq b1 b2 (k1 (d x)) (k2 (d x))). intros. eapply eqit_Vis_inv in H.
-  setoid_rewrite bind_ret_l in H. eauto. eapply call_term_bind_inv_JMeq_aux; eauto.
-Qed.
- 
 (*
 Lemma mfix_compat t Γ R MR dbodies sbodies m (c : comp t Γ (R :: MR)):
   bodies_rel dbodies sbodies ->

@@ -58,6 +58,9 @@ Equations denote_bredex {t MR} (br : bredex t MR) : mtree (denote_mfix_ctx MR) (
   denote_bredex (bredex_match_sum (val_inl v) cinl _) :=
     vv <- denote_value v tt;;
     denote_comp cinl (vv, tt);
+  denote_bredex (bredex_tfix cbody vinit) :=
+    vvinit <- denote_value vinit tt;;
+    EnTree.iter (fun x => denote_comp cbody (x, tt)) vvinit;
   denote_bredex (bredex_match_sum (val_inr v) _ cinr) :=
     vv <- denote_value v tt;;
     denote_comp cinr (vv, tt);
@@ -151,6 +154,23 @@ Proof.
       red. rewrite Hvvl. setoid_rewrite bind_ret_l. symmetry.
       eapply subst_correct1. constructor. eapply denote_value_eutt_rutt; eauto.
       constructor.
+  - simp denote_comp. simp denote_comp. red. setoid_rewrite unfold_iter.
+    setoid_rewrite <- bind_bind. eapply rutt_bind with (RR := types_equiv (Sum t1 t2)).
+    + symmetry. eapply subst_correct. constructor.
+    + simp types_equiv. intros. simp denote_comp. simp index_ctx. setoid_rewrite bind_ret_l.
+      dependent destruction H.
+      * rewrite tau_eutt. simp denote_comp. simp index_ctx. setoid_rewrite bind_ret_l.
+        eapply rutt_iter; eauto. intros. unfold weaken_r_comp.
+        fold (comp_equiv_rutt (MR := MR) (t := Sum t1 t2)).
+        match goal with |- rutt _ _ _ ?t1 ?t2 => enough (comp_equiv_rutt t1 t2) end. auto.
+        symmetry. red. rewrite comp_map_correct; eauto. 
+        Unshelve.
+        3 : { cbn. exact ( (r1, (a1, (inl a1, tt)))). }
+        2 : symmetry; repeat constructor; auto. simp var_map_weaken.
+          unfold weaken_var_r. simp append_var. simp index_ctx.
+          apply types_equiv_comp_refl. constructor. 2 : constructor.
+          cbn. etransitivity; eauto. symmetry. auto.
+      * simp denote_comp. simp index_ctx. apply rutt_Ret. auto.
   - simp denote_comp.
     specialize (denote_value_terminates _ _ v tt) as [vv Hvv].
     red. repeat rewrite Hvv.
@@ -841,6 +861,12 @@ Proof.
         (RPreInv := call_frame_pre_equiv _)
         (RPostInv := call_frame_post_equiv _); intros; eauto;
         eapply types_equiv_mfix_bodies_refl; eauto; constructor.
+  - simp denote_comp. simp observe. cbn. simp denote_eval_context.
+    simp denote_bredex. eapply rutt_bind.
+    eapply types_equiv_value_refl. constructor. intros.
+    eapply rutt_iter; eauto. intros. 
+    specialize types_equiv_comp_refl with (c := c) as H'. red in H'.
+    cbn in H'. specialize (H' (r0, tt) (r3, tt)). eapply H'. constructor; auto.
   - specialize (IHc c eq_refl JMeq_refl). simp denote_comp.
     simp observe. destruct (SmallStepSeq.observe c); try destruct b.
     + simpl denote_observed in *. destruct r; simp denote_eval_context;

@@ -233,6 +233,10 @@ Proof.
     intros. apply rutt_Ret. eapply mfix_post_equiv_types_equiv; eauto.
   - simp comp_map. simp denote_comp. 
     eapply interp_mrec_rutt; eauto.
+  - simp comp_map. simp denote_comp. eapply rutt_bind.
+    eapply H0. auto. intros. eapply rutt_iter; eauto.
+    intros. simp types_equiv in H. rewrite <- var_map_weaken_skip. eapply H.
+    constructor; auto.
   - simp comp_map. simp denote_comp. 
     apply mapE_rutt. eapply rutt_mon; try eapply H; 
       intros; try eapply mfix_pre_equiv_lift_handler; try eapply mfix_post_equiv_lift_handler; eauto.
@@ -625,6 +629,11 @@ Proof.
      with (RPreInv := call_frame_pre_equiv R)
           (RPostInv := call_frame_post_equiv R);
      intros; try eapply H0; eauto.
+ - simp subst_comp. simp denote_comp.
+   eapply rutt_bind. eapply H0; eauto.
+   intros. eapply rutt_iter; eauto. intros.
+   specialize H with (Γ1 := t1 :: Γ1) (hyps11 := (r0, hyps11)) (hyps12 := (r3, hyps12)).
+   setoid_rewrite hyps_app_equation_2 in H. eapply H; eauto. constructor; auto.
  - simp subst_comp. simp denote_comp.
    apply mapE_rutt.
    eapply rutt_mon; try eapply H; eauto.

@@ -472,6 +472,74 @@ Qed.
 
 End RuttMrec.
 
+Section RuttIter.
+  Context (E1 E2 R1 R2 S1 S2 : Type).
+  Context `{ence1 : EncodedType E1} `{ence2 : EncodedType E2}.
+  Context (RPre : Rel E1 E2) (RPost : PostRel E1 E2) (RR : Rel R1 R2) (RS : Rel S1 S2).
+  Context (body1 : R1 -> entree E1 (R1 + S1)) (body2 : R2 -> entree E2 (R2 + S2)).
+  Context (Hbodies : forall r1 r2, RR r1 r2 -> rutt RPre RPost (sum_rel RR RS) (body1 r1) (body2 r2)).
+
+  Lemma rutt_iter_aux:
+    forall (r r' : Rel (entree E1 S1) (entree E2 S2)) (m1 : entree E1 (R1 + S1)) (m2 : entree E2 (R2 + S2)),
+      r' <2= r ->
+      paco2 (rutt_ RPre RPost (sum_rel RR RS)) bot2 m1 m2 ->
+      (forall (r1 : R1) (r2 : R2), RR r1 r2 -> r (EnTree.iter body1 r1) (EnTree.iter body2 r2)) ->
+      gpaco2 (rutt_ RPre RPost RS) (euttge_trans_clo RS) r' r
+             (EnTree.bind m1 (fun rs : R1 + S1 => match rs with
+                                               | inl r0 => Tau (EnTree.iter body1 r0)
+                                               | inr s => Ret s
+                                               end))
+             (EnTree.bind m2 (fun rs : R2 + S2 => match rs with
+                                               | inl r0 => Tau (EnTree.iter body2 r0)
+                                               | inr s => Ret s
+                                               end)).
+  Proof.
+    intros. generalize dependent m1. generalize dependent m2.
+    gcofix CIH'. rename H1 into CIH. intros. punfold H2.
+    red in H2. remember (observe m1) as om1. remember (observe m2) as om2.
+    revert Heqom1 Heqom2. 
+    hinduction H2 before r; intros; apply simpobs in Heqom1, Heqom2.
+    - rewrite <- Heqom1, <- Heqom2. setoid_rewrite bind_ret_l.
+      inv H.
+      + gstep. constructor. gfinal. eauto.
+      + gstep. constructor. auto.
+    - rewrite <- Heqom1, <- Heqom2. setoid_rewrite bind_tau. gstep.
+      constructor. gfinal. pclearbot. eauto.
+    - rewrite <- Heqom1, <- Heqom2. setoid_rewrite bind_vis. gstep. constructor.
+      auto. intros. gfinal. left. eapply CIH'. apply H0 in H2. pclearbot. auto.
+    - rewrite <- Heqom1, <- Heqom2. rewrite bind_tau. rewrite tau_euttge. eapply IHruttF; auto.
+    - rewrite <- Heqom1, <- Heqom2. rewrite bind_tau. rewrite tau_euttge. eapply IHruttF; auto.
+  Qed.
+
+  Theorem rutt_iter : forall r1 r2, RR r1 r2 -> rutt RPre RPost RS (EnTree.iter body1 r1) (EnTree.iter body2 r2).
+  Proof.
+    ginit. gcofix CIH. intros r1 r2 Hr.
+    specialize (Hbodies r1 r2 Hr) as Hbodies'.
+    punfold Hbodies'. red in Hbodies'.
+    remember (observe (body1 r1)) as or1.
+    remember (observe (body2 r2)) as or2.
+    hinduction Hbodies' before r; intros;  apply simpobs in Heqor1, Heqor2.
+    - setoid_rewrite unfold_iter. rewrite <- Heqor1. rewrite <- Heqor2.
+      setoid_rewrite bind_ret_l.
+      inv H.
+      + gstep. constructor. gfinal. eauto.
+      + gstep. constructor. auto.
+    - setoid_rewrite unfold_iter.
+      rewrite <- Heqor1. rewrite <- Heqor2. setoid_rewrite bind_tau.
+      gstep. constructor. pclearbot. eapply rutt_iter_aux; auto.
+    - setoid_rewrite unfold_iter.
+      rewrite <- Heqor1. rewrite <- Heqor2. setoid_rewrite bind_vis.
+      gstep. constructor. auto. intros. eapply rutt_iter_aux; auto.
+      apply H0 in H1. pclearbot. auto.
+    - setoid_rewrite unfold_iter. rewrite <- Heqor1.
+      eapply rutt_iter_aux; auto. intros. inv PR.
+      apply Hbodies in Hr. rewrite <- Heqor1 in Hr. auto.
+    - setoid_rewrite unfold_iter. rewrite <- Heqor2.
+      eapply rutt_iter_aux; auto. intros. inv PR.
+      apply Hbodies in Hr. rewrite <- Heqor2 in Hr. auto.
+  Qed.
+End RuttIter.
+
 
 Section RuttTrans.
 Context (E1 E2 E3 : Type) `{enc1 : EncodedType E1} `{enc2 : EncodedType E2} `{enc3 : EncodedType E3}.

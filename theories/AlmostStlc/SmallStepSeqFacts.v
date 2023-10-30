@@ -56,6 +56,7 @@ Equations num_lets {t Γ MR} (c : comp t Γ MR) : nat :=
   num_lets (comp_app vf varg) := 0;
   num_lets (comp_call _ _ _) := 0;
   num_lets (comp_mfix R bodies c) := num_lets c;
+  num_lets (comp_tfix cbody vinit) := 0;
   num_lets (comp_lift c) := num_lets c;
   num_lets (comp_perm _ c) := num_lets c.
 
@@ -905,67 +906,65 @@ Proof.
     auto.
 Qed.
 
-(*
-Scheme Equality for vtype.
-*)
-(*
-#[local] Instance dec_eq_vtype : EqDec vtype.
+Lemma step_rel_comp_tfix t1 t2 MR 
+      (cbody : comp (Sum t1 t2) [t1] MR) (v1 : closed_value t1) :
+  step_rel (comp_tfix cbody v1)
+           (comp_let (subst_comp_cons cbody v1)
+                     (comp_match_sum (val_var VarZ) 
+                                     (comp_tfix (weaken_r_comp [t1] cbody) (val_var VarZ))
+                                     (comp_ret (val_var VarZ)))).
 Proof.
-  red. intros x. induction x.
-  - intros y. destruct y; auto; right; intro; discriminate.
-  - intros y. destruct y; auto; try (right; intro; discriminate).
-    specialize (IHx y). destruct IHx; subst; auto. right. intro.
-    injection H. auto.
-  - admit.
-  - intros y. destruct y; auto; try (right; intro; discriminate).
-    specialize (IHx1 y1). specialize (IHx2 y2).
-    destruct IHx1; destruct IHx2; subst; auto.
-#[local] Instance uip_mfix_ctx : UIP mfix_ctx.
+  constructor. unfold step. simp observe. cbn. f_equal.
+Qed.
+
+Lemma eval_rel_stuck_comp_tfix1 t1 t2 MR 
+      (cbody : comp (Sum t1 t2) [t1] MR) (v1 v2 : closed_value t1) r:
+  eval_rel_stuck (subst_comp_cons cbody v1) (inl (val_inl v2)) ->
+  eval_rel_stuck (comp_tfix cbody v2) r ->
+  eval_rel_stuck (comp_tfix cbody v1) r.
 Proof.
-  apply eqdec_uip. constructor.
-Admitted.
-*)
+  intros Heval1 Heval2.
+  econstructor. apply step_rel_comp_tfix.
+  eapply eval_rel_stuck_let1. eauto. unfold subst_comp_cons.
+  simp subst_comp. simp subst_var. econstructor; eauto.
+  constructor. unfold step. simp observe. cbn.
+  f_equal. simp step_eval_context. simp subst_eval_context. simp step_bredex.
+  cbn. unfold subst_comp_cons. simp subst_comp. simp subst_var. f_equal.
+  clear - cbody. f_equal.
+  destruct (subst_weaken_mid_aux) as [H _].
+  erewrite <- H with (v2 := v2); eauto.
+  f_equal. erewrite <- H; eauto. f_equal.
+  unfold weaken_mid_comp, weaken_r_comp. destruct comp_val_map_fusion as [H' _].
+  rewrite H'. eapply comp_map_dep_f_equal; eauto. red. cbn.
+  intros. unfold weaken_var_r. dependent destruction b.
+  simp append_var. simp weaken_var_mid. auto.
+  dependent destruction b1.
+Qed.
 
-(* either need to develop the mutually recursive eqdec instance on vtype/mfix_ctx
-
-*)
-(*
-Inductive push_eval_context_context : forall {t1 t2 MR1 MR2} (r : bredex t2 MR1 + call_syn t2 MR1)
-          (E : eval_context t1 MR1 r true)
-          (f : forall t Γ, comp t Γ MR1 -> comp t Γ MR2)
-          (E' : eval_context t2 MR2 r true), eval_context t1 MR2 r true -> Prop := 
-| pecc_hole t1 MR1 r (E : eval_context t1 MR1 r true) f  :
-  @push_eval_context_context t1 t1 MR1 MR1 r ev_hole f E E
-| pecc_let t1 t2 t3 MR1 MR2 r E1 c2 f E' E1' :
-  @push_eval_context_context t1 t3 MR1 MR2 r E1 f E' E1' ->
-  push_eval_context_context (t1 := t2) r (ev_let E1 c2) f E' (ev_let E1' (f _ [_] c2))
-
-.
-
-Lemma push_eval_context_context_ex : forall t1 t2 MR1 MR2 (r : bredex t2 MR1 + call_syn t2 MR1)
-          (E : eval_context t1 MR1 r true)
-          (f : forall t Γ, comp t Γ MR1 -> comp t Γ MR2)
-          (E' : eval_context t2 MR2 r true),
-    exists E'', @push_eval_context_context t1 t2 MR1 MR2 r E f E' E''.
+Lemma eval_rel_stuck_comp_tfix2 t1 t2 MR 
+      (cbody : comp (Sum t1 t2) [t1] MR) (v1 : closed_value t1) v2 :
+  eval_rel_stuck (subst_comp_cons cbody v1) (inl (val_inr v2)) ->
+  eval_rel_stuck (comp_tfix cbody v1) (inl v2).
 Proof.
-  intros t1 t2 MR1 MR2 r E. dependent induction E.
-  - intros. exists E'. eapply pecc_hole. econstructor. *)
-(*
-Equations push_eval_context_context {t1 t2 MR1 MR2} (r : bredex t2 MR1 + call_syn t2 MR1)
-          (E : eval_context t1 MR1 r true)
-          (f : forall t Γ, comp t Γ MR1 -> comp t Γ MR2)
-          (E' : eval_context t2 MR2 r true) : eval_context t1 MR2 r true :=
-  push_eval_context_context r ev_hole f E' := E';
-  push_eval_context_context r (ev_let E1 c2) f E' := 
-    ev_let (push_eval_context_context r E1 f E') (f _ [_] c2).
-    comp_let (push_eval_context r E1 f c) (f _ [_] c2).
-*)
+  intros. econstructor. apply step_rel_comp_tfix.
+  eapply eval_rel_stuck_let1. eauto.
+  unfold subst_comp_cons. simp subst_comp. simp subst_var.
+  econstructor. constructor. unfold step.
+  simp observe. cbn. simp step_eval_context. simp subst_eval_context.
+  f_equal. simp step_bredex. unfold subst_comp_cons.
+  simp subst_comp. simp subst_var. apply eval_rel_stuck_val. unfold step.
+  simp observe. auto.
+Qed.
 
-
-(* need to figure *)
-(*
-  what if I just relate this to observe in some way
-
-  stuck_call c ca E -> ...
-
-*)
+Lemma eval_rel_stuck_comp_tfix3 t1 t2 MR 
+      (cbody : comp (Sum t1 t2) [t1] MR) (v1 : closed_value t1) c' :
+  eval_rel_stuck (subst_comp_cons cbody v1) (inr c') ->
+  eval_rel_stuck (comp_tfix cbody v1) 
+                 (inr (comp_let c' 
+                           (comp_match_sum (val_var VarZ) 
+                                     (comp_tfix (weaken_r_comp [t1] cbody) (val_var VarZ))
+                                     (comp_ret (val_var VarZ))))).
+Proof.
+  intros Hc'. econstructor. apply step_rel_comp_tfix.
+  apply eval_rel_stuck_let2. auto.
+Qed.

@@ -43,6 +43,9 @@ Equations denote_comp {t Γ MR} (c : comp t Γ MR) (hyps : denote_ctx Γ) :
       | inl v1 => denote_comp cinl (v1, hyps)
       | inr v2 => denote_comp cinr (v2, hyps)
       end;
+    denote_comp (comp_tfix cbody vinit) hyps :=
+      vvinit <- denote_value vinit hyps;;
+      EnTree.iter (fun x => denote_comp cbody (x,hyps)) vvinit;
     denote_comp (comp_app vf varg) hyps :=
       vf' <- denote_value vf hyps;;
       varg' <- denote_value varg hyps;;

@@ -25,6 +25,25 @@ Local Open Scope entree_scope.
 
 From Paco Require Import paco.
 
+Equations id_eq_refl {A B : Type} (Heq : A = B) (a : A) : B :=
+  id_eq_refl eq_refl a := a.
+
+Lemma id_eq_refl_id A B (Heq : A = B) (a : A) :
+  id_eq_refl Heq a ~= a.
+Proof.
+  inversion Heq. subst. simp id_eq_refl. auto.
+Qed.
+
+Lemma JMeq_id_id_eq_refl A B (f : A -> B) (Heq : B = A) (a : A) :
+  f ~= @id B -> id_eq_refl Heq (f a) = a.
+Proof.
+  intros. subst. simp id_eq_refl. auto.
+Qed.
+Lemma JMeq_id_id_eq_refl' A B (f : B -> A) (Heq : A = B) (a : A) :
+  f ~= @id A -> f (id_eq_refl Heq a) = a.
+Proof.
+  intros. subst. simp id_eq_refl. auto.
+Qed.
 
 Variant entree_step {E R} `{EncodedType E} (t1 t2 : entree E R) : Prop :=
   | step_intro : t1 ≅ Tau t2 -> entree_step t1 t2.
@@ -352,7 +371,7 @@ Lemma mapE_call_term_inv:
 Proof.
   intros tin tout R MR1 MR2 xR vvin h vf t x H Hhf Hh Hinj.
   assert (mapE h t ≅ mapE h (call_term x xR vvin)).
-  erewrite mapE_perm_handler_call_term_aux; eauto. Locate mapE_perm_handler_call_term_aux. clear H.
+  erewrite mapE_perm_handler_call_term_aux; eauto. clear H.
   rename H0 into Hmap.
   unfold call_term in *. destruct (call_mrec x xR vvin) eqn : HeqxR.
   setoid_rewrite bind_trigger. setoid_rewrite bind_trigger in Hmap.
@@ -623,4 +642,70 @@ Proof.
   intros. eapply multi_step_mapE_call_term_inv' in H;
     try eapply lift_handler_rel; try apply valid_lift_handler; eauto.
   intros. eapply weaken_var_l_inj; eauto.
+Qed.
+
+(* now I need the version of this lemma for call_term *)
+Lemma multi_step_iter_vis n
+      A B E `{EncodedType E} (body : A -> entree E (A + B)) (a : A)
+      e k : 
+  multi_step n (EnTree.iter body a) (Vis e k) ->
+  exists n1 n2 a' k',
+    n1 + n2 = n /\
+    multi_step n1 (EnTree.iter body a) 
+               (bind (body a') (fun x => match x with | inl a'' => Tau (EnTree.iter body a'') | inr b => Ret b end)) /\
+    multi_step n2 (body a') (Vis e k').
+Proof.
+  revert a. induction n as [n IHn] using (well_founded_induction lt_wf).
+  intros. rewrite unfold_iter in H0. eapply multi_step_vis_bind_inv in H0.
+  destruct H0 as [H' | H'].
+  - destruct H' as [n1 [n2 [ [ a'| b]  [? [Hstep1 Hstep2]]]]]; subst.
+    + dependent destruction Hstep2. pinversion H0; inversion CHECK.
+      dependent destruction H0. apply eqit_inv_Tau in H0. rewrite <- H0 in Hstep2.
+      clear H0 t2. rename n into n2. eapply IHn in Hstep2 as IHn'. 2 : lia.
+      destruct IHn' as [n3 [n4 [a'' [k' [H1 [Hstep3 Hstep4]]]]]].
+      subst. setoid_rewrite unfold_iter at 1. exists (n1 + (1 + n3)), n4, a'', k'.
+      split; [ | split]; auto; try lia.
+      eapply multi_step_add. eapply multi_step_bind. eauto.
+      setoid_rewrite bind_ret_l. cbn. econstructor. eauto.
+      constructor. reflexivity.
+    + apply multi_step_eutt in Hstep2. pinversion Hstep2.
+ - destruct H' as [k' [Hk'1 Hk'2]]. exists 0, n, a, k'.
+   split; [ | split]; auto. constructor.
+   rewrite unfold_iter. reflexivity.
+Qed.
+
+Lemma multi_step_iter_call_term n A B MR R
+      (body : A -> mtree (denote_mfix_ctx MR) (A + B)) (a : A) tin tout 
+      (xR : var R MR) (x : var (tin, tout) R) (vvin : denote_type tin) k : 
+  multi_step n (EnTree.iter body a) (bind (call_term x xR vvin ) k) ->
+  exists n1 n2 a' k',
+    n1 + n2 = n /\
+    multi_step n1 (EnTree.iter body a) 
+               (bind (body a') (fun x => match x with | inl a'' => Tau (EnTree.iter body a'') | inr b => Ret b end)) /\
+    multi_step n2 (body a') (bind (call_term x xR vvin) k').  
+Proof.
+  intros. unfold call_term in *. 
+  destruct (call_mrec x xR vvin) eqn : Hcall.
+  specialize (call_mrec_encodes _ _ _ _ x xR vvin) as Henc.
+  rewrite Hcall in Henc. cbn in Henc.
+  setoid_rewrite bind_trigger. setoid_rewrite bind_vis. setoid_rewrite bind_trigger in H.
+  setoid_rewrite bind_vis in H. eapply multi_step_iter_vis in H.
+  destruct H as [n1 [n2 [a' [k' [H1 [H2 H3]]]] ]]. subst. symmetry in Henc.
+  exists n1, n2, a', (fun x => k' (id_eq_refl Henc x)).
+  split; split; auto. eapply multi_step_proper; eauto. reflexivity.
+  apply eqit_Vis. intros. setoid_rewrite bind_ret_l.
+  rewrite JMeq_id_id_eq_refl. reflexivity.
+  specialize (call_mrec_cont _ _ _ _ x xR vvin) as Hcont. rewrite Hcall in Hcont. auto.
+Qed.
+
+Lemma multi_step_inj_r n E R `{EncodedType E} : forall (t1 t2 t3: entree E R),
+  multi_step n t1 t2 -> multi_step n t1 t3 ->
+  t2 ≅ t3.
+Proof.
+  induction n.
+  - intros. dependent destruction H0. dependent destruction H1.
+    rewrite <- H0. auto.
+  - intros. dependent destruction H0. dependent destruction H2.
+    dependent destruction H1. dependent destruction H3. 
+    eapply IHn. eauto. rewrite H1 in H3. apply eqit_inv_Tau in H3. rewrite H3. auto.
 Qed.

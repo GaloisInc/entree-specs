@@ -34,6 +34,8 @@ with comp : vtype -> ctx -> mfix_ctx -> Type :=
     comp t2 Γ MR
   | comp_mfix t Γ MR R (bodies : mfix_bodies Γ MR R R) (c : comp t Γ (R :: MR)) :
     comp t Γ MR
+  | comp_tfix t1 t2 Γ MR (cbody : comp (Sum t1 t2) (t1 :: Γ) MR) (vinit : value t1 Γ) :
+    comp t2 Γ MR
   | comp_lift t Γ MR1 MR2 (c : comp t Γ MR2) : comp t Γ (MR1 ++ MR2)
   | comp_perm t Γ MR1 MR2 (Hperm : perm MR1 MR2) (e : comp t Γ MR1) :
     comp t Γ MR2
@@ -66,6 +68,7 @@ Arguments comp_match_sum {_ _ _ _ _}.
 Arguments comp_app {_ _ _ _}.
 Arguments comp_call {_ _ _ _ _}.
 Arguments comp_mfix {_ _ _}.
+Arguments comp_tfix {_ _ _ _}.
 Arguments comp_lift {_ _ _ _}.
 Arguments comp_perm {_ _ _ _}.
 Arguments mfix_bodies_nil {_ _ _}.

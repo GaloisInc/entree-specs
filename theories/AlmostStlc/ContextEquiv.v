@@ -99,6 +99,14 @@ Inductive comp_context : vtype -> ctx -> mfix_ctx -> vtype -> ctx -> mfix_ctx ->
               (bodies : mfix_bodies Γ1 MR1 R R)
               (C : comp_context t1 Γ1 (R :: MR1) t2 Γ2 MR2) : 
     comp_context t1 Γ1 MR1 t2 Γ2 MR2
+  | ctx_tfix1 {t1 t2 Γ1 MR1 t3 Γ2 MR2}
+              (Body : comp_context (Sum t1 t2) (t1 :: Γ1) MR1 t3 Γ2 MR2)
+              (vinit : value t1 Γ1) : 
+    comp_context t2 Γ1 MR1 t3 Γ2 MR2
+  | ctx_tfix2 {t1 t2 Γ1 MR1 t3 Γ2 MR2}
+              (body : comp (Sum t1 t2) (t1 :: Γ1) MR1)
+              (Vinit : value_context t1 Γ1 t3 Γ2 MR2) :
+    comp_context t2 Γ1 MR1 t3 Γ2 MR2
 with value_context : vtype -> ctx -> vtype -> ctx -> mfix_ctx -> Type :=
   | ctx_cons1 {t1 Γ1 t2 Γ2 MR} 
               (Vh : value_context t1 Γ1 t2 Γ2 MR)
@@ -180,6 +188,10 @@ Equations subst_comp_context {t1 Γ1 MR1 t2 Γ2 MR2}
     comp_mfix _ (subst_bodies_context Bodies c0) c;
   subst_comp_context (ctx_mfix2 bodies C) c :=
     comp_mfix _ bodies (subst_comp_context C c);
+  subst_comp_context (ctx_tfix1 Body vinit) c :=
+    comp_tfix (subst_comp_context Body c) vinit;
+  subst_comp_context (ctx_tfix2 body Vinit) c :=
+    comp_tfix body (subst_value_context Vinit c);
 }
 where subst_value_context {t1 Γ1 t2 Γ2 MR2}
                    (V : value_context t1 Γ1 t2 Γ2 MR2) (c : comp t2 Γ2 MR2) : value t1 Γ1 :=
@@ -335,6 +347,14 @@ Proof.
           (RPostInv := call_frame_post_equiv R).
     intros. eapply types_equiv_mfix_bodies_refl; eauto.
     eapply H; auto.
+  - red. intros. simp denote_comp. eapply rutt_bind.
+    eapply types_equiv_value_refl. auto.
+    intros. eapply rutt_iter; eauto. intros.
+    eapply H. auto. constructor; auto.
+  - red. intros. simp denote_comp. eapply rutt_bind.
+    eapply H; auto. intros. eapply rutt_iter; eauto.
+    intros. eapply types_equiv_comp_refl with (t := Sum t1 t2).
+    constructor; auto.
   - red. intros. simp denote_comp.
     eapply rutt_bind. eapply H; eauto. intros.
     eapply rutt_bind. eapply types_equiv_value_refl; auto.

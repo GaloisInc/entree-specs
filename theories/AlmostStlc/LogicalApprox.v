@@ -487,6 +487,14 @@ Definition val_rel {t Γ MR}
     exists vv, vm hyps ≅ ret vv /\
             approx_val n t vv (close_value Γ ρ v).
 
+Definition bounded_val_rel {t Γ MR} n
+           (vm : denote_ctx Γ -> mtree (denote_mfix_ctx MR) (denote_type t))
+           (v : value t Γ) : Prop :=
+  forall j (hyps : denote_ctx Γ) (ρ : closing_subst Γ), 
+    j <= n ->
+    closing_subst_approx j Γ hyps ρ ->
+    exists vv, vm hyps ≅ ret vv /\
+            approx_val j t vv (close_value Γ ρ v).
 
 Definition bodies_rel {Γ MR R1 R2}
            (dbodies : denote_ctx Γ -> forall arg : denote_call_frame R2, mtree (denote_mfix_ctx (R1 :: MR)) (encodes arg))

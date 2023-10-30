@@ -650,6 +650,10 @@ Proof.
     eapply interp_mrec_rutt with (RPreInv := call_frame_pre_equiv R) (RPostInv := call_frame_post_equiv R). 
     intros. eapply Hbodies; eauto.
     apply Hc. auto.
+  - intros t1 t2 Γ MR cbody Hcbody vinit Hvinit hyps1 hyps2 Hhyps.
+    simp denote_comp. simp types_equiv in Hcbody. eapply rutt_bind.
+    eapply Hvinit. auto. intros. eapply rutt_iter; eauto. intros.
+    eapply Hcbody. constructor; auto.
   - intros t Γ MR1 MR2 c Hc hyps1 hyps2 Hhyps. simp denote_comp. apply mapE_rutt.
     eapply rutt_mon; try eapply Hc; eauto. apply mfix_pre_equiv_lift_handler.
     apply mfix_post_equiv_lift_handler.

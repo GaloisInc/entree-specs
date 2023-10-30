@@ -33,6 +33,8 @@ Equations comp_map {t : vtype} {Γ1 Γ2} {MR : mfix_ctx} (c : comp t Γ1 MR)
       comp_app (val_map v1 f) (val_map v2 f);
     comp_map (comp_call xR x v) f := comp_call xR x (val_map v f);
     comp_map (comp_mfix R bodies c) f := comp_mfix R (bodies_map bodies f) (comp_map c f);
+    comp_map (comp_tfix cbody vinit) f :=
+      comp_tfix (comp_map cbody (var_map_skip f)) (val_map vinit f);
     comp_map (comp_lift c) f := comp_lift (comp_map c f);
     comp_map (comp_perm Hperm c) f := comp_perm Hperm (comp_map c f);
   }
@@ -53,9 +55,7 @@ where bodies_map {Γ1 Γ2} {MR R R'} (bodies : mfix_bodies Γ1 MR R R')
                  (f : forall t', var t' Γ1 -> var t' Γ2) : mfix_bodies Γ2 MR R R' := {
     bodies_map mfix_bodies_nil f := mfix_bodies_nil;
     bodies_map (mfix_bodies_cons body bodies) f := mfix_bodies_cons (comp_map body (var_map_skip f)) (bodies_map bodies f);
-}
-
-.
+}.
 
 Definition exchange_comp MR G1 G2 G3 (u1 u2 t: vtype)
       (e : comp t (G1 ++ [u1] ++ G2 ++ [u2] ++ G3) MR) : 
@@ -117,13 +117,14 @@ Equations subst_comp {t u Γ2 MR} Γ1 (c1 : comp u (Γ1 ++ [t] ++ Γ2) MR) (v : 
       comp_call xR x (subst_value varg v);
     subst_comp _ (comp_mfix R bodies c) v :=
       comp_mfix R (subst_bodies bodies v) (subst_comp _ c v);
+    subst_comp _ (comp_tfix cbody vinit) v :=
+      comp_tfix (subst_comp (_ :: _) cbody v) (subst_value vinit v);
     subst_comp _ (comp_lift c) v := comp_lift (subst_comp _ c v);
     subst_comp _ (comp_perm Hperm c) v := comp_perm Hperm (subst_comp _ c v);
 }
 where subst_value {t u Γ1 Γ2} (v1 : value u (Γ1 ++ [t] ++ Γ2) ) (v : value t Γ2) :
   value u (Γ1 ++ Γ2) := {
     subst_value (val_const n) _ := val_const n;
-    (* subst_value (val_succ vn) v := val_succ (subst_value vn v); *)
     subst_value val_nil _ := val_nil;
     subst_value (val_cons vh vt) v := val_cons (subst_value vh v) (subst_value vt v);
     subst_value (val_pair v1 v2) v := val_pair (subst_value v1 v) (subst_value v2 v);
@@ -161,6 +162,9 @@ Inductive bredex : vtype -> mfix_ctx -> Type :=
                      (cinl : comp t3 [t1] MR)
                      (cinr : comp t3 [t2] MR) : 
     bredex t3 MR
+  | bredex_tfix t1 t2 MR (cbody : comp (Sum t1 t2) [t1] MR)
+                (vin : closed_value t1) :
+    bredex t2 MR
   | bredex_mfix t MR R (bodies : mfix_bodies [] MR R R) (v : closed_value t) : 
     bredex t MR
   | bredex_perm t MR1 MR2 (Hperm : perm MR1 MR2) (v : closed_value t) :
@@ -175,6 +179,7 @@ Arguments bredex_match_nat {t MR}.
 Arguments bredex_match_list {t1 t2 MR}.
 Arguments bredex_split {t1 t2 t3 MR}.
 Arguments bredex_match_sum {t1 t2 t3 MR}.
+Arguments bredex_tfix {t1 t2 MR}.
 Arguments bredex_mfix {t MR}.
 Arguments bredex_perm {t MR1 MR2}.
 Arguments bredex_lift {t MR1 MR2}.
@@ -236,6 +241,11 @@ Equations step_bredex {t MR} (br : bredex t MR) : comp t [] MR :=
     subst_comp_cons cinl v;
   step_bredex (bredex_match_sum (val_inr v) _ cinr) :=
     subst_comp_cons cinr v;
+  step_bredex (bredex_tfix cbody vinit) :=
+    comp_let (subst_comp_cons cbody vinit) 
+             (comp_match_sum (val_var VarZ)
+                (comp_tfix (weaken_r_comp _ cbody) (val_var VarZ))
+                (comp_ret (val_var VarZ)));
   step_bredex (bredex_mfix _ _ v) := comp_ret v;
   step_bredex (bredex_perm _ v) := comp_ret v;
   step_bredex (bredex_lift v) := comp_ret v.
@@ -372,6 +382,8 @@ Equations observe {t MR} (c : comp t [] MR) : boxed_eval_context t MR + closed_v
     | inl (bec r E) => inl (bec r (ev_mfix _ xR bodies E))
     | inr v => inl (bec_of_bredex (bredex_mfix xR bodies v) )
     end;
+  observe (comp_tfix cbody vinit) :=
+    inl (bec_of_bredex (bredex_tfix cbody vinit));
   observe (comp_lift c) :=
     match observe c with
     | inl (bec r E) => inl (bec r (ev_lift _ E) )

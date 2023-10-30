@@ -58,6 +58,7 @@ Proof.
   - rewrite H, H0; auto. repeat apply var_map_skip_id; auto.
   - rewrite H, H0, H1; auto; try apply var_map_skip_id; auto.
   - rewrite H, H0; auto. apply var_map_skip_id; auto.
+  - rewrite H, H0; auto. apply var_map_skip_id; auto.
 Qed.
 
 Lemma val_map_id:  forall t Γ (v : value t Γ) (f : forall t', var t' Γ -> var t' Γ), 
@@ -149,6 +150,8 @@ Proof.
     dependent destruction b1; simp var_map_skip; auto.
   - rewrite H, H0, H1. f_equal; try eapply comp_map_dep_f_equal; eauto.
     red. intros. dependent destruction b; simp var_map_skip; auto.
+    red. intros. dependent destruction b; simp var_map_skip; auto.
+  - rewrite H; rewrite H0. f_equal. eapply comp_map_dep_f_equal. auto.
     red. intros. dependent destruction b; simp var_map_skip; auto.
   - rewrite H; rewrite H0. f_equal. eapply comp_map_dep_f_equal. auto.
     red. intros. dependent destruction b; simp var_map_skip; auto.
@@ -499,6 +502,15 @@ Proof.
   intros. subst. do 2 eexists. repeat (split; eauto).
 Qed.
 
+Lemma comp_tfix_JMeq Γ1 Γ2 MR t1 t2 (c : comp t2 Γ2 MR)
+      (cbody : comp (Sum t1 t2) (t1 :: Γ1) MR ) (vinit : value t1 Γ1) :
+  Γ1 = Γ2 ->
+  comp_tfix cbody vinit ~= c ->
+  exists cbody' vinit', cbody' ~= cbody /\ vinit' ~= vinit /\ c = comp_tfix (t1 := t1) cbody' vinit'.
+Proof.
+  intros. subst. do 2 eexists. repeat (split; eauto).
+Qed.
+
 Lemma comp_lift_JMeq Γ1 Γ2 MR1 MR2 t (c : comp t Γ2 (MR1 ++ MR2)) (c0 : comp t Γ1 MR2) :
   Γ1 = Γ2 ->
   comp_lift (MR1 := MR1) c0 ~= c ->
@@ -593,6 +605,9 @@ Ltac comp_val_inv :=
   | H : comp_mfix ?R ?bodies ?c0 ~= ?c |- _ => learn_type H; eapply comp_mfix_JMeq in H; 
                                      try subst_comp_list_solve; 
                                      decompose record H; clear H; subst 
+  | H : comp_tfix ?cbody ?vinit ~= ?c |- _ => eapply comp_tfix_JMeq in H;
+                                            try subst_comp_list_solve;
+                                            decompose record H; clear H; subst
   | H : comp_lift ?c0 ~= ?c |- _ => learn_type H; eapply comp_lift_JMeq in H; 
                                      try subst_comp_list_solve; 
                                      decompose record H; clear H; subst 
@@ -693,6 +708,8 @@ Proof.
     f_equal; eauto.
   - unfold weaken_mid_comp. simp comp_map. simp subst_comp.
     f_equal; eauto.
+  - unfold weaken_mid_comp. simp comp_map. simp subst_comp.
+    f_equal; eauto. erewrite <- H with (v2 := v2); eauto. 
   - unfold weaken_mid_comp. simp comp_map. simp subst_comp.
     f_equal; eauto.
   - unfold weaken_mid_comp. simp comp_map. simp subst_comp.
@@ -981,6 +998,9 @@ Proof.
     simp subst_comp in H2. symmetry in H2.
     comp_val_inv. simp subst_comp.
     erewrite Hbodies; eauto. erewrite Hc; eauto.
+  - intros. red. intros. subst. simp subst_comp. subst.
+    comp_val_inv. subst. simp subst_comp in H4. symmetry in H4.
+    comp_val_inv. subst. simp subst_comp. f_equal; eauto.
   - intros t Γ MR1 MR2 c Hc. red. intros. subst.
     comp_val_inv. symmetry in H2. simp subst_comp in H2.
     comp_val_inv. simp subst_comp. erewrite Hc; eauto.
@@ -1018,6 +1038,20 @@ Proof.
   eapply comp_map_dep_f_equal; eauto. unfold weaken_var_r. red. cbn. intros.
   dependent destruction b; try inversion b1. 
   simp append_var. simp weaken_var_mid. auto.
+Qed.
+
+Lemma subst_comp_weaken_r2:
+    forall (t1 t2 t3 t4: vtype) (MR : mfix_ctx) (cbody : comp t3 [t4] MR)  v1 v2,
+      subst_comp (subst_comp (weaken_r_comp [t4] (G2 := [t1; t2]) cbody) v1) v2 = cbody.
+Proof.
+  intros. destruct (subst_weaken_mid_aux) as [H _].
+  erewrite <- H with (v2 := v2); eauto.
+  f_equal. erewrite <- H; eauto. f_equal.
+  unfold weaken_mid_comp, weaken_r_comp. destruct comp_val_map_fusion as [H' _].
+  rewrite H'. eapply comp_map_dep_f_equal; eauto. red. cbn.
+  intros. unfold weaken_var_r. dependent destruction b.
+  simp append_var. simp weaken_var_mid. auto.
+  dependent destruction b1.
 Qed.
 
 Lemma subst_value_weaken_r:

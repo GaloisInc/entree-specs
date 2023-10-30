@@ -174,6 +174,7 @@ Proof.
       eexists. econstructor.
     + intros. exfalso. specialize step_mfix with (c := c) (bodies := bodies) as [c' Hc']. 
       setoid_rewrite Hc' in H. discriminate.
+    + simp observe. cbn. simp step_eval_context. intros. discriminate.
     + intros. specialize step_lift with (MR1 := MR1) (c := c) as [c' Hc']. setoid_rewrite Hc' in H.
       discriminate.
     + intros. specialize step_perm with (Hperm := Hperm) (c := c) as [c' Hc']. setoid_rewrite Hc' in H.
@@ -457,6 +458,20 @@ Proof.
   - intros vp cs [v ρ]. simp close_comp. simp close_value.
     simp close_comp_app. unfold subst_comp_cons. unfold subst_value_cons.
     simp subst_comp.
+Qed.
+
+Lemma close_comp_tfix t1 t2 Γ MR
+      (cbody : comp (Sum t1 t2) (t1 :: Γ) MR)
+      (vs : value t1 Γ) (ρ : closing_subst Γ) :
+  close_comp Γ ρ (comp_tfix cbody vs) =
+    comp_tfix (close_comp_binder ρ cbody) (close_value Γ ρ vs).
+Proof.
+  generalize dependent Γ. intros Γ. induction Γ.
+  - intros cbody vs []. simp close_comp. unfold close_comp_binder. simp close_comp_app.
+    simp close_value. unfold comp_app_nil. remember (List.app_nil_r [t1]) as e.
+    dependent destruction e. cbn. auto.
+  - intros cbody vs [v ρ]. simp close_comp.
+    unfold subst_comp_cons. simp subst_comp.
 Qed.
 
 Lemma close_value_nil t Γ (ρ : closing_subst Γ) :

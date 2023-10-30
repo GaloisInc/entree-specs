@@ -28,8 +28,7 @@ From ITree Require Import
      Eq.Paco2.
 Require Export EnTreeStep.
 Section RecursionTrace.
-(* interp_mrec_call_term should be able to rewrite with ≅*)
-Locate interp_mrec_call_term.
+
 Context (D E : Type) `{EncodedType D} `{EncodedType E}.
 Context (bodies : forall (d : D), entree (D + E) (encodes d)).
 
@@ -256,25 +255,7 @@ Section RecursionTraceDen.
  Qed.
   
 
-  Equations id_eq_refl {A B : Type} (Heq : A = B) (a : A) : B :=
-    id_eq_refl eq_refl a := a.
-  
-  Lemma id_eq_refl_id A B (Heq : A = B) (a : A) :
-    id_eq_refl Heq a ~= a.
-  Proof.
-    inversion Heq. subst. simp id_eq_refl. auto.
-  Qed.
 
-  Lemma JMeq_id_id_eq_refl A B (f : A -> B) (Heq : B = A) (a : A) :
-          f ~= @id B -> id_eq_refl Heq (f a) = a.
-  Proof.
-    intros. subst. simp id_eq_refl. auto.
-  Qed.
-  Lemma JMeq_id_id_eq_refl' A B (f : B -> A) (Heq : A = B) (a : A) :
-          f ~= @id A -> f (id_eq_refl Heq a) = a.
-  Proof.
-    intros. subst. simp id_eq_refl. auto.
-  Qed.
   (* annoying mismatch of the actual traces *)
   Lemma recursion_trace_trace_den1 t n 
         (t1 : mtree (denote_mfix_ctx (R :: MR)) (denote_type t)) 
@@ -391,3 +372,204 @@ Section RecursionTraceDen.
   Qed.
 
 End RecursionTraceDen.
+
+Section TailRecursionTrace.
+Context {E R S: Type} `{EncodedType E}.
+
+Inductive tail_rec_trace (body : R -> entree E (R + S)) : 
+  R -> nat -> entree E S -> Prop :=
+ | trt_inl j1 j2 r r' t' t :
+   t' ≅ ret (inl r') ->
+   multi_step j1 (body r) t' ->
+   tail_rec_trace body r' j2 t ->
+   tail_rec_trace body r (1 + j1 + j2) t
+ | trt_inr j t' t'' r s:
+   t' ≅ ret (inr s) ->
+   t'' ≅ ret s ->
+   multi_step j (body r) t' ->
+   tail_rec_trace body r j t''
+ | trt_vis j r e k t' t'' :
+   t' ≅ Vis e k ->
+   t'' ≅ (Vis e (fun x => vv <- k x;; 
+                       match vv with | inl r => Tau (EnTree.iter body r) | inr s => Ret s end)) ->
+   multi_step j (body r) t' ->
+   tail_rec_trace body r j t''.
+
+
+
+
+End TailRecursionTrace.
+
+#[local] Instance tail_rec_trace_eq_itree E R S `{EncodedType E} 
+ (body : R -> entree E (R + S)) : Proper (eq ==> eq ==> eq_itree eq ==> Basics.flip Basics.impl) (tail_rec_trace body).
+Proof.
+  repeat intro. subst. generalize dependent x1. induction H3.
+  - intros. econstructor; eauto.
+  - intros. eapply trt_inr; eauto. rewrite H3. auto.
+  - intros. eapply trt_vis; eauto. rewrite H3. auto.
+Qed.
+
+Lemma tail_rec_trace_multi_step1 E R S `{EncodedType E} 
+      (body : R -> entree E (R + S)) (r : R) j t :
+  tail_rec_trace body r j t -> multi_step j (EnTree.iter body r) t.
+Proof.
+  intros Hrec. dependent induction Hrec.
+  - rewrite unfold_iter. revert Hrec H0 IHHrec.
+    remember (body r) as t''.  clear Heqt''.
+    dependent induction H1; intros.
+    + rewrite H0. cbn. rewrite H1. setoid_rewrite bind_ret_l. cbn. econstructor.
+      eauto. constructor. reflexivity.
+    + dependent destruction H0. rewrite H0, bind_tau.
+      eapply IHmulti_step in IHHrec; eauto. econstructor.
+      2 : econstructor; reflexivity. fold (Nat.add n j2).
+      assert (Datatypes.S (n + j2) = 1 + n + j2). lia. rewrite H3. auto.
+  - rewrite unfold_iter.
+    remember (body r) as t. clear Heqt. dependent induction H2.
+    + rewrite H2, H0. setoid_rewrite bind_ret_l. constructor. symmetry. auto.
+    + dependent destruction H3. rewrite H3, bind_tau. econstructor.
+      2 : constructor; reflexivity. eauto.
+  - rewrite unfold_iter. remember (body r) as t. clear Heqt. 
+    dependent induction H2.
+    + rewrite H2, H0, bind_vis. constructor. symmetry. auto.
+    + dependent destruction H3. rewrite H3, bind_tau.
+      econstructor.
+      2 : constructor; reflexivity. eauto.
+Qed.
+
+Lemma tail_rec_trace_multi_step2 j : forall E A B `{EncodedType E} 
+      (body : A -> entree E (A + B)) (r : A) s,
+  multi_step j (EnTree.iter body r) (ret s) -> tail_rec_trace body r j (ret s).
+Proof.
+  induction j as [j Hj]  using (well_founded_induction lt_wf).
+  intros E A B H body r s Hstep.
+  rewrite unfold_iter in Hstep. eapply multi_step_ret_bind_inv in Hstep.
+  destruct Hstep as [j1 [j2 [r0 [Hsum [Hstep1 Hstep2]]]]]. subst.
+  destruct r0.
+  - dependent destruction Hstep2. pinversion H0. inversion CHECK.
+     dependent destruction H0. apply eqit_inv_Tau in H0.
+     rewrite <- H0 in Hstep2. clear H0.
+     assert (j1 + S n = 1 + j1 + n). lia. rewrite H0. clear H0.
+     rename n into j2. eapply trt_inl; eauto. reflexivity. eapply Hj; eauto.
+     lia.
+   - assert (j2 = 0). dependent destruction Hstep2. auto.
+     dependent destruction H0. pinversion H0. inversion CHECK.
+     subst. dependent destruction Hstep2. apply eqit_Ret_inv in H0.
+     subst b. assert (j1 + 0 = j1). lia. rewrite H0. clear H0.
+     eapply trt_inr. reflexivity. reflexivity. auto.
+Qed.
+
+Lemma tail_rec_trace_multi_step3 j : forall E A B `{EncodedType E} 
+      (body : A -> entree E (A + B)) r e k t,
+    t ≅ (Vis e (fun x => vv <- k x;; 
+                       match vv with | inl r => Tau (EnTree.iter body r) | inr s => Ret s end)) ->
+  multi_step j (EnTree.iter body r) t ->
+  tail_rec_trace body r j t.
+Proof.
+  induction j as [j Hj]  using (well_founded_induction lt_wf).
+  intros E A B H body r e k t Ht Hstep. rewrite Ht in Hstep. 
+  rewrite unfold_iter in Hstep.
+  eapply multi_step_vis_bind_inv in Hstep.
+  destruct Hstep as [Hstep | Hstep].
+  - destruct Hstep as [j1 [j2 [[a | b] [H1 [H2 H3]]]]]; subst.
+    + destruct j2. dependent destruction H3.
+      pinversion H0. inversion CHECK.
+      assert (j1 + S j2 = 1 + j1 + j2). lia. rewrite H0.
+      eapply trt_inl. reflexivity. eauto.
+      eapply Hj. lia. eauto.
+      dependent destruction H3. dependent destruction H0.
+      apply eqit_inv_Tau in H0. rewrite Ht, H0. auto.
+    + apply multi_step_eutt in H3. pinversion H3.
+ - destruct Hstep as [k' [Hstep Hk']].
+   destruct (eq_itree_case t) as [[r' Hr'] | [[t' Ht'] | [e' [k'' Hek]] ]].
+    + rewrite Hr' in Ht. pinversion Ht.
+    + rewrite Ht' in Ht. pinversion Ht; inversion CHECK.
+    + rewrite Hek in Ht.
+      assert (e = e'). pinversion Ht. auto. subst e'.
+      eapply trt_vis with (t' := Vis e k'); eauto. reflexivity. rewrite Hek, Ht. 
+      apply eqit_Vis. symmetry. auto. eapply Hk'.
+Qed.
+
+Lemma tail_rec_trace_multi_step4 j : 
+  forall MR A B (body : A -> mtree (denote_mfix_ctx MR) (A + B)) r 
+    R (xR : var R MR) tin tout (x : var (tin, tout) R)
+    (vvin : denote_type tin) k t,
+    t ≅ vvout <- call_term x xR vvin;;
+        vv     <- k vvout;;
+        match vv with | inl r => Tau (EnTree.iter body r) | inr s => Ret s end ->
+    multi_step j (EnTree.iter body r) t ->
+    tail_rec_trace body r j t.
+Proof.
+  intros. rewrite H. unfold call_term in *. destruct (call_mrec x xR vvin). 
+  setoid_rewrite bind_trigger. setoid_rewrite bind_vis. 
+  eapply tail_rec_trace_multi_step3 with (e := x0) (k := fun x => k (d x)).
+  apply eqit_Vis. intros. setoid_rewrite bind_ret_l. reflexivity. 
+  setoid_rewrite bind_trigger in H. setoid_rewrite bind_vis in H.
+  rewrite H in H0. auto.
+Qed.
+
+Section TailRecursionTraceDen.
+  Context {MR : mfix_ctx} {R S : Type}.
+
+
+  Inductive tail_rec_trace_call (body : R -> mtree (denote_mfix_ctx MR) (R + S)) : 
+    R -> nat -> mtree (denote_mfix_ctx MR) S -> Prop :=
+  | trtc_inl j1 j2 r r' t' t :
+    t' ≅ ret (inl r') ->
+    multi_step j1 (body r) t' ->
+    tail_rec_trace_call body r' j2 t ->
+    tail_rec_trace_call body r (1 + j1 + j2) t
+  | trtc_inr j t' t'' r s:
+    t' ≅ ret (inr s) ->
+    t'' ≅ ret s ->
+    multi_step j (body r) t' ->
+    tail_rec_trace_call body r j t''
+  | trtc_call j r R' tin tout (x : var (tin, tout) R') (xR : var R' MR) (vvin : denote_type tin) k t' t'' :
+    t' ≅ bind (call_term x xR vvin) k ->
+    t'' ≅ bind (call_term x xR vvin) (fun x => vv <- k x;; 
+                        match vv with | inl r => Tau (EnTree.iter body r) | inr s => Ret s end) ->
+    multi_step j (body r) t' ->
+    tail_rec_trace_call body r j t''.
+
+End TailRecursionTraceDen.
+
+Lemma tail_rec_trace_call1 j : forall MR R S (body : R -> mtree (denote_mfix_ctx MR) (R + S)) t r,
+  tail_rec_trace body r j t -> tail_rec_trace_call body r j t.
+Proof. 
+  induction j as [j IHj] using (well_founded_induction lt_wf).
+  intros. dependent destruction H.
+  - eapply trtc_inl; eauto. eapply IHj. lia. auto.
+  - eapply trtc_inr; eauto.
+  - specialize (call_extract MR e) as [R' [xR [tin [tout [x [vvin Hcall]]]]]].
+    specialize (call_mrec_encodes _ _ _ _ x xR vvin) as Henc.
+    specialize (call_mrec_cont _ _ _ _ x xR vvin) as Hcont.
+    rewrite Hcall in Henc. symmetry in Henc.
+    set (fun x => k (id_eq_refl Henc x)) as k'.
+    eapply trtc_call with (x := x) (xR := xR) (vvin := vvin) (k := k'); eauto.
+    + rewrite H. clear H0. unfold call_term.
+      destruct (call_mrec x xR vvin) eqn : Hcall'. cbn in *.
+      subst x0. setoid_rewrite bind_trigger. setoid_rewrite bind_vis.
+      apply eqit_Vis. intros. unfold k'. setoid_rewrite bind_ret_l.
+      rewrite JMeq_id_id_eq_refl; auto. reflexivity.
+    + rewrite H0. clear H H0. unfold call_term.
+      destruct (call_mrec x xR vvin) eqn : Hcall'. cbn in *.
+      subst x0. setoid_rewrite bind_trigger. setoid_rewrite bind_vis.
+      apply eqit_Vis. intros. setoid_rewrite bind_ret_l.
+      eapply eqit_bind with (UU := eq).
+      unfold k'.
+      rewrite JMeq_id_id_eq_refl; auto. reflexivity.
+      intros. subst. reflexivity.
+Qed.
+
+Lemma tail_rec_trace_call2 j : forall MR R S (body : R -> mtree (denote_mfix_ctx MR) (R + S)) t r,
+  tail_rec_trace_call body r j t -> tail_rec_trace body r j t.
+Proof. 
+  induction j as [j IHj] using (well_founded_induction lt_wf).
+  intros. dependent destruction H.
+  - eapply trt_inl; eauto. eapply IHj; auto. lia.
+  - eapply trt_inr; eauto.
+  - unfold call_term in *. destruct (call_mrec x xR vvin).
+    setoid_rewrite bind_trigger in H. setoid_rewrite bind_trigger in H0.
+    setoid_rewrite bind_vis in H. setoid_rewrite bind_vis in H0.
+    eapply trt_vis; eauto. rewrite H0. apply eqit_Vis.
+    intros. setoid_rewrite bind_ret_l. reflexivity.
+Qed.

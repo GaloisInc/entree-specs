@@ -51,6 +51,7 @@ Proof.
     eauto.
   - specialize (H MR). eapply call_compat with (xR := xR) (x := x) in H; eauto.
   - eapply mfix_compat in H; eauto. eauto.
+  - specialize (H0 MR). eapply tfix_compat in H0; eauto. eapply H0.
   - eapply lift_compat with (MR1 := MR1) in H; eauto.
   - eapply perm_compat with (Hperm := Hperm) in H; eauto.
   - apply mfix_bodies_nil_compat.
