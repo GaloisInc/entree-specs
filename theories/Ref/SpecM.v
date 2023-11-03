@@ -97,8 +97,157 @@ Definition errorEntree {E R} (s : string) : entree (SpecEv E) R :=
 Definition interp_SpecM {E R} (t:SpecM E R) : entree (SpecEv E) R :=
   interp_fixtree (@errorEntree E R "Unbound function call") nil t.
 
-(* An element of type T as a specification monad function *)
-Definition specFun E env T := funElem (SpecEv E) env T.
+
+(**
+ ** Specification Elements of Type Descriptions
+ **)
+
+(* A finite or infinite sequence, where the latter is represented as a monadic
+function from the natural number index to the element at that index *)
+Definition mseq (E:EvType) len (A:Type@{entree_u}) : Type@{entree_u} :=
+  match len with
+  | TCNum n => VectorDef.t A n
+  | TCInf => nat -> SpecM E A
+  end.
+
+(* Elements of type descriptions that use monadic functions instead of FunIxs.
+If the Boolean flag is true, we are translating a monadic function type, and
+should use funElem *)
+Fixpoint specElemEnv (E:EvType) env isf T : Type@{entree_u} :=
+  match T with
+  | Tp_M R => SpecM E (specElemEnv E env false R)
+  | Tp_Pi K B =>
+      forall (elem:kindElem K), specElemEnv E (envConsElem elem env) true B
+  | Tp_Arr A B =>
+      specElemEnv E env false A -> specElemEnv E env true B
+  | Tp_Kind K =>
+      if isf then unit else kindElem K
+  | Tp_Pair A B =>
+      if isf then unit else specElemEnv E env false A * specElemEnv E env false B
+  | Tp_Sum A B =>
+      if isf then unit else specElemEnv E env false A + specElemEnv E env false B
+  | Tp_Sigma K B =>
+      if isf then unit else
+        { elem: kindElem K & specElemEnv E (envConsElem elem env) false B }
+  | Tp_Seq A e =>
+      if isf then unit else mseq E (evalTpExpr env e) (specElemEnv E env false A)
+  | Tp_Void => if isf then unit else Empty_set
+  | Tp_Ind A =>
+      if isf then unit else indElem nil (unfoldIndTpDesc env A)
+  | Tp_Var var =>
+      if isf then unit else indElem nil (evalVar 0 env Kind_Tp var)
+  | Tp_TpSubst A B =>
+      if isf then unit else
+        specElemEnv E (envConsElem (K:=Kind_Tp) (tpSubst 0 env B) env) false A
+  | Tp_ExprSubst A EK e =>
+      if isf then unit else
+        specElemEnv E (envConsElem (K:=Kind_Expr EK) (evalTpExpr env e) env) false A
+  end.
+
+Definition specElem E T := specElemEnv E nil false T.
+
+Definition specFun E T := specElemEnv E nil true T.
+
+Definition specFunElem E env T := funElem (SpecEv E) env T.
+
+(* Call a function index in a specification *)
+Definition callIx {E T} (f : FunIx T) : specFunElem E nil T :=
+  funInterpToElem (fun args => Fx_Call (MkFunCall T f args) (fun x => Fx_Ret x)).
+
+(* Create a function index from a specification function in a specification *)
+Definition lambdaIx {E T} (f : specFunElem E nil T) : SpecM E (FunIx T) :=
+  Fx_MkFuns (fun _ => mkMultiFxInterp1 T (funElemToInterp f))
+    (fun ixs => Fx_Ret (headFunIx ixs)).
+
+(* FIXME: maybe don't need this...? *)
+Definition tpOrFunElem E env (isf:bool) T :=
+  if isf then funElem E env T else tpElemEnv env T.
+
+(* FIXME: maybe call tpElem tpIxElem and funElem ixFunElem? *)
+
+FIXME: need a function to substitute env into T (note: they aren't equal bc of Tp_Var)
+
+Fixpoint tpToSpecElem E env T : tpElemEnv env T ->
+                                specElemEnv E env false T :=
+  match T return tpElemEnv env T -> specElemEnv E env false T with
+  | Tp_M R => fun ix => Functor.fmap (tpToSpecElem E env R) (callIx ix)
+  | Tp_Pi K B =>
+      fun ix elem =>
+        funToSpecElem E (envConsElem elem env) B (callIx ix elem)
+(*
+  | Tp_Arr A B => FunIx (tpSubst 0 env (Tp_Arr A B))
+  | Tp_Kind K => kindElem K
+  | Tp_Pair A B => tpElemEnv env A * tpElemEnv env B
+  | Tp_Sum A B => tpElemEnv env A + tpElemEnv env B
+  | Tp_Sigma K B => { elem: kindElem K & tpElemEnv (envConsElem elem env) B }
+  | Tp_Seq A e =>
+      match evalTpExpr env e with
+      | TCInf => FunIx (Tp_Arr Tp_Nat (tpSubst 0 env A))
+      | TCNum n => VectorDef.t (tpElemEnv env A) n
+      end
+  | Tp_Void => Empty_set
+  | Tp_Ind A => indElem nil (unfoldIndTpDesc env A)
+  | Tp_Var var => indElem nil (evalVar 0 env Kind_Tp var)
+  | Tp_TpSubst A B =>
+      tpElemEnv (@envConsElem Kind_Tp (tpSubst 0 env B) env) A
+  | Tp_ExprSubst A EK e =>
+      tpElemEnv (@envConsElem (Kind_Expr EK) (evalTpExpr env e) env) A
+*)
+  end
+with
+specToTpElem E env T : specElemEnv E env false T ->
+                       SpecM E (tpElemEnv env T) :=
+  match T return specElemEnv E env false T -> SpecM E (tpElemEnv env T) with
+
+  end
+with
+funToSpecElem E env T : specFunElem E env T ->
+                        specElemEnv E env true T :=
+  match T return specFunElem E env T -> specElemEnv E env true T with
+  | Tp_M R => Functor.fmap (tpToSpecElem E env R)
+(*
+  | Tp_Pi K B => FunIx (tpSubst 0 env (Tp_Pi K B))
+  | Tp_Arr A B => FunIx (tpSubst 0 env (Tp_Arr A B))
+  | Tp_Kind K => kindElem K
+  | Tp_Pair A B => tpElemEnv env A * tpElemEnv env B
+  | Tp_Sum A B => tpElemEnv env A + tpElemEnv env B
+  | Tp_Sigma K B => { elem: kindElem K & tpElemEnv (envConsElem elem env) B }
+  | Tp_Seq A e =>
+      match evalTpExpr env e with
+      | TCInf => FunIx (Tp_Arr Tp_Nat (tpSubst 0 env A))
+      | TCNum n => VectorDef.t (tpElemEnv env A) n
+      end
+  | Tp_Void => Empty_set
+  | Tp_Ind A => indElem nil (unfoldIndTpDesc env A)
+  | Tp_Var var => indElem nil (evalVar 0 env Kind_Tp var)
+  | Tp_TpSubst A B =>
+      tpElemEnv (@envConsElem Kind_Tp (tpSubst 0 env B) env) A
+  | Tp_ExprSubst A EK e =>
+      tpElemEnv (@envConsElem (Kind_Expr EK) (evalTpExpr env e) env) A
+*)
+  end
+with
+specElemToFun E env T : specElemEnv E env true T ->
+                        specFunElem E env T :=
+  match T return specElemEnv E env true T -> SpecM E (specFunElem E env true T) with
+
+  end.
+
+
+
+FIXME HERE NOW:
+- make 4 corecursive functions, for tpElem -> specElem and vice versa and for
+  isf = true and isf = false
+- The specElem -> tpElem funs are monadic, becaause they need to call LambdaS
+- for the isf = true funs, maintain an argument context / extended env that
+  contains Pi and Arr args; also, the input is not a funElem T but rather a
+  funElem (absArgs args T), where absArgs abstracts over the Pi and Arr types
+  in args
+
+
+
+
+FIXME HERE NOW: old stuff below
 
 (* Call a function index in a specification *)
 Definition CallS {E T} (f : FunIx T) : specFun E nil T :=
@@ -134,15 +283,6 @@ Fixpoint applyArrowIxs {Ts A} : arrowIxs Ts A -> FunIxs Ts -> A :=
   match Ts return arrowIxs Ts A -> FunIxs Ts -> A with
   | nil => fun f _ => f
   | T :: Ts' => fun f ixs => applyArrowIxs (f (headFunIx ixs)) (tailFunIxs ixs)
-  end.
-
-(* FIXME: do we still need this? *)
-Definition isSpecTp T : Prop :=
-  match T with
-  | Tp_M _ => True
-  | Tp_Pi _ _ => True
-  | Tp_Arr _ _ => True
-  | _ => False
   end.
 
 (* A tuple of spec functions of the given types *)
