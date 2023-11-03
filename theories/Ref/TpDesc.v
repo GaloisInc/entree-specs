@@ -9,8 +9,14 @@ From EnTree Require Import
      Ref.FixTree
 .
 
-
 Section TpDesc.
+
+
+(* A "number" is either a finite natural number or infinity *)
+Inductive Num : Type :=
+| TCNum : nat -> Num
+| TCInf : Num
+.
 
 (**
  ** Expression Kinds
@@ -22,6 +28,7 @@ Inductive ExprKind : Type@{entree_u} :=
 | Kind_unit
 | Kind_bool
 | Kind_nat
+| Kind_num
 | Kind_bv (w:nat).
 
 Definition exprKindElem AK : Type@{entree_u} :=
@@ -29,6 +36,7 @@ Definition exprKindElem AK : Type@{entree_u} :=
   | Kind_unit => unit
   | Kind_bool => bool
   | Kind_nat => nat
+  | Kind_num => Num
   | Kind_bv w => VectorDef.t bool w
   end.
 
@@ -37,6 +45,7 @@ Definition defaultEKElem EK : exprKindElem EK :=
   | Kind_unit => tt
   | Kind_bool => false
   | Kind_nat => 0
+  | Kind_num => TCNum 0
   | Kind_bv w => VectorDef.const false w
   end.
 
@@ -73,11 +82,15 @@ Inductive TpExpr : ExprKind -> Type@{entree_u} :=
     (e1:TpExpr EK1) (e2:TpExpr EK2) : TpExpr EK3
 .
 
-(* The natural number N as a TpExpr *)
-Definition TpExprN (n:nat) : TpExpr Kind_nat := @TpExpr_Const Kind_nat n.
+(* The finite number N as a TpExpr *)
+Definition TpExprN (n:nat) : TpExpr Kind_num :=
+  @TpExpr_Const Kind_num (TCNum n).
 
-(* The natural number 0 as a TpExpr *)
-Definition TpExprZ : TpExpr Kind_nat := @TpExpr_Const Kind_nat 0.
+(* The number 0 as a TpExpr *)
+Definition TpExprZ : TpExpr Kind_num := @TpExpr_Const Kind_num (TCNum 0).
+
+(* Infinity as a TpExpr *)
+Definition TpExprInf : TpExpr Kind_num := @TpExpr_Const Kind_num TCInf.
 
 (* Descriptions of types *)
 Inductive TpDesc : Type@{entree_u} :=
@@ -91,7 +104,7 @@ Inductive TpDesc : Type@{entree_u} :=
 | Tp_Pair (A : TpDesc) (B : TpDesc)
 | Tp_Sum (A : TpDesc) (B : TpDesc)
 | Tp_Sigma (K : KindDesc) (B : TpDesc)
-| Tp_Vec (A : TpDesc) (e:TpExpr Kind_nat)
+| Tp_Seq (A : TpDesc) (e:TpExpr Kind_num)
 | Tp_Void
 
 (* Inductive types and type variables *)
@@ -105,6 +118,9 @@ environments *)
 | Tp_ExprSubst (A : TpDesc) (EK:ExprKind) (e : TpExpr EK)
 .
 
+(* The type description for natural numbers *)
+Definition Tp_Nat := Tp_Kind (Kind_Expr Kind_nat).
+
 
 (**
  ** Deciding equality of type descriptions
@@ -116,7 +132,7 @@ Proof. repeat decide equality. Defined.
 Lemma dec_eq_exprKElem {EK} (elem1 elem2: exprKindElem EK)
   : {elem1=elem2} + {~elem1=elem2}.
 Proof.
-  revert elem1 elem2; destruct EK; intros; try decide equality.
+  revert elem1 elem2; destruct EK; intros; repeat decide equality.
   revert elem1 elem2; induction w; simpl; intros.
 Admitted.
 
@@ -168,6 +184,7 @@ Definition proveEqExprKind (EK1 EK2 : ExprKind) : option (EK1 = EK2) :=
   | Kind_unit, Kind_unit => Some eq_refl
   | Kind_bool, Kind_bool => Some eq_refl
   | Kind_nat, Kind_nat => Some eq_refl
+  | Kind_num, Kind_num => Some eq_refl
   | Kind_bv w1, Kind_bv w2 =>
       match Nat.eq_dec w1 w2 with
       | left e =>
@@ -306,7 +323,7 @@ Fixpoint tpSubst n env (T:TpDesc) : TpDesc :=
   | Tp_Pair A B => Tp_Pair (tpSubst n env A) (tpSubst n env B)
   | Tp_Sum A B => Tp_Sum (tpSubst n env A) (tpSubst n env B)
   | Tp_Sigma A B => Tp_Sigma A (tpSubst (S n) env B)
-  | Tp_Vec A e => Tp_Vec (tpSubst n env A) (substTpExpr n env e)
+  | Tp_Seq A e => Tp_Seq (tpSubst n env A) (substTpExpr n env e)
   | Tp_Void => Tp_Void
   | Tp_Ind A => Tp_Ind (tpSubst (S n) env A)
   | Tp_Var var => match substVar n env Kind_Tp var with
@@ -346,12 +363,14 @@ Inductive indElem : TpEnv -> TpDesc -> Type@{entree_u} :=
 | Elem_Sigma {env K B}
     (elem1: kindElem K) (elem2: indElem (envConsElem elem1 env) B)
   : indElem env (Tp_Sigma K B)
-| Elem_VecNil {env A} : indElem env (Tp_Vec A TpExprZ)
-| Elem_VecCons {env A n} (elem1: indElem env A)
-    (elem2: indElem env (Tp_Vec A (TpExprN n)))
-  : indElem env (Tp_Vec A (TpExprN (S n)))
-| Elem_VecCast {env A e1 e2} (e: evalTpExpr env e1 = evalTpExpr env e2)
-    (elem: indElem env (Tp_Vec A e1)) : indElem env (Tp_Vec A e2)
+| Elem_SeqNil {env A} : indElem env (Tp_Seq A TpExprZ)
+| Elem_SeqInf {env A} (f:FunIx (Tp_Arr Tp_Nat (tpSubst 0 env A))) :
+  indElem env (Tp_Seq A TpExprInf)
+| Elem_SeqCons {env A n} (elem1: indElem env A)
+    (elem2: indElem env (Tp_Seq A (TpExprN n)))
+  : indElem env (Tp_Seq A (TpExprN (S n)))
+| Elem_SeqCast {env A e1 e2} (e: evalTpExpr env e1 = evalTpExpr env e2)
+    (elem: indElem env (Tp_Seq A e1)) : indElem env (Tp_Seq A e2)
 (* No case for Tp_Void *)
 | Elem_Ind {env A} (elem: indElem nil (unfoldIndTpDesc env A))
   : indElem env (Tp_Ind A)
@@ -367,21 +386,22 @@ Inductive indElem : TpEnv -> TpDesc -> Type@{entree_u} :=
 
 (* Helper function to build a vector indElem with a constant size *)
 Fixpoint mkVecIndElemConst {env T n} :
-  VectorDef.t (indElem env T) n -> indElem env (Tp_Vec T (TpExprN n)) :=
-  match n return VectorDef.t (indElem env T) n -> indElem env (Tp_Vec T (TpExprN n)) with
-  | 0 => fun _ => Elem_VecNil
+  VectorDef.t (indElem env T) n -> indElem env (Tp_Seq T (TpExprN n)) :=
+  match n return VectorDef.t (indElem env T) n -> indElem env (Tp_Seq T (TpExprN n)) with
+  | 0 => fun _ => Elem_SeqNil
   | S n' =>
        fun elems =>
-         Elem_VecCons (VectorDef.hd elems) (mkVecIndElemConst (VectorDef.tl elems))
+         Elem_SeqCons (VectorDef.hd elems) (mkVecIndElemConst (VectorDef.tl elems))
   end.
 
 (* Helper function to build a vector indElem from a vector of indElems *)
+(*
 Definition mkVecIndElem {env T} {e:TpExpr Kind_nat}
   (elems:VectorDef.t (indElem env T) (evalTpExpr env e)) : indElem env (Tp_Vec T e).
   apply (Elem_VecCast (e1:=TpExprN (evalTpExpr env e))); [ reflexivity | ].
   apply mkVecIndElemConst. assumption.
 Defined.
-
+*)
 
 (* Elements of a type description relative to an environment *)
 Fixpoint tpElemEnv env T : Type@{entree_u} :=
@@ -393,7 +413,11 @@ Fixpoint tpElemEnv env T : Type@{entree_u} :=
   | Tp_Pair A B => tpElemEnv env A * tpElemEnv env B
   | Tp_Sum A B => tpElemEnv env A + tpElemEnv env B
   | Tp_Sigma K B => { elem: kindElem K & tpElemEnv (envConsElem elem env) B }
-  | Tp_Vec A e => VectorDef.t (tpElemEnv env A) (evalTpExpr env e)
+  | Tp_Seq A e =>
+      match evalTpExpr env e with
+      | TCInf => FunIx (Tp_Arr Tp_Nat (tpSubst 0 env A))
+      | TCNum n => VectorDef.t (tpElemEnv env A) n
+      end
   | Tp_Void => Empty_set
   | Tp_Ind A => indElem nil (unfoldIndTpDesc env A)
   | Tp_Var var => indElem nil (evalVar 0 env Kind_Tp var)
@@ -418,6 +442,7 @@ Fixpoint indToTpElem env {T} (elem : indElem env T) : tpElemEnv env T.
   - right; apply indToTpElem; assumption.
   - exists elem1. apply indToTpElem; assumption.
   - apply VectorDef.nil.
+  - simpl. apply f.
   - apply VectorDef.cons;
       [ apply (indToTpElem env _ elem1) | apply (indToTpElem env _ elem2) ].
   - simpl. rewrite <- e. apply (indToTpElem env _ elem).
@@ -438,7 +463,12 @@ Fixpoint tpToIndElem env {T} : tpElemEnv env T -> indElem env T.
   - destruct elem; [ apply Elem_SumL | apply Elem_SumR ];
       apply tpToIndElem; assumption.
   - econstructor. apply (tpToIndElem _ _ (projT2 elem)).
-  - apply mkVecIndElem. apply (VectorDef.map (tpToIndElem env T) elem).
+  - apply (Elem_SeqCast (e1 := @TpExpr_Const Kind_num (evalTpExpr env e)));
+      [ reflexivity | ].
+    remember (evalTpExpr env e) as n. simpl in elem. rewrite <- Heqn in elem.
+    destruct n.
+    + apply mkVecIndElemConst. apply (VectorDef.map (tpToIndElem env T) elem).
+    + apply Elem_SeqInf. apply elem.
   - destruct elem.
   - constructor; assumption.
   - constructor; assumption.
