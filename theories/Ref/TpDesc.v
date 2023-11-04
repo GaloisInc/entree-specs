@@ -351,43 +351,41 @@ Definition unfoldIndTpDesc env A : TpDesc :=
   tpSubst 0 (@envConsElem Kind_Tp (tpSubst 0 env (Tp_Ind A)) env) A.
 
 (* Inductively defined elements of a type description *)
-Inductive indElem : TpEnv -> TpDesc -> Type@{entree_u} :=
-| Elem_M {env R} (f:FunIx (tpSubst 0 env (Tp_M R))) : indElem env (Tp_M R)
-| Elem_Pi {env A B} (f:FunIx (tpSubst 0 env (Tp_Pi A B))) : indElem env (Tp_Pi A B)
-| Elem_Arr {env A B} (f:FunIx (tpSubst 0 env (Tp_Arr A B))) : indElem env (Tp_Arr A B)
-| Elem_Kind {env K} (elem:kindElem K) : indElem env (Tp_Kind K)
-| Elem_Pair {env A B} (elem1: indElem env A) (elem2: indElem env B)
-  : indElem env (Tp_Pair A B)
-| Elem_SumL {env A B} (elem: indElem env A) : indElem env (Tp_Sum A B)
-| Elem_SumR {env A B} (elem: indElem env B) : indElem env (Tp_Sum A B)
-| Elem_Sigma {env K B}
-    (elem1: kindElem K) (elem2: indElem (envConsElem elem1 env) B)
-  : indElem env (Tp_Sigma K B)
-| Elem_SeqNil {env A} : indElem env (Tp_Seq A TpExprZ)
-| Elem_SeqInf {env A} (f:FunIx (Tp_Arr Tp_Nat (tpSubst 0 env A))) :
-  indElem env (Tp_Seq A TpExprInf)
-| Elem_SeqCons {env A n} (elem1: indElem env A)
-    (elem2: indElem env (Tp_Seq A (TpExprN n)))
-  : indElem env (Tp_Seq A (TpExprN (S n)))
-| Elem_SeqCast {env A e1 e2} (e: evalTpExpr env e1 = evalTpExpr env e2)
-    (elem: indElem env (Tp_Seq A e1)) : indElem env (Tp_Seq A e2)
+Inductive indElem : TpDesc -> Type@{entree_u} :=
+| Elem_M {R} (f:FunIx (Tp_M R)) : indElem (Tp_M R)
+| Elem_Pi {A B} (f:FunIx (Tp_Pi A B)) : indElem (Tp_Pi A B)
+| Elem_Arr {A B} (f:FunIx (Tp_Arr A B)) : indElem (Tp_Arr A B)
+| Elem_Kind {K} (elem:kindElem K) : indElem (Tp_Kind K)
+| Elem_Pair {A B} (elem1: indElem A) (elem2: indElem B)
+  : indElem (Tp_Pair A B)
+| Elem_SumL {A B} (elem: indElem A) : indElem (Tp_Sum A B)
+| Elem_SumR {A B} (elem: indElem B) : indElem (Tp_Sum A B)
+| Elem_Sigma {K B} (elem1: kindElem K) (elem2: indElem (tpSubst1 elem1 B))
+  : indElem (Tp_Sigma K B)
+| Elem_SeqNil {A} : indElem (Tp_Seq A TpExprZ)
+| Elem_SeqInf {A} (f:FunIx (Tp_Arr Tp_Nat A)) :
+  indElem (Tp_Seq A TpExprInf)
+| Elem_SeqCons {A n} (elem1: indElem A)
+    (elem2: indElem (Tp_Seq A (TpExprN n)))
+  : indElem (Tp_Seq A (TpExprN (S n)))
+| Elem_SeqCast {A e1 e2} (e: evalTpExpr nil e1 = evalTpExpr nil e2)
+    (elem: indElem (Tp_Seq A e1)) : indElem (Tp_Seq A e2)
 (* No case for Tp_Void *)
-| Elem_Ind {env A} (elem: indElem nil (unfoldIndTpDesc env A))
-  : indElem env (Tp_Ind A)
-| Elem_Var {env} var (elem: indElem nil (evalVar 0 env Kind_Tp var)) :
-  indElem env (Tp_Var var)
-| Elem_TpSubst {env A B}
-    (elem: indElem (@envConsElem Kind_Tp (tpSubst 0 env B) env) A)
-  : indElem env (Tp_TpSubst A B)
-| Elem_ExprSubst {env A EK e}
-    (elem: indElem (@envConsElem (Kind_Expr EK) (evalTpExpr env e) env) A)
-  : indElem env (Tp_ExprSubst A EK e)
+| Elem_Ind {A} (elem: indElem (unfoldIndTpDesc nil A))
+  : indElem (Tp_Ind A)
+(* No case for Tp_Var, since that would be a free variable *)
+| Elem_TpSubst {A B}
+    (elem: indElem (@tpSubst1 Kind_Tp B A))
+  : indElem (Tp_TpSubst A B)
+| Elem_ExprSubst {A EK e}
+    (elem: indElem (@tpSubst1 (Kind_Expr EK) (evalTpExpr nil e) A))
+  : indElem (Tp_ExprSubst A EK e)
 .
 
 (* Helper function to build a vector indElem with a constant size *)
-Fixpoint mkVecIndElemConst {env T n} :
-  VectorDef.t (indElem env T) n -> indElem env (Tp_Seq T (TpExprN n)) :=
-  match n return VectorDef.t (indElem env T) n -> indElem env (Tp_Seq T (TpExprN n)) with
+Fixpoint mkVecIndElemConst {T n} :
+  VectorDef.t (indElem T) n -> indElem (Tp_Seq T (TpExprN n)) :=
+  match n return VectorDef.t (indElem T) n -> indElem (Tp_Seq T (TpExprN n)) with
   | 0 => fun _ => Elem_SeqNil
   | S n' =>
        fun elems =>
@@ -403,6 +401,68 @@ Definition mkVecIndElem {env T} {e:TpExpr Kind_nat}
 Defined.
 *)
 
+(** Inversion rules for indElem **)
+
+Definition indElem_invM {R} (elem : indElem (Tp_M R)) : FunIx (Tp_M R).
+Proof. inversion elem. assumption. Defined.
+
+Definition indElem_invPi {K B} (elem : indElem (Tp_Pi K B)) : FunIx (Tp_Pi K B).
+Proof. inversion elem. assumption. Defined.
+
+Definition indElem_invArr {A B} (elem : indElem (Tp_Arr A B)) : FunIx (Tp_Arr A B).
+Proof. inversion elem. assumption. Defined.
+
+Definition indElem_invKind {K} (elem : indElem (Tp_Kind K)) : kindElem K.
+Proof. inversion elem. assumption. Defined.
+
+Definition indElem_invPair {A B} (elem : indElem (Tp_Pair A B)) : indElem A * indElem B.
+Proof. inversion elem; split; assumption. Defined.
+
+Definition indElem_invSum {A B} (elem : indElem (Tp_Sum A B)) : indElem A + indElem B.
+Proof. inversion elem; constructor; assumption. Defined.
+
+Definition indElem_invSigma {K B} (elem : indElem (Tp_Sigma K B)) :
+  { elem : kindElem K & indElem (tpSubst1 elem B) }.
+Proof. inversion elem; econstructor; eassumption. Defined.
+
+
+Definition mseqIndElem (len:Num) A : Type@{entree_u} :=
+  match len with
+  | TCNum n => VectorDef.t (indElem A) n
+  | TCInf => FunIx (Tp_Arr Tp_Nat A)
+  end.
+
+Definition indElem_invSeq {A e} (elem : indElem (Tp_Seq A e)) :
+  mseqIndElem (evalTpExpr nil e) A.
+Proof.
+  - remember (Tp_Seq A e) as T. revert A e HeqT; induction elem; intros; inversion HeqT.
+    + apply VectorDef.nil.
+    + subst A0. apply f.
+    + subst A0. apply VectorDef.cons; [ apply elem1 | ].
+      apply (IHelem2 _ _ eq_refl).
+    + subst e2. rewrite <- e. apply IHelem. subst A0. reflexivity.
+Defined.
+
+Definition indElem_invVoid (elem : indElem Tp_Void) : False.
+Proof. inversion elem. Defined.
+
+Definition indElem_invInd {A} (elem : indElem (Tp_Ind A)) :
+  indElem (unfoldIndTpDesc nil A).
+Proof. inversion elem; assumption. Defined.
+
+Definition indElem_invVar {A} (elem : indElem (Tp_Var A)) : False.
+Proof. inversion elem. Defined.
+
+Definition indElem_invTpSubst {A B} (elem : indElem (Tp_TpSubst A B))
+  : indElem (@tpSubst1 Kind_Tp B A).
+Proof. inversion elem; assumption. Defined.
+
+Definition indElem_invExprSubst {A EK e} (elem : indElem (Tp_ExprSubst A EK e))
+  : indElem (@tpSubst1 (Kind_Expr EK) (evalTpExpr nil e) A).
+Proof. inversion elem. apply inj_pairT2 in H2. subst e1. assumption. Defined.
+
+
+(*
 (* Elements of a type description relative to an environment *)
 Fixpoint tpElemEnv env T : Type@{entree_u} :=
   match T with
@@ -475,6 +535,7 @@ Fixpoint tpToIndElem env {T} : tpElemEnv env T -> indElem env T.
   - constructor; apply tpToIndElem; assumption.
   - constructor; apply tpToIndElem; assumption.
 Defined.
+*)
 
 
 (**
@@ -486,17 +547,17 @@ Fixpoint TpFunInput env (T:TpDesc) : Type@{entree_u} :=
   match T with
   | Tp_M _ => unit
   | Tp_Pi K B => { elem:kindElem K & TpFunInput (envConsElem elem env) B }
-  | Tp_Arr A B => tpElemEnv env A * TpFunInput env B
+  | Tp_Arr A B => indElem (tpSubst 0 env A) * TpFunInput env B
   | _ => Empty_set
   end.
 
 (* The output type of a monadic function of type T with the given inputs *)
 Fixpoint TpFunOutput {env T} : TpFunInput env T -> Type@{entree_u} :=
   match T return TpFunInput env T -> Type with
-  | Tp_M R => fun _ => tpElemEnv nil (tpSubst 0 env R)
+  | Tp_M R => fun _ => indElem (tpSubst 0 env R)
   | Tp_Pi K B => fun args => TpFunOutput (projT2 args)
   | Tp_Arr A B => fun args => TpFunOutput (snd args)
-  | _ => fun _ => Empty_set
+  | _ => fun _ => unit
   end.
 
 (* The above define input and output function types for TpDescs *)
@@ -508,48 +569,48 @@ Global Instance IsTpDesc_TpDesc : IsTpDesc TpDesc :=
   |}.
 
 (* A monadic function of a given type description *)
-Fixpoint funElem (E:EvType) env T : Type@{entree_u} :=
+Fixpoint indFun (E:EvType) env T : Type@{entree_u} :=
   match T with
-  | Tp_M R => fixtree TpDesc E (tpElemEnv nil (tpSubst 0 env R))
-  | Tp_Pi K B => forall (elem:kindElem K), funElem E (envConsElem elem env) B
-  | Tp_Arr A B => tpElemEnv env A -> funElem E env B
+  | Tp_M R => fixtree TpDesc E (indElem (tpSubst 0 env R))
+  | Tp_Pi K B => forall (elem:kindElem K), indFun E (envConsElem elem env) B
+  | Tp_Arr A B => indElem (tpSubst 0 env A) -> indFun E env B
   | _ => unit
   end.
 
 (* Convert a monadic function to an FxInterp relative to an environment *)
-Fixpoint funElemToInterpEnv {E env T} : funElem E env T ->
-                                        forall args:TpFunInput env T,
-                                          fixtree TpDesc E (TpFunOutput args) :=
-  match T return funElem E env T ->
+Fixpoint indFunToInterpEnv {E env T} : indFun E env T ->
+                                       forall args:TpFunInput env T,
+                                         fixtree TpDesc E (TpFunOutput args) :=
+  match T return indFun E env T ->
                  forall args:TpFunInput env T,
                    fixtree TpDesc E (TpFunOutput args) with
   | Tp_M R => fun m _ => m
-  | Tp_Pi K B => fun f args => funElemToInterpEnv (f (projT1 args)) (projT2 args)
-  | Tp_Arr A B => fun f args => funElemToInterpEnv (f (fst args)) (snd args)
-  | _ => fun _ (v:Empty_set) => match v with end
+  | Tp_Pi K B => fun f args => indFunToInterpEnv (f (projT1 args)) (projT2 args)
+  | Tp_Arr A B => fun f args => indFunToInterpEnv (f (fst args)) (snd args)
+  | _ => fun _ _ => Monad.ret tt
   end.
 
 (* Convert a monadic function to an FxInterp in the top-level environment *)
-Definition funElemToInterp {E T} : funElem E nil T -> @FxInterp TpDesc _ E T :=
-  funElemToInterpEnv.
+Definition indFunToInterp {E T} : indFun E nil T -> @FxInterp TpDesc _ E T :=
+  indFunToInterpEnv.
 
 (* Convert an FxInterp to a monadic function relative to an environment *)
-Fixpoint funInterpToElemEnv {E env T} : (forall args:TpFunInput env T,
-                                            fixtree TpDesc E (TpFunOutput args)) ->
-                                        funElem E env T :=
+Fixpoint interpToIndFunEnv {E env T} : (forall args:TpFunInput env T,
+                                           fixtree TpDesc E (TpFunOutput args)) ->
+                                       indFun E env T :=
   match T return (forall args:TpFunInput env T,
                      fixtree TpDesc E (TpFunOutput args)) ->
-                 funElem E env T with
+                 indFun E env T with
   | Tp_M R => fun f => f tt
   | Tp_Pi K B => fun f elem =>
-                   funInterpToElemEnv (fun args => f (existT _ elem args))
+                   interpToIndFunEnv (fun args => f (existT _ elem args))
   | Tp_Arr A B => fun f arg =>
-                    funInterpToElemEnv (fun args => f (arg, args))
+                    interpToIndFunEnv (fun args => f (arg, args))
   | _ => fun _ => tt
   end.
 
 (* Convert an FxInterp to a monadic function in the top-level environment *)
-Definition funInterpToElem {E T} : @FxInterp TpDesc _ E T -> funElem E nil T :=
-  funInterpToElemEnv.
+Definition interpToIndFun {E T} : @FxInterp TpDesc _ E T -> indFun E nil T :=
+  interpToIndFunEnv.
 
 End TpDesc.

@@ -113,59 +113,168 @@ Definition mseq (E:EvType) len (A:Type@{entree_u}) : Type@{entree_u} :=
 (* Elements of type descriptions that use monadic functions instead of FunIxs.
 If the Boolean flag is true, we are translating a monadic function type, and
 should use funElem *)
-Fixpoint specElemEnv (E:EvType) env isf T : Type@{entree_u} :=
+Fixpoint tpElemEnv (E:EvType) env isf T : Type@{entree_u} :=
   match T with
-  | Tp_M R => SpecM E (specElemEnv E env false R)
+  | Tp_M R => SpecM E (tpElemEnv E env false R)
   | Tp_Pi K B =>
-      forall (elem:kindElem K), specElemEnv E (envConsElem elem env) true B
+      forall (elem:kindElem K), tpElemEnv E (envConsElem elem env) true B
   | Tp_Arr A B =>
-      specElemEnv E env false A -> specElemEnv E env true B
+      tpElemEnv E env false A -> tpElemEnv E env true B
   | Tp_Kind K =>
       if isf then unit else kindElem K
   | Tp_Pair A B =>
-      if isf then unit else specElemEnv E env false A * specElemEnv E env false B
+      if isf then unit else tpElemEnv E env false A * tpElemEnv E env false B
   | Tp_Sum A B =>
-      if isf then unit else specElemEnv E env false A + specElemEnv E env false B
+      if isf then unit else tpElemEnv E env false A + tpElemEnv E env false B
   | Tp_Sigma K B =>
       if isf then unit else
-        { elem: kindElem K & specElemEnv E (envConsElem elem env) false B }
+        { elem: kindElem K & tpElemEnv E (envConsElem elem env) false B }
   | Tp_Seq A e =>
-      if isf then unit else mseq E (evalTpExpr env e) (specElemEnv E env false A)
+      if isf then unit else mseq E (evalTpExpr env e) (tpElemEnv E env false A)
   | Tp_Void => if isf then unit else Empty_set
   | Tp_Ind A =>
-      if isf then unit else indElem nil (unfoldIndTpDesc env A)
+      if isf then unit else indElem (unfoldIndTpDesc env A)
   | Tp_Var var =>
-      if isf then unit else indElem nil (evalVar 0 env Kind_Tp var)
+      if isf then unit else indElem (evalVar 0 env Kind_Tp var)
   | Tp_TpSubst A B =>
       if isf then unit else
-        specElemEnv E (envConsElem (K:=Kind_Tp) (tpSubst 0 env B) env) false A
+        tpElemEnv E (envConsElem (K:=Kind_Tp) (tpSubst 0 env B) env) false A
   | Tp_ExprSubst A EK e =>
       if isf then unit else
-        specElemEnv E (envConsElem (K:=Kind_Expr EK) (evalTpExpr env e) env) false A
+        tpElemEnv E (envConsElem (K:=Kind_Expr EK) (evalTpExpr env e) env) false A
   end.
 
-Definition specElem E T := specElemEnv E nil false T.
+Definition tpElem E T := tpElemEnv E nil false T.
 
-Definition specFun E T := specElemEnv E nil true T.
+Definition specFunEnv E env T := tpElemEnv E env true T.
+Definition specFun E T := tpElemEnv E nil true T.
 
-Definition specFunElem E env T := funElem (SpecEv E) env T.
+Definition specIndFun E env T := indFun (SpecEv E) env T.
+
+
+FIXME HERE NOW: change TpFunInput to an inductive type, with no env, so we don't
+need to cast TpFunInput env T to TpFunInput nil (tpSubst env T)
 
 (* Call a function index in a specification *)
-Definition callIx {E T} (f : FunIx T) : specFunElem E nil T :=
-  funInterpToElem (fun args => Fx_Call (MkFunCall T f args) (fun x => Fx_Ret x)).
+Definition callIx {E env T} (f : FunIx T) (args : TpFunInput env T)
+  : SpecM E (TpFunOutput args) :=
+  Fx_Call (MkFunCall T f args) (fun x => Fx_Ret x).
+
+(*
+Definition callIx {E T} (f : FunIx T) : specIndFun E nil T :=
+  interpToIndFun (fun args => Fx_Call (MkFunCall T f args) (fun x => Fx_Ret x)).
+*)
 
 (* Create a function index from a specification function in a specification *)
-Definition lambdaIx {E T} (f : specFunElem E nil T) : SpecM E (FunIx T) :=
-  Fx_MkFuns (fun _ => mkMultiFxInterp1 T (funElemToInterp f))
+Definition lambdaIx {E T}
+  (f : forall args : TpFunInput nil T, SpecM E (TpFunOutput args)) : SpecM E (FunIx T) :=
+  Fx_MkFuns (fun _ => mkMultiFxInterp1 T f) (fun ixs => Fx_Ret (headFunIx ixs)).
+
+(*
+Definition lambdaIx {E T} (f : specIndFun E nil T) : SpecM E (FunIx T) :=
+  Fx_MkFuns (fun _ => mkMultiFxInterp1 T (indFunToInterp f))
     (fun ixs => Fx_Ret (headFunIx ixs)).
+*)
 
-(* FIXME: maybe don't need this...? *)
-Definition tpOrFunElem E env (isf:bool) T :=
-  if isf then funElem E env T else tpElemEnv env T.
+Fixpoint interpToSpecFun E env T :
+  (forall args:TpFunInput env T, SpecM E (TpFunOutput args)) ->
+  specFunEnv E env T :=
+  match T return (forall args:TpFunInput env T, SpecM E (TpFunOutput args)) ->
+                 specFunEnv E env T with
+  | Tp_M R => fun f => Functor.fmap (indToTpElem E env R) (f tt)
+  | Tp_Pi K B =>
+      fun f elem =>
+        interpToSpecFun
+          E (envConsElem elem env) B
+          (fun args => f (existT _ elem args))
+  | Tp_Arr A B =>
+      fun f arg =>
+        interpToSpecFun E env B
+          (fun args =>
+             Monad.bind
+               (u:= TpFunOutput (T:=B) args)
+               (tpToIndElem E env A arg)
+               (fun iarg => f (iarg, args)))
+  | Tp_Kind K => fun _ => tt
+  | Tp_Pair A B => fun _ => tt
+  | Tp_Sum A B => fun _ => tt
+  | Tp_Sigma K B => fun _ => tt
+  | Tp_Seq A e => fun _ => tt
+  | Tp_Void => fun _ => tt
+  | Tp_Ind A => fun _ => tt
+  | Tp_Var var => fun _ => tt
+  | Tp_TpSubst A B => fun _ => tt
+  | Tp_ExprSubst A EK e => fun _ => tt
+  end
+with
+specFunToInterp E env T : specFunEnv E env T ->
+                          (forall args:TpFunInput env T, SpecM E (TpFunOutput args)) :=
+  match T return specFunEnv E env T ->
+                 (forall args:TpFunInput env T, SpecM E (TpFunOutput args)) with
+  | Tp_M R => fun m _ =>
+                Monad.bind m (fun r => tpToIndElem E env R r)
+  | Tp_Pi K B =>
+      fun f args =>
+        specFunToInterp E (envConsElem (projT1 args) env) B (f (projT1 args)) (projT2 args)
+  | Tp_Arr A B =>
+      fun f args =>
+        specFunToInterp E env B (f (indToTpElem E env A (fst args))) (snd args)
+  | Tp_Kind K => fun _ _ => Monad.ret tt
+  | Tp_Pair A B => fun _ _ => Monad.ret tt
+  | Tp_Sum A B => fun _ _ => Monad.ret tt
+  | Tp_Sigma K B => fun _ _ => Monad.ret tt
+  | Tp_Seq A e => fun _ _ => Monad.ret tt
+  | Tp_Void => fun _ _ => Monad.ret tt
+  | Tp_Ind A => fun _ _ => Monad.ret tt
+  | Tp_Var var => fun _ _ => Monad.ret tt
+  | Tp_TpSubst A B => fun _ _ => Monad.ret tt
+  | Tp_ExprSubst A EK e => fun _ _ => Monad.ret tt
+  end
+with
+indToTpElem E env T : indElem (tpSubst 0 env T) -> tpElemEnv E env false T :=
+  match T return indElem (tpSubst 0 env T) -> tpElemEnv E env false T with
+  | Tp_M R =>
+      fun elem =>
+        interpToSpecFun E env (Tp_M R) (callIx (indElem_invM elem))
+  | Tp_Pi K B => _
+  | Tp_Arr A B => _
+  | Tp_Kind K => fun elem => indElem_invKind elem
+  | Tp_Pair A B =>
+      fun elem => (indToTpElem E env A (fst (indElem_invPair elem)),
+                    indToTpElem E env B (snd (indElem_invPair elem)))
+  | Tp_Sum A B =>
+      fun elem =>
+        match indElem_invSum elem with
+        | inl x => inl (indToTpElem E env A x)
+        | inr y => inr (indToTpElem E env B y)
+        end
+  | Tp_Sigma K B => _
+  | Tp_Seq A e => _
+  | Tp_Void => _
+  | Tp_Ind A => _
+  | Tp_Var var => _
+  | Tp_TpSubst A B => _
+  | Tp_ExprSubst A EK e => _
+  end
+with
+tpToIndElem E env T : tpElemEnv E env false T -> SpecM E (indElem (tpSubst 0 env T)) :=
+  match T return tpElemEnv E env false T -> SpecM E (indElem (tpSubst 0 env T)) with
+  | Tp_M R => _
+  | Tp_Pi K B => _
+  | Tp_Arr A B => _
+  | Tp_Kind K => _
+  | Tp_Pair A B => _
+  | Tp_Sum A B => _
+  | Tp_Sigma K B => _
+  | Tp_Seq A e => _
+  | Tp_Void => _
+  | Tp_Ind A => _
+  | Tp_Var var => _
+  | Tp_TpSubst A B => _
+  | Tp_ExprSubst A EK e => _
+  end
+.
 
-(* FIXME: maybe call tpElem tpIxElem and funElem ixFunElem? *)
-
-FIXME: need a function to substitute env into T (note: they aren't equal bc of Tp_Var)
 
 Fixpoint tpToSpecElem E env T : tpElemEnv env T ->
                                 specElemEnv E env false T :=
