@@ -331,9 +331,9 @@ Fixpoint tpSubst n env (T:TpDesc) : TpDesc :=
                   | inr var' => Tp_Var var'
                   end
   | Tp_TpSubst A B =>
-      tpSubst n (@envConsElem Kind_Tp (tpSubst n env B) env) A
+      Tp_TpSubst (tpSubst (S n) env A) (tpSubst n env B)
   | Tp_ExprSubst A EK e =>
-      tpSubst n (@envConsElem (Kind_Expr EK) (evalTpExpr env e) env) A
+      Tp_ExprSubst (tpSubst (S n) env A) EK (substTpExpr n env e)
   end.
 
 (* Substitute a single value into a type description *)
@@ -363,7 +363,7 @@ Inductive indElem : TpDesc -> Type@{entree_u} :=
 | Elem_Sigma {K B} (elem1: kindElem K) (elem2: indElem (tpSubst1 elem1 B))
   : indElem (Tp_Sigma K B)
 | Elem_SeqNil {A} : indElem (Tp_Seq A TpExprZ)
-| Elem_SeqInf {A} (f:FunIx (Tp_Arr Tp_Nat A)) :
+| Elem_SeqInf {A} (f:FunIx (Tp_Arr Tp_Nat (Tp_M A))) :
   indElem (Tp_Seq A TpExprInf)
 | Elem_SeqCons {A n} (elem1: indElem A)
     (elem2: indElem (Tp_Seq A (TpExprN n)))
@@ -392,14 +392,23 @@ Fixpoint mkVecIndElemConst {T n} :
          Elem_SeqCons (VectorDef.hd elems) (mkVecIndElemConst (VectorDef.tl elems))
   end.
 
-(* Helper function to build a vector indElem from a vector of indElems *)
-(*
-Definition mkVecIndElem {env T} {e:TpExpr Kind_nat}
-  (elems:VectorDef.t (indElem env T) (evalTpExpr env e)) : indElem env (Tp_Vec T e).
-  apply (Elem_VecCast (e1:=TpExprN (evalTpExpr env e))); [ reflexivity | ].
-  apply mkVecIndElemConst. assumption.
+(* Helper type for representing an inductive element of a sequence type *)
+Definition mseqIndElem (len:Num) A : Type@{entree_u} :=
+  match len with
+  | TCNum n => VectorDef.t (indElem A) n
+  | TCInf => FunIx (Tp_Arr Tp_Nat (Tp_M A))
+  end.
+
+(* Helper function to build a sequence indElem from an mseqIndElem *)
+Definition mkSeqIndElem {T} {e:TpExpr Kind_num}
+  (elems:mseqIndElem (evalTpExpr nil e) T) : indElem (Tp_Seq T e).
+Proof.
+  apply (Elem_SeqCast (e1:=@TpExpr_Const Kind_num (evalTpExpr nil e)));
+    [ reflexivity | ].
+  destruct (evalTpExpr nil e).
+  - apply mkVecIndElemConst. assumption.
+  - apply Elem_SeqInf. apply elems.
 Defined.
-*)
 
 (** Inversion rules for indElem **)
 
@@ -424,13 +433,6 @@ Proof. inversion elem; constructor; assumption. Defined.
 Definition indElem_invSigma {K B} (elem : indElem (Tp_Sigma K B)) :
   { elem : kindElem K & indElem (tpSubst1 elem B) }.
 Proof. inversion elem; econstructor; eassumption. Defined.
-
-
-Definition mseqIndElem (len:Num) A : Type@{entree_u} :=
-  match len with
-  | TCNum n => VectorDef.t (indElem A) n
-  | TCInf => FunIx (Tp_Arr Tp_Nat A)
-  end.
 
 Definition indElem_invSeq {A e} (elem : indElem (Tp_Seq A e)) :
   mseqIndElem (evalTpExpr nil e) A.

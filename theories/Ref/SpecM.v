@@ -16,6 +16,17 @@ From Coq Require Import
 
 Import Monads.
 
+Fixpoint vec_mapM@{u} {A B:Type@{u}} {M} `{Monad@{u u} M} (f : A -> M B) n (v : VectorDef.t A n)
+  : M (VectorDef.t B n) :=
+  match v with
+  | VectorDef.nil _ => Monad.ret (VectorDef.nil B)
+  | VectorDef.cons _ a n' v' =>
+      Monad.bind (f a)
+        (fun b =>
+           Monad.bind (vec_mapM f n' v')
+             (fun vb => Monad.ret (VectorDef.cons B b n' vb)))
+  end.
+
 
 (**
  ** EncodingType and ReSum instances for defining SpecM
@@ -135,7 +146,7 @@ Fixpoint tpElemEnv (E:EvType) env isf T : Type@{entree_u} :=
   | Tp_Ind A =>
       if isf then unit else indElem (unfoldIndTpDesc env A)
   | Tp_Var var =>
-      if isf then unit else indElem (evalVar 0 env Kind_Tp var)
+      if isf then unit else indElem (tpSubst 0 env (Tp_Var var))
   | Tp_TpSubst A B =>
       if isf then unit else
         tpElemEnv E (envConsElem (K:=Kind_Tp) (tpSubst 0 env B) env) false A
@@ -152,31 +163,49 @@ Definition specFun E T := tpElemEnv E nil true T.
 Definition specIndFun E env T := indFun (SpecEv E) env T.
 
 
-FIXME HERE NOW: change TpFunInput to an inductive type, with no env, so we don't
-need to cast TpFunInput env T to TpFunInput nil (tpSubst env T)
-
 (* Call a function index in a specification *)
-Definition callIx {E env T} (f : FunIx T) (args : TpFunInput env T)
+Definition callIx {E T} (f : FunIx T) (args : TpFunInput nil T)
   : SpecM E (TpFunOutput args) :=
   Fx_Call (MkFunCall T f args) (fun x => Fx_Ret x).
 
-(*
-Definition callIx {E T} (f : FunIx T) : specIndFun E nil T :=
-  interpToIndFun (fun args => Fx_Call (MkFunCall T f args) (fun x => Fx_Ret x)).
-*)
+Axiom callIxSubst : forall {E env} T (f : FunIx (tpSubst 0 env T)) (args : TpFunInput env T),
+    SpecM E (TpFunOutput args).
 
 (* Create a function index from a specification function in a specification *)
 Definition lambdaIx {E T}
   (f : forall args : TpFunInput nil T, SpecM E (TpFunOutput args)) : SpecM E (FunIx T) :=
   Fx_MkFuns (fun _ => mkMultiFxInterp1 T f) (fun ixs => Fx_Ret (headFunIx ixs)).
 
-(*
-Definition lambdaIx {E T} (f : specIndFun E nil T) : SpecM E (FunIx T) :=
-  Fx_MkFuns (fun _ => mkMultiFxInterp1 T (indFunToInterp f))
-    (fun ixs => Fx_Ret (headFunIx ixs)).
-*)
+Axiom lambdaIxSubst :
+  forall {E env} T
+         (f : forall args : TpFunInput env T, SpecM E (TpFunOutput args)),
+    SpecM E (FunIx (tpSubst 0 env T)).
 
-Fixpoint interpToSpecFun E env T :
+Axiom subst1_of_subst_eq :
+  forall K (elem : kindElem K) env T,
+    tpSubst1 elem (tpSubst 1 env T) = tpSubst 0 (envConsElem elem env) T.
+
+Axiom indElem_invSeqSubst :
+  forall {env A e} (elem : indElem (Tp_Seq A (substTpExpr 0 env e))),
+    mseqIndElem (evalTpExpr env e) A.
+
+Axiom unfoldInd_subst_eq :
+  forall env A, unfoldIndTpDesc nil (tpSubst 1 env A) = unfoldIndTpDesc env A.
+
+Axiom subst1_eval_nil_subst_eq :
+  forall env EK (e : TpExpr EK) A,
+    tpSubst1 (K:=Kind_Expr EK)
+      (evalTpExpr nil (substTpExpr 0 env e)) (tpSubst 1 env A)
+    = tpSubst 0 (envConsElem (K:=Kind_Expr EK) (evalTpExpr env e) env) A.
+Print mkSeqIndElem.
+
+Axiom mkSeqIndElemSubst :
+  forall {env} T (e : TpExpr Kind_num),
+    mseqIndElem (evalTpExpr env e) (tpSubst 0 env T) ->
+    indElem (tpSubst 0 env (Tp_Seq T e)).
+
+
+Fixpoint interpToSpecFun E env T {struct T} :
   (forall args:TpFunInput env T, SpecM E (TpFunOutput args)) ->
   specFunEnv E env T :=
   match T return (forall args:TpFunInput env T, SpecM E (TpFunOutput args)) ->
@@ -207,8 +236,9 @@ Fixpoint interpToSpecFun E env T :
   | Tp_ExprSubst A EK e => fun _ => tt
   end
 with
-specFunToInterp E env T : specFunEnv E env T ->
-                          (forall args:TpFunInput env T, SpecM E (TpFunOutput args)) :=
+specFunToInterp E env T {struct T}
+  : specFunEnv E env T ->
+    (forall args:TpFunInput env T, SpecM E (TpFunOutput args)) :=
   match T return specFunEnv E env T ->
                  (forall args:TpFunInput env T, SpecM E (TpFunOutput args)) with
   | Tp_M R => fun m _ =>
@@ -231,13 +261,26 @@ specFunToInterp E env T : specFunEnv E env T ->
   | Tp_ExprSubst A EK e => fun _ _ => Monad.ret tt
   end
 with
-indToTpElem E env T : indElem (tpSubst 0 env T) -> tpElemEnv E env false T :=
+indToTpElem E env T {struct T} : indElem (tpSubst 0 env T) -> tpElemEnv E env false T :=
   match T return indElem (tpSubst 0 env T) -> tpElemEnv E env false T with
   | Tp_M R =>
       fun elem =>
-        interpToSpecFun E env (Tp_M R) (callIx (indElem_invM elem))
-  | Tp_Pi K B => _
-  | Tp_Arr A B => _
+        Functor.fmap (indToTpElem E env R) (callIxSubst (Tp_M R) (indElem_invM elem) tt)
+  | Tp_Pi K B =>
+      fun elem arg =>
+        interpToSpecFun
+          E (envConsElem arg env) B
+          (fun args =>
+             callIxSubst (Tp_Pi K B) (indElem_invPi elem) (existT _ arg args))
+  | Tp_Arr A B =>
+      fun elem arg =>
+        interpToSpecFun E env B
+          (fun args =>
+             Monad.bind
+               (u:=TpFunOutput (T:=B) args)
+               (tpToIndElem E env A arg)
+               (fun iarg =>
+                  callIxSubst (Tp_Arr A B) (indElem_invArr elem) (iarg, args)))
   | Tp_Kind K => fun elem => indElem_invKind elem
   | Tp_Pair A B =>
       fun elem => (indToTpElem E env A (fst (indElem_invPair elem)),
@@ -248,30 +291,122 @@ indToTpElem E env T : indElem (tpSubst 0 env T) -> tpElemEnv E env false T :=
         | inl x => inl (indToTpElem E env A x)
         | inr y => inr (indToTpElem E env B y)
         end
-  | Tp_Sigma K B => _
-  | Tp_Seq A e => _
-  | Tp_Void => _
-  | Tp_Ind A => _
-  | Tp_Var var => _
-  | Tp_TpSubst A B => _
-  | Tp_ExprSubst A EK e => _
+  | Tp_Sigma K B =>
+      fun elem =>
+        existT _ (projT1 (indElem_invSigma elem))
+          (indToTpElem E (envConsElem (projT1 (indElem_invSigma elem)) env) B
+             (eq_rect _ indElem (projT2 (indElem_invSigma elem)) _
+                (subst1_of_subst_eq _ _ _ _)))
+  | Tp_Seq A e =>
+      fun elem =>
+        (match evalTpExpr env e as len return
+               mseqIndElem len (tpSubst 0 env A) ->
+               mseq E len (tpElemEnv E env false A) with
+         | TCNum n => fun vec => VectorDef.map (indToTpElem E env A) vec
+         | TCInf =>
+             fun funix n =>
+               Functor.fmap (indToTpElem E env A)
+                 (callIxSubst (Tp_Arr Tp_Nat (Tp_M A)) funix
+                    (Elem_Kind (K:=Kind_Expr Kind_nat) n, tt))
+         end)
+          (indElem_invSeqSubst elem)
+  | Tp_Void => fun elem => match indElem_invVoid elem with end
+  | Tp_Ind A =>
+      fun elem => eq_rect _ indElem (indElem_invInd elem) _
+                    (unfoldInd_subst_eq _ _)
+  | Tp_Var var => fun elem => elem
+  | Tp_TpSubst A B =>
+      fun elem =>
+        indToTpElem E (@envConsElem _ Kind_Tp (tpSubst 0 env B) env) A
+          (eq_rect _ indElem (indElem_invTpSubst elem) _
+             (subst1_of_subst_eq _ _ _ _))
+  | Tp_ExprSubst A EK e =>
+      fun elem =>
+        indToTpElem E (@envConsElem _ (Kind_Expr EK) (evalTpExpr env e) env) A
+          (eq_rect _ indElem (indElem_invExprSubst elem) _
+             (subst1_eval_nil_subst_eq _ _ _ _))
   end
 with
-tpToIndElem E env T : tpElemEnv E env false T -> SpecM E (indElem (tpSubst 0 env T)) :=
+tpToIndElem E env T {struct T} : tpElemEnv E env false T -> SpecM E (indElem (tpSubst 0 env T)) :=
   match T return tpElemEnv E env false T -> SpecM E (indElem (tpSubst 0 env T)) with
-  | Tp_M R => _
-  | Tp_Pi K B => _
-  | Tp_Arr A B => _
-  | Tp_Kind K => _
-  | Tp_Pair A B => _
-  | Tp_Sum A B => _
-  | Tp_Sigma K B => _
-  | Tp_Seq A e => _
-  | Tp_Void => _
-  | Tp_Ind A => _
-  | Tp_Var var => _
-  | Tp_TpSubst A B => _
-  | Tp_ExprSubst A EK e => _
+  | Tp_M R =>
+      fun m =>
+        Functor.fmap Elem_M
+          (lambdaIxSubst (Tp_M R)
+             (fun _ => Monad.bind m (fun r => tpToIndElem E env R r)))
+  | Tp_Pi K B =>
+      fun f =>
+        Functor.fmap Elem_Pi
+          (lambdaIxSubst (Tp_Pi K B)
+             (fun args =>
+                specFunToInterp E (envConsElem (projT1 args) env) B
+                  (f (projT1 args)) (projT2 args)))
+  | Tp_Arr A B =>
+      fun f =>
+        Functor.fmap Elem_Arr
+          (lambdaIxSubst (Tp_Arr A B)
+             (fun args =>
+                specFunToInterp E env B
+                  (f (indToTpElem E env A (fst args))) (snd args)))
+  | Tp_Kind K => fun elem => Monad.ret (Elem_Kind elem)
+  | Tp_Pair A B =>
+      fun elem =>
+        Monad.bind (tpToIndElem E env A (fst elem))
+          (fun ielemA =>
+             Monad.bind (tpToIndElem E env B (snd elem))
+               (fun ielemB => Monad.ret (Elem_Pair ielemA ielemB)))
+  | Tp_Sum A B =>
+      fun elem =>
+        match elem with
+        | inl x => Functor.fmap Elem_SumL (tpToIndElem E env A x)
+        | inr y => Functor.fmap Elem_SumR (tpToIndElem E env B y)
+        end
+  | Tp_Sigma K B =>
+      fun elem =>
+        Functor.fmap
+          (fun ielem =>
+             Elem_Sigma (projT1 elem)
+               (eq_rect _ indElem ielem _ (eq_sym (subst1_of_subst_eq _ _ _ _))))
+          (tpToIndElem E (envConsElem (projT1 elem) env) B (projT2 elem))
+  | Tp_Seq A e =>
+      fun elem =>
+        Functor.fmap
+          (mkSeqIndElemSubst A e)
+          ((match evalTpExpr env e as len return
+                  mseq E len (tpElemEnv E env false A) ->
+                  SpecM E (mseqIndElem len (tpSubst 0 env A)) with
+            | TCNum n =>
+                fun v => vec_mapM (tpToIndElem E env A) n v
+            | TCInf =>
+                fun f =>
+                  lambdaIxSubst (Tp_Arr Tp_Nat (Tp_M A))
+                    (fun args =>
+                       Monad.bind (f (indElem_invKind (fst args))) (tpToIndElem E env A))
+            end)
+             elem)
+  | Tp_Void => fun elem => match elem with end
+  | Tp_Ind A =>
+      fun elem =>
+        Monad.ret (Elem_Ind
+                     (eq_rect _ indElem elem _
+                        (eq_sym (unfoldInd_subst_eq _ _))))
+  | Tp_Var var => fun elem => Monad.ret elem
+  | Tp_TpSubst A B =>
+      fun elem =>
+        Functor.fmap
+          (fun ielem =>
+             Elem_TpSubst
+               (eq_rect _ indElem ielem _
+                  (eq_sym (subst1_of_subst_eq _ _ _ _))))
+          (tpToIndElem E (@envConsElem _ Kind_Tp (tpSubst 0 env B) env) A elem)
+  | Tp_ExprSubst A EK e =>
+      fun elem =>
+        Functor.fmap
+          (fun ielem =>
+             Elem_ExprSubst
+               (eq_rect _ indElem ielem _
+                  (eq_sym (subst1_eval_nil_subst_eq _ _ _ _))))
+          (tpToIndElem E (@envConsElem _ (Kind_Expr EK) (evalTpExpr env e) env) A elem)
   end
 .
 
