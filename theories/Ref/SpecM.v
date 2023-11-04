@@ -410,105 +410,25 @@ tpToIndElem E env T {struct T} : tpElemEnv E env false T -> SpecM E (indElem (tp
   end
 .
 
-
-Fixpoint tpToSpecElem E env T : tpElemEnv env T ->
-                                specElemEnv E env false T :=
-  match T return tpElemEnv env T -> specElemEnv E env false T with
-  | Tp_M R => fun ix => Functor.fmap (tpToSpecElem E env R) (callIx ix)
-  | Tp_Pi K B =>
-      fun ix elem =>
-        funToSpecElem E (envConsElem elem env) B (callIx ix elem)
-(*
-  | Tp_Arr A B => FunIx (tpSubst 0 env (Tp_Arr A B))
-  | Tp_Kind K => kindElem K
-  | Tp_Pair A B => tpElemEnv env A * tpElemEnv env B
-  | Tp_Sum A B => tpElemEnv env A + tpElemEnv env B
-  | Tp_Sigma K B => { elem: kindElem K & tpElemEnv (envConsElem elem env) B }
-  | Tp_Seq A e =>
-      match evalTpExpr env e with
-      | TCInf => FunIx (Tp_Arr Tp_Nat (tpSubst 0 env A))
-      | TCNum n => VectorDef.t (tpElemEnv env A) n
-      end
-  | Tp_Void => Empty_set
-  | Tp_Ind A => indElem nil (unfoldIndTpDesc env A)
-  | Tp_Var var => indElem nil (evalVar 0 env Kind_Tp var)
-  | Tp_TpSubst A B =>
-      tpElemEnv (@envConsElem Kind_Tp (tpSubst 0 env B) env) A
-  | Tp_ExprSubst A EK e =>
-      tpElemEnv (@envConsElem (Kind_Expr EK) (evalTpExpr env e) env) A
-*)
-  end
-with
-specToTpElem E env T : specElemEnv E env false T ->
-                       SpecM E (tpElemEnv env T) :=
-  match T return specElemEnv E env false T -> SpecM E (tpElemEnv env T) with
-
-  end
-with
-funToSpecElem E env T : specFunElem E env T ->
-                        specElemEnv E env true T :=
-  match T return specFunElem E env T -> specElemEnv E env true T with
-  | Tp_M R => Functor.fmap (tpToSpecElem E env R)
-(*
-  | Tp_Pi K B => FunIx (tpSubst 0 env (Tp_Pi K B))
-  | Tp_Arr A B => FunIx (tpSubst 0 env (Tp_Arr A B))
-  | Tp_Kind K => kindElem K
-  | Tp_Pair A B => tpElemEnv env A * tpElemEnv env B
-  | Tp_Sum A B => tpElemEnv env A + tpElemEnv env B
-  | Tp_Sigma K B => { elem: kindElem K & tpElemEnv (envConsElem elem env) B }
-  | Tp_Seq A e =>
-      match evalTpExpr env e with
-      | TCInf => FunIx (Tp_Arr Tp_Nat (tpSubst 0 env A))
-      | TCNum n => VectorDef.t (tpElemEnv env A) n
-      end
-  | Tp_Void => Empty_set
-  | Tp_Ind A => indElem nil (unfoldIndTpDesc env A)
-  | Tp_Var var => indElem nil (evalVar 0 env Kind_Tp var)
-  | Tp_TpSubst A B =>
-      tpElemEnv (@envConsElem Kind_Tp (tpSubst 0 env B) env) A
-  | Tp_ExprSubst A EK e =>
-      tpElemEnv (@envConsElem (Kind_Expr EK) (evalTpExpr env e) env) A
-*)
-  end
-with
-specElemToFun E env T : specElemEnv E env true T ->
-                        specFunElem E env T :=
-  match T return specElemEnv E env true T -> SpecM E (specFunElem E env true T) with
-
-  end.
-
-
-
-FIXME HERE NOW:
-- make 4 corecursive functions, for tpElem -> specElem and vice versa and for
-  isf = true and isf = false
-- The specElem -> tpElem funs are monadic, becaause they need to call LambdaS
-- for the isf = true funs, maintain an argument context / extended env that
-  contains Pi and Arr args; also, the input is not a funElem T but rather a
-  funElem (absArgs args T), where absArgs abstracts over the Pi and Arr types
-  in args
-
-
-
-
-FIXME HERE NOW: old stuff below
-
-(* Call a function index in a specification *)
-Definition CallS {E T} (f : FunIx T) : specFun E nil T :=
-  funInterpToElem (fun args => Fx_Call (MkFunCall T f args) (fun x => Fx_Ret x)).
-
-(* Create a function index from a specification function in a specification *)
-Definition LambdaS {E T} (f : specFun E nil T) : SpecM E (FunIx T) :=
-  Fx_MkFuns (fun _ => mkMultiFxInterp1 T (funElemToInterp f))
+Definition fixIx {E T} (f: forall (_:FunIx T) (args:TpFunInput nil T),
+      SpecM E (TpFunOutput args)) : SpecM E (FunIx T) :=
+  Fx_MkFuns
+    (fun ixs => mkMultiFxInterp1 T (f (headFunIx ixs)))
     (fun ixs => Fx_Ret (headFunIx ixs)).
 
 (* Create a lambda as a fixed-point that can call itself. Note that the type of
-   f, FunIx T -> specFun E nil T, is the same as specFun E nil (Tp_Arr T T)
-   when T is a monadic function type. *)
-Definition FixS {E T} (f: FunIx T -> specFun E nil T) : SpecM E (FunIx T) :=
-  Fx_MkFuns
-    (fun ixs => mkMultiFxInterp1 T (funElemToInterp (f (headFunIx ixs))))
-    (fun ixs => Fx_Ret (headFunIx ixs)).
+   f, specFun E T -> specFun E T, is the same as specFun E (Tp_Arr T T) when T
+   is a monadic function type. *)
+Definition FixS {E T} (f: specFun E T -> specFun E T) : SpecM E (specFun E T) :=
+  Functor.fmap
+    (fun funix => interpToSpecFun E nil T (callIx funix))
+    (fixIx (fun funix =>
+              specFunToInterp E nil T
+                (f (interpToSpecFun E nil T (callIx funix))))).
+
+
+FIXME HERE NOW: update MultiFixS and LetRecS to use the new tpElem and specFun!
+
 
 
 (**
