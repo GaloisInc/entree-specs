@@ -121,27 +121,31 @@ Definition mseq (E:EvType) len (A:Type@{entree_u}) : Type@{entree_u} :=
   | TCInf => nat -> SpecM E A
   end.
 
+(* Specialized inductive type to indicate if a type description is to be treated
+as a monadic function or as a data type *)
+Inductive FunFlag : Set := IsFun | IsData.
+
 (* Elements of type descriptions that use monadic functions instead of FunIxs.
-If the Boolean flag is true, we are translating a monadic function type, and
+If the FunFlag flag is true, we are translating a monadic function type, and
 should use funElem *)
-Fixpoint tpElemEnv (E:EvType) env isf T : Type@{entree_u} :=
+Fixpoint tpElemEnv (E:EvType) env (isf : FunFlag) T : Type@{entree_u} :=
   match T with
-  | Tp_M R => SpecM E (tpElemEnv E env false R)
+  | Tp_M R => SpecM E (tpElemEnv E env IsData R)
   | Tp_Pi K B =>
-      forall (elem:kindElem K), tpElemEnv E (envConsElem elem env) true B
+      forall (elem:kindElem K), tpElemEnv E (envConsElem elem env) IsFun B
   | Tp_Arr A B =>
-      tpElemEnv E env false A -> tpElemEnv E env true B
+      tpElemEnv E env IsData A -> tpElemEnv E env IsFun B
   | Tp_Kind K =>
       if isf then unit else kindElem K
   | Tp_Pair A B =>
-      if isf then unit else tpElemEnv E env false A * tpElemEnv E env false B
+      if isf then unit else tpElemEnv E env IsData A * tpElemEnv E env IsData B
   | Tp_Sum A B =>
-      if isf then unit else tpElemEnv E env false A + tpElemEnv E env false B
+      if isf then unit else tpElemEnv E env IsData A + tpElemEnv E env IsData B
   | Tp_Sigma K B =>
       if isf then unit else
-        { elem: kindElem K & tpElemEnv E (envConsElem elem env) false B }
+        { elem: kindElem K & tpElemEnv E (envConsElem elem env) IsData B }
   | Tp_Seq A e =>
-      if isf then unit else mseq E (evalTpExpr env e) (tpElemEnv E env false A)
+      if isf then unit else mseq E (evalTpExpr env e) (tpElemEnv E env IsData A)
   | Tp_Void => if isf then unit else Empty_set
   | Tp_Ind A =>
       if isf then unit else indElem (unfoldIndTpDesc env A)
@@ -149,16 +153,16 @@ Fixpoint tpElemEnv (E:EvType) env isf T : Type@{entree_u} :=
       if isf then unit else indElem (tpSubst 0 env (Tp_Var var))
   | Tp_TpSubst A B =>
       if isf then unit else
-        tpElemEnv E (envConsElem (K:=Kind_Tp) (tpSubst 0 env B) env) false A
+        tpElemEnv E (envConsElem (K:=Kind_Tp) (tpSubst 0 env B) env) IsData A
   | Tp_ExprSubst A EK e =>
       if isf then unit else
-        tpElemEnv E (envConsElem (K:=Kind_Expr EK) (evalTpExpr env e) env) false A
+        tpElemEnv E (envConsElem (K:=Kind_Expr EK) (evalTpExpr env e) env) IsData A
   end.
 
-Definition tpElem E T := tpElemEnv E nil false T.
+Definition tpElem E T := tpElemEnv E nil IsData T.
 
-Definition specFunEnv E env T := tpElemEnv E env true T.
-Definition specFun E T := tpElemEnv E nil true T.
+Definition specFunEnv E env T := tpElemEnv E env IsFun T.
+Definition specFun E T := tpElemEnv E nil IsFun T.
 
 Definition specIndFun E env T := indFun (SpecEv E) env T.
 
@@ -260,8 +264,8 @@ specFunToInterp E env T {struct T}
   | Tp_ExprSubst A EK e => fun _ _ => Monad.ret tt
   end
 with
-indToTpElem E env T {struct T} : indElem (tpSubst 0 env T) -> tpElemEnv E env false T :=
-  match T return indElem (tpSubst 0 env T) -> tpElemEnv E env false T with
+indToTpElem E env T {struct T} : indElem (tpSubst 0 env T) -> tpElemEnv E env IsData T :=
+  match T return indElem (tpSubst 0 env T) -> tpElemEnv E env IsData T with
   | Tp_M R =>
       fun elem =>
         Functor.fmap (indToTpElem E env R) (callIxSubst (Tp_M R) (indElem_invM elem) tt)
@@ -300,7 +304,7 @@ indToTpElem E env T {struct T} : indElem (tpSubst 0 env T) -> tpElemEnv E env fa
       fun elem =>
         (match evalTpExpr env e as len return
                mseqIndElem len (tpSubst 0 env A) ->
-               mseq E len (tpElemEnv E env false A) with
+               mseq E len (tpElemEnv E env IsData A) with
          | TCNum n => fun vec => VectorDef.map (indToTpElem E env A) vec
          | TCInf =>
              fun funix n =>
@@ -326,8 +330,8 @@ indToTpElem E env T {struct T} : indElem (tpSubst 0 env T) -> tpElemEnv E env fa
              (subst1_eval_nil_subst_eq _ _ _ _))
   end
 with
-tpToIndElem E env T {struct T} : tpElemEnv E env false T -> SpecM E (indElem (tpSubst 0 env T)) :=
-  match T return tpElemEnv E env false T -> SpecM E (indElem (tpSubst 0 env T)) with
+tpToIndElem E env T {struct T} : tpElemEnv E env IsData T -> SpecM E (indElem (tpSubst 0 env T)) :=
+  match T return tpElemEnv E env IsData T -> SpecM E (indElem (tpSubst 0 env T)) with
   | Tp_M R =>
       fun m =>
         Functor.fmap Elem_M
@@ -372,7 +376,7 @@ tpToIndElem E env T {struct T} : tpElemEnv E env false T -> SpecM E (indElem (tp
         Functor.fmap
           (mkSeqIndElemSubst A e)
           ((match evalTpExpr env e as len return
-                  mseq E len (tpElemEnv E env false A) ->
+                  mseq E len (tpElemEnv E env IsData A) ->
                   SpecM E (mseqIndElem len (tpSubst 0 env A)) with
             | TCNum n =>
                 fun v => vec_mapM (tpToIndElem E env A) n v
