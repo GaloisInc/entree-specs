@@ -197,7 +197,6 @@ Axiom subst1_eval_nil_subst_eq :
     tpSubst1 (K:=Kind_Expr EK)
       (evalTpExpr nil (substTpExpr 0 env e)) (tpSubst 1 env A)
     = tpSubst 0 (envConsElem (K:=Kind_Expr EK) (evalTpExpr env e) env) A.
-Print mkSeqIndElem.
 
 Axiom mkSeqIndElemSubst :
   forall {env} T (e : TpExpr Kind_num),
@@ -427,33 +426,37 @@ Definition FixS {E T} (f: specFun E T -> specFun E T) : SpecM E (specFun E T) :=
                 (f (interpToSpecFun E nil T (callIx funix))))).
 
 
-FIXME HERE NOW: update MultiFixS and LetRecS to use the new tpElem and specFun!
-
-
-
 (**
  ** Defining a multi-way fixed point
  **)
-
-(* Build the multi-arity function type FunIx T1 -> ... FunIx Tn -> A *)
-Fixpoint arrowIxs (Ts : list TpDesc) (A : Type@{entree_u}) : Type@{entree_u} :=
-  match Ts with
-  | nil => A
-  | T :: Ts' => FunIx T -> arrowIxs Ts' A
-  end.
-
-(* Apply a multi-arity function over indexes to a list of indexes *)
-Fixpoint applyArrowIxs {Ts A} : arrowIxs Ts A -> FunIxs Ts -> A :=
-  match Ts return arrowIxs Ts A -> FunIxs Ts -> A with
-  | nil => fun f _ => f
-  | T :: Ts' => fun f ixs => applyArrowIxs (f (headFunIx ixs)) (tailFunIxs ixs)
-  end.
 
 (* A tuple of spec functions of the given types *)
 Fixpoint specFuns E Ts : Type@{entree_u} :=
   match Ts with
   | nil => unit
-  | T :: Ts' => specFun E nil T * specFuns E Ts'
+  | T :: Ts' => specFun E T * specFuns E Ts'
+  end.
+
+(* Convert a sequence of function indices to a tuple of specFuns *)
+Fixpoint funIxsToSpecFuns {E Ts} : FunIxs Ts -> specFuns E Ts :=
+  match Ts return FunIxs Ts -> specFuns E Ts with
+  | nil => fun _ => tt
+  | T :: Ts' => fun ixs => (interpToSpecFun E nil T (callIx (headFunIx ixs)),
+                             funIxsToSpecFuns (tailFunIxs ixs))
+  end.
+
+(* Build the multi-arity function type specFun E T1 -> ... specFun E Tn -> A *)
+Fixpoint arrowSpecFuns E (Ts : list TpDesc) (A : Type@{entree_u}) : Type@{entree_u} :=
+  match Ts with
+  | nil => A
+  | T :: Ts' => specFun E T -> arrowSpecFuns E Ts' A
+  end.
+
+(* Apply a multi-arity function over specFuns to a tuple of specFuns *)
+Fixpoint applyArrowSpecFuns {E Ts A} : arrowSpecFuns E Ts A -> specFuns E Ts -> A :=
+  match Ts return arrowSpecFuns E Ts A -> specFuns E Ts -> A with
+  | nil => fun f _ => f
+  | T :: Ts' => fun f tup => applyArrowSpecFuns (f (fst tup)) (snd tup)
   end.
 
 (* FIXME: move this somewhere more relevant *)
@@ -465,38 +468,20 @@ Fixpoint specFunsToMultiInterp {E Ts} : specFuns E Ts -> MultiFxInterp (SpecEv E
   | nil => fun _ => mkMultiFxInterp0
   | T :: Ts' =>
       fun fs =>
-        consMultiFxInterp (funElemToInterp (fst fs)) (specFunsToMultiInterp (snd fs))
+        consMultiFxInterp (specFunToInterp E nil T (fst fs))
+          (specFunsToMultiInterp (snd fs))
   end.
-
-(*
-(* The type of a tuple of spec functions of types Us that take in FunIxs Ts *)
-Fixpoint arrowIxsSpecFuns E (Ts Us : list TpDesc) : Type@{entree_u} :=
-  match Us with
-  | nil => unit
-  | U :: Us' => arrowIxs Ts (specFun E nil U) * arrowIxsSpecFuns E Ts Us'
-  end.
-
-(* Apply an arrowIxsSpecFuns list to a list of FunIxs to get a specFuns list *)
-Fixpoint applyArrowIxsSpecFuns {E Ts Us} : arrowIxsSpecFuns E Ts Us -> FunIxs Ts ->
-                                           specFuns E Us :=
-  match Us return arrowIxsSpecFuns E Ts Us -> FunIxs Ts -> specFuns E Us with
-  | nil => fun _ _ => tt
-  | U :: Us' => fun fs ixs => (applyArrowIxs (fst fs) ixs,
-                                applyArrowIxsSpecFuns (snd fs) ixs)
-  end.
-*)
 
 Definition MultiFixBodies E Ts : Type@{entree_u} :=
-  arrowIxs Ts (specFuns E Ts).
+  arrowSpecFuns E Ts (specFuns E Ts).
 
-Definition MultiFixS {E Ts} (funs : MultiFixBodies E Ts) : SpecM E (FunIxs Ts) :=
+Definition MultiFixS {E Ts} (funs : MultiFixBodies E Ts) : SpecM E (specFuns E Ts) :=
   Fx_MkFuns
-    (fun ixs => specFunsToMultiInterp (applyArrowIxs funs ixs))
-    (fun ixs => Fx_Ret ixs).
+    (fun ixs => specFunsToMultiInterp (applyArrowSpecFuns funs (funIxsToSpecFuns ixs)))
+    (fun ixs => Fx_Ret (funIxsToSpecFuns ixs)).
 
 Definition LetRecS {E Ts A}
-  (funs : MultiFixBodies E Ts) (body : arrowIxs Ts (SpecM E A)) : SpecM E A :=
-  BindS (MultiFixS funs) (applyArrowIxs body).
-
+  (funs : MultiFixBodies E Ts) (body : arrowSpecFuns E Ts (SpecM E A)) : SpecM E A :=
+  BindS (MultiFixS funs) (applyArrowSpecFuns body).
 
 End SpecM.
