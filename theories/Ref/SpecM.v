@@ -185,6 +185,8 @@ Axiom lambdaIxSubst :
          (f : forall args : TpFunInput env T, SpecM E (TpFunOutput args)),
     SpecM E (FunIx (tpSubst 0 env T)).
 
+Axiom subst_nil_eq : forall n T, tpSubst n nil T = T.
+
 Axiom subst1_of_subst_eq :
   forall K (elem : kindElem K) env T,
     tpSubst1 elem (tpSubst 1 env T) = tpSubst 0 (envConsElem elem env) T.
@@ -412,6 +414,22 @@ tpToIndElem E env T {struct T} : tpElemEnv E env IsData T -> SpecM E (indElem (t
           (tpToIndElem E (@envConsElem _ (Kind_Expr EK) (evalTpExpr env e) env) A elem)
   end
 .
+
+
+(* Fold an element of an inductive type; note that this must be monadic, because
+the inductive type element could contain specFuns, which need to get turned into
+function indices *)
+Definition foldTpElem {E T} (elem : tpElem E (unfoldIndTpDesc nil T)) :
+  SpecM E (tpElem E (Tp_Ind T)) :=
+  eq_rect _ (fun U => SpecM E (indElem U)) (tpToIndElem E nil _ elem)
+    _ (subst_nil_eq _ _).
+
+(* Unfold an element of an inductive type *)
+Definition unfoldTpElem {E T} (elem : tpElem E (Tp_Ind T)) :
+  tpElem E (unfoldIndTpDesc nil T) :=
+  indToTpElem E nil _ (eq_rect _ indElem elem
+                         _ (sym_eq (subst_nil_eq _ _))).
+
 
 (* Generate a function index for a fixpoint over a single function *)
 Definition fixIx {E T} (f: forall (_:FunIx T) (args:TpFunInput nil T),
