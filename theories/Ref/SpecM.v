@@ -413,21 +413,38 @@ tpToIndElem E env T {struct T} : tpElemEnv E env IsData T -> SpecM E (indElem (t
   end
 .
 
+(* Generate a function index for a fixpoint over a single function *)
 Definition fixIx {E T} (f: forall (_:FunIx T) (args:TpFunInput nil T),
       SpecM E (TpFunOutput args)) : SpecM E (FunIx T) :=
   Fx_MkFuns
     (fun ixs => mkMultiFxInterp1 T (f (headFunIx ixs)))
     (fun ixs => Fx_Ret (headFunIx ixs)).
 
+(* Monadic join, turning M (M A) into just M A *)
+Definition joinM {E A} (m : SpecM E (SpecM E A)) : SpecM E A :=
+  Monad.bind m (fun x => x).
+
+(* Do a form of monadic join, turning a computation of a monadic computation
+into just a monadic computation *)
+Fixpoint joinSpecFun {E env T} : SpecM E (specFunEnv E env T) -> specFunEnv E env T :=
+  match T return SpecM E (specFunEnv E env T) -> specFunEnv E env T with
+  | Tp_M R => fun m => joinM m
+  | Tp_Pi K B =>
+      fun mf elem => joinSpecFun (Functor.fmap (fun f => f elem) mf)
+  | Tp_Arr A B => fun mf arg => joinSpecFun (Functor.fmap (fun f => f arg) mf)
+  | _ => fun _ => tt
+  end.
+
 (* Create a lambda as a fixed-point that can call itself. Note that the type of
    f, specFun E T -> specFun E T, is the same as specFun E (Tp_Arr T T) when T
    is a monadic function type. *)
-Definition FixS {E T} (f: specFun E T -> specFun E T) : SpecM E (specFun E T) :=
-  Functor.fmap
-    (fun funix => interpToSpecFun E nil T (callIx funix))
-    (fixIx (fun funix =>
-              specFunToInterp E nil T
-                (f (interpToSpecFun E nil T (callIx funix))))).
+Definition FixS {E T} (f: specFun E T -> specFun E T) : specFun E T :=
+  joinSpecFun
+    (Functor.fmap
+       (fun funix => interpToSpecFun E nil T (callIx funix))
+       (fixIx (fun funix =>
+                 specFunToInterp E nil T
+                   (f (interpToSpecFun E nil T (callIx funix)))))).
 
 
 (**
@@ -448,6 +465,15 @@ Fixpoint funIxsToSpecFuns {E Ts} : FunIxs Ts -> specFuns E Ts :=
   | T :: Ts' => fun ixs => (interpToSpecFun E nil T (callIx (headFunIx ixs)),
                              funIxsToSpecFuns (tailFunIxs ixs))
   end.
+
+(* Do a joinSpecFun on a tuple of specFuns *)
+Fixpoint joinSpecFuns {E Ts} : SpecM E (specFuns E Ts) -> specFuns E Ts :=
+  match Ts return SpecM E (specFuns E Ts) -> specFuns E Ts with
+  | nil => fun _ => tt
+  | T :: Ts' => fun m => (joinSpecFun (Functor.fmap fst m),
+                           joinSpecFuns (Functor.fmap snd m))
+  end.
+
 
 (* Build the multi-arity function type specFun E T1 -> ... specFun E Tn -> A *)
 Fixpoint arrowSpecFuns E (Ts : list TpDesc) (A : Type@{entree_u}) : Type@{entree_u} :=
@@ -479,13 +505,14 @@ Fixpoint specFunsToMultiInterp {E Ts} : specFuns E Ts -> MultiFxInterp (SpecEv E
 Definition MultiFixBodies E Ts : Type@{entree_u} :=
   arrowSpecFuns E Ts (specFuns E Ts).
 
-Definition MultiFixS {E Ts} (funs : MultiFixBodies E Ts) : SpecM E (specFuns E Ts) :=
-  Fx_MkFuns
-    (fun ixs => specFunsToMultiInterp (applyArrowSpecFuns funs (funIxsToSpecFuns ixs)))
-    (fun ixs => Fx_Ret (funIxsToSpecFuns ixs)).
+Definition MultiFixS {E Ts} (funs : MultiFixBodies E Ts) : specFuns E Ts :=
+  joinSpecFuns
+    (Fx_MkFuns
+       (fun ixs => specFunsToMultiInterp (applyArrowSpecFuns funs (funIxsToSpecFuns ixs)))
+       (fun ixs => Fx_Ret (funIxsToSpecFuns ixs))).
 
 Definition LetRecS {E Ts A}
   (funs : MultiFixBodies E Ts) (body : arrowSpecFuns E Ts (SpecM E A)) : SpecM E A :=
-  BindS (MultiFixS funs) (applyArrowSpecFuns body).
+  applyArrowSpecFuns body (MultiFixS funs).
 
 End SpecM.
