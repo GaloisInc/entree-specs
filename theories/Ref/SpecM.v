@@ -113,12 +113,25 @@ Definition interp_SpecM {E R} (t:SpecM E R) : entree (SpecEv E) R :=
  ** Specification Elements of Type Descriptions
  **)
 
+(* An infinite stream represented as a function from a natural number index to
+the element at that index *)
+Inductive Stream (A:Type@{entree_u}) : Type@{entree_u} :=
+| MkStream (f : nat -> A).
+
+Arguments MkStream {_} _.
+
+(* Get the element of a stream at a particular index *)
+Definition streamGet {A} (s:Stream A) i : A :=
+  match s with
+  | MkStream f => f i
+  end.
+
 (* A finite or infinite sequence, where the latter is represented as a monadic
 function from the natural number index to the element at that index *)
 Definition mseq (E:EvType) len (A:Type@{entree_u}) : Type@{entree_u} :=
   match len with
   | TCNum n => VectorDef.t A n
-  | TCInf => nat -> SpecM E A
+  | TCInf => Stream (SpecM E A)
   end.
 
 (* Specialized inductive type to indicate if a type description is to be treated
@@ -309,10 +322,12 @@ indToTpElem E env T {struct T} : indElem (tpSubst 0 env T) -> tpElemEnv E env Is
                mseq E len (tpElemEnv E env IsData A) with
          | TCNum n => fun vec => VectorDef.map (indToTpElem E env A) vec
          | TCInf =>
-             fun funix n =>
-               Functor.fmap (indToTpElem E env A)
-                 (callIxSubst (Tp_Arr Tp_Nat (Tp_M A)) funix
-                    (Elem_Kind (K:=Kind_Expr Kind_nat) n, tt))
+             fun funix =>
+               MkStream
+                 (fun n =>
+                    Functor.fmap (indToTpElem E env A)
+                      (callIxSubst (Tp_Arr Tp_Nat (Tp_M A)) funix
+                         (Elem_Kind (K:=Kind_Expr Kind_nat) n, tt)))
          end)
           (indElem_invSeqSubst elem)
   | Tp_Void => fun elem => match indElem_invVoid elem with end
@@ -383,10 +398,10 @@ tpToIndElem E env T {struct T} : tpElemEnv E env IsData T -> SpecM E (indElem (t
             | TCNum n =>
                 fun v => vec_mapM (tpToIndElem E env A) n v
             | TCInf =>
-                fun f =>
+                fun s =>
                   lambdaIxSubst (Tp_Arr Tp_Nat (Tp_M A))
                     (fun args =>
-                       Monad.bind (f (indElem_invKind (fst args))) (tpToIndElem E env A))
+                       Monad.bind (streamGet s (indElem_invKind (fst args))) (tpToIndElem E env A))
             end)
              elem)
   | Tp_Void => fun elem => match elem with end
