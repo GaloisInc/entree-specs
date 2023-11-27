@@ -104,7 +104,7 @@ Inductive TpDesc : Type@{entree_u} :=
 | Tp_Pair (A : TpDesc) (B : TpDesc)
 | Tp_Sum (A : TpDesc) (B : TpDesc)
 | Tp_Sigma (K : KindDesc) (B : TpDesc)
-| Tp_Seq (A : TpDesc) (e:TpExpr Kind_num)
+| Tp_Seq (e:TpExpr Kind_num) (A : TpDesc)
 | Tp_Void
 
 (* Inductive types and type variables *)
@@ -323,7 +323,7 @@ Fixpoint tpSubst n env (T:TpDesc) : TpDesc :=
   | Tp_Pair A B => Tp_Pair (tpSubst n env A) (tpSubst n env B)
   | Tp_Sum A B => Tp_Sum (tpSubst n env A) (tpSubst n env B)
   | Tp_Sigma A B => Tp_Sigma A (tpSubst (S n) env B)
-  | Tp_Seq A e => Tp_Seq (tpSubst n env A) (substTpExpr n env e)
+  | Tp_Seq e A => Tp_Seq (substTpExpr n env e) (tpSubst n env A)
   | Tp_Void => Tp_Void
   | Tp_Ind A => Tp_Ind (tpSubst (S n) env A)
   | Tp_Var var => match substVar n env Kind_Tp var with
@@ -362,14 +362,14 @@ Inductive indElem : TpDesc -> Type@{entree_u} :=
 | Elem_SumR {A B} (elem: indElem B) : indElem (Tp_Sum A B)
 | Elem_Sigma {K B} (elem1: kindElem K) (elem2: indElem (tpSubst1 elem1 B))
   : indElem (Tp_Sigma K B)
-| Elem_SeqNil {A} : indElem (Tp_Seq A TpExprZ)
+| Elem_SeqNil {A} : indElem (Tp_Seq TpExprZ A)
 | Elem_SeqInf {A} (f:FunIx (Tp_Arr Tp_Nat (Tp_M A))) :
-  indElem (Tp_Seq A TpExprInf)
+  indElem (Tp_Seq TpExprInf A)
 | Elem_SeqCons {A n} (elem1: indElem A)
-    (elem2: indElem (Tp_Seq A (TpExprN n)))
-  : indElem (Tp_Seq A (TpExprN (S n)))
+    (elem2: indElem (Tp_Seq (TpExprN n) A))
+  : indElem (Tp_Seq (TpExprN (S n)) A)
 | Elem_SeqCast {A e1 e2} (e: evalTpExpr nil e1 = evalTpExpr nil e2)
-    (elem: indElem (Tp_Seq A e1)) : indElem (Tp_Seq A e2)
+    (elem: indElem (Tp_Seq e1 A)) : indElem (Tp_Seq e2 A)
 (* No case for Tp_Void *)
 | Elem_Ind {A} (elem: indElem (unfoldIndTpDesc nil A))
   : indElem (Tp_Ind A)
@@ -384,8 +384,8 @@ Inductive indElem : TpDesc -> Type@{entree_u} :=
 
 (* Helper function to build a vector indElem with a constant size *)
 Fixpoint mkVecIndElemConst {T n} :
-  VectorDef.t (indElem T) n -> indElem (Tp_Seq T (TpExprN n)) :=
-  match n return VectorDef.t (indElem T) n -> indElem (Tp_Seq T (TpExprN n)) with
+  VectorDef.t (indElem T) n -> indElem (Tp_Seq (TpExprN n) T) :=
+  match n return VectorDef.t (indElem T) n -> indElem (Tp_Seq (TpExprN n) T) with
   | 0 => fun _ => Elem_SeqNil
   | S n' =>
        fun elems =>
@@ -401,7 +401,7 @@ Definition mseqIndElem (len:Num) A : Type@{entree_u} :=
 
 (* Helper function to build a sequence indElem from an mseqIndElem *)
 Definition mkSeqIndElem {T} {e:TpExpr Kind_num}
-  (elems:mseqIndElem (evalTpExpr nil e) T) : indElem (Tp_Seq T e).
+  (elems:mseqIndElem (evalTpExpr nil e) T) : indElem (Tp_Seq e T).
 Proof.
   apply (Elem_SeqCast (e1:=@TpExpr_Const Kind_num (evalTpExpr nil e)));
     [ reflexivity | ].
@@ -434,10 +434,10 @@ Definition indElem_invSigma {K B} (elem : indElem (Tp_Sigma K B)) :
   { elem : kindElem K & indElem (tpSubst1 elem B) }.
 Proof. inversion elem; econstructor; eassumption. Defined.
 
-Definition indElem_invSeq {A e} (elem : indElem (Tp_Seq A e)) :
+Definition indElem_invSeq {A e} (elem : indElem (Tp_Seq e A)) :
   mseqIndElem (evalTpExpr nil e) A.
 Proof.
-  - remember (Tp_Seq A e) as T. revert A e HeqT; induction elem; intros; inversion HeqT.
+  - remember (Tp_Seq e A) as T. revert A e HeqT; induction elem; intros; inversion HeqT.
     + apply VectorDef.nil.
     + subst A0. apply f.
     + subst A0. apply VectorDef.cons; [ apply elem1 | ].

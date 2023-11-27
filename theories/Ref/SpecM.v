@@ -157,7 +157,7 @@ Fixpoint tpElemEnv (E:EvType) env (isf : FunFlag) T : Type@{entree_u} :=
   | Tp_Sigma K B =>
       if isf then unit else
         { elem: kindElem K & tpElemEnv E (envConsElem elem env) IsData B }
-  | Tp_Seq A e =>
+  | Tp_Seq e A =>
       if isf then unit else mseq E (evalTpExpr env e) (tpElemEnv E env IsData A)
   | Tp_Void => if isf then unit else Empty_set
   | Tp_Ind A =>
@@ -205,7 +205,7 @@ Axiom subst1_of_subst_eq :
     tpSubst1 elem (tpSubst 1 env T) = tpSubst 0 (envConsElem elem env) T.
 
 Axiom indElem_invSeqSubst :
-  forall {env A e} (elem : indElem (Tp_Seq A (substTpExpr 0 env e))),
+  forall {env A e} (elem : indElem (Tp_Seq (substTpExpr 0 env e) A)),
     mseqIndElem (evalTpExpr env e) A.
 
 Axiom unfoldInd_subst_eq :
@@ -220,7 +220,7 @@ Axiom subst1_eval_nil_subst_eq :
 Axiom mkSeqIndElemSubst :
   forall {env} T (e : TpExpr Kind_num),
     mseqIndElem (evalTpExpr env e) (tpSubst 0 env T) ->
-    indElem (tpSubst 0 env (Tp_Seq T e)).
+    indElem (tpSubst 0 env (Tp_Seq e T)).
 
 
 Fixpoint interpToSpecFun E env T {struct T} :
@@ -246,7 +246,7 @@ Fixpoint interpToSpecFun E env T {struct T} :
   | Tp_Pair A B => fun _ => tt
   | Tp_Sum A B => fun _ => tt
   | Tp_Sigma K B => fun _ => tt
-  | Tp_Seq A e => fun _ => tt
+  | Tp_Seq e A => fun _ => tt
   | Tp_Void => fun _ => tt
   | Tp_Ind A => fun _ => tt
   | Tp_Var var => fun _ => tt
@@ -271,7 +271,7 @@ specFunToInterp E env T {struct T}
   | Tp_Pair A B => fun _ _ => Monad.ret tt
   | Tp_Sum A B => fun _ _ => Monad.ret tt
   | Tp_Sigma K B => fun _ _ => Monad.ret tt
-  | Tp_Seq A e => fun _ _ => Monad.ret tt
+  | Tp_Seq e A => fun _ _ => Monad.ret tt
   | Tp_Void => fun _ _ => Monad.ret tt
   | Tp_Ind A => fun _ _ => Monad.ret tt
   | Tp_Var var => fun _ _ => Monad.ret tt
@@ -315,7 +315,7 @@ indToTpElem E env T {struct T} : indElem (tpSubst 0 env T) -> tpElemEnv E env Is
           (indToTpElem E (envConsElem (projT1 (indElem_invSigma elem)) env) B
              (eq_rect _ indElem (projT2 (indElem_invSigma elem)) _
                 (subst1_of_subst_eq _ _ _ _)))
-  | Tp_Seq A e =>
+  | Tp_Seq e A =>
       fun elem =>
         (match evalTpExpr env e as len return
                mseqIndElem len (tpSubst 0 env A) ->
@@ -388,7 +388,7 @@ tpToIndElem E env T {struct T} : tpElemEnv E env IsData T -> SpecM E (indElem (t
              Elem_Sigma (projT1 elem)
                (eq_rect _ indElem ielem _ (eq_sym (subst1_of_subst_eq _ _ _ _))))
           (tpToIndElem E (envConsElem (projT1 elem) env) B (projT2 elem))
-  | Tp_Seq A e =>
+  | Tp_Seq e A =>
       fun elem =>
         Functor.fmap
           (mkSeqIndElemSubst A e)
