@@ -181,8 +181,9 @@ Qed.
 
 End interp_mrec_spec_quantr.
 
+(*
 Lemma refines_liftStackS_proper:
-  forall (E1 : EvType) (Γ1 : list RecFrame) (frame1 : RecFrame) (R1 : Type) (t1 t2 : SpecM E1 nil R1),
+  forall (E1 : EncType) (Γ1 : list RecFrame) (frame1 : RecFrame) (R1 : Type) (t1 t2 : SpecM E1 nil R1),
     refines eq PostRelEq eq t1 t2 ->
     refines eq PostRelEq eq (@liftStackS E1 (frame1 :: Γ1) R1 t1) (liftStackS R1 t2).
 Proof.
@@ -208,6 +209,7 @@ Proof.
   - econstructor. eauto.
   - constructor. eauto.
 Qed.
+*)
 
 Lemma pad_resumEntree_comm E1 E2 `{resret : ReSumRet E1 E2} R (t : entree E1 R) :
       resumEntree (Padded.pad t) ≅ Padded.pad (resumEntree t).
@@ -224,8 +226,9 @@ Proof.
     gstep. constructor. gfinal. eauto.
 Qed.
 
+(*
 Lemma padded_refines_liftStackS_proper:
-  forall (E1 : EvType) (Γ1 : list RecFrame) (frame1 : RecFrame) (R1 : Type) (t1 t2 : SpecM E1 nil R1),
+  forall (E1 : EncType) (Γ1 : list RecFrame) (frame1 : RecFrame) (R1 : Type) (t1 t2 : SpecM E1 nil R1),
     padded_refines eq PostRelEq eq t1 t2 ->
     padded_refines eq PostRelEq eq (@liftStackS E1 (frame1 :: Γ1) R1 t1) (liftStackS R1 t2).
 Proof.
@@ -239,4 +242,5 @@ Proof.
   setoid_rewrite pad_resumEntree_comm. reflexivity.
   apply refines_liftStackS_proper. auto.
 Qed.
-    
+*)
+

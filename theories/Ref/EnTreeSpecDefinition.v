@@ -152,17 +152,3 @@ Proof.
   pstep_reverse. auto with entree_spec. apply monotone_refines_.
   apply H2.
 Qed.
-
-(* 
-   need padded refines
-   Tomorrow write headers for important theorems and lemmas, not necessarily important to prove them yet 
-
-SpecM :[(Type,Type)] -> Type -> Type -> Type
-SpecM calls E R := itree_spec (addCalls calls E) R
-Eddy Westbrook
-4:35 PM
-makeCall : forall calls E i, getCallInput calls i -> itree_spec calls E (getCallOutput calls)
-
-saw_mrec
-
-*)

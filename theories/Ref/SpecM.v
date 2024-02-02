@@ -1,457 +1,551 @@
-From ITree Require Import
-     Basics.Basics
-     Basics.Tacs
-     Basics.HeterogeneousRelations
-     Basics.Monad
- .
+
 From EnTree Require Import
      Basics.HeterogeneousRelations
      Basics.QuantType
      Core.EnTreeDefinition
      Core.SubEvent
-     Eq.Eqit
-     Ref.Padded
      Ref.EnTreeSpecDefinition
-     Ref.MRecSpec
+     Ref.FixTree
+     Ref.TpDesc
 .
 From Coq Require Import
-     Strings.String
-     Lists.List
+  Arith.Arith
+  Strings.String
+  Lists.List
 .
-
-From Paco Require Import paco.
-
-Local Open Scope entree_scope.
-Local Open Scope list_scope.
 
 Import Monads.
 
-(* An encoding of types of form forall a b c..., SpecM ... (R a b c ...). This
-   encoding is realized by LRTType below. *)
-Inductive LetRecType : Type@{entree_u + 1} :=
-  | LRT_Ret (R : Type@{entree_u}) : LetRecType
-  | LRT_Fun (A : Type@{entree_u}) (rest : A -> LetRecType) : LetRecType.
-
-(* Compute a dependent tuple type of all the inputs of a LetRecType, i.e.,
-   return the type { x:A & { y:B & ... { z:C & unit } ...}} from a LetRecType
-   that represents forall a b c..., SpecM ... (R a b c ...) *)
-(* might need to do a bunch of refactoring I think LRTInput' is right*)
-Fixpoint LRTInput (lrt : LetRecType) : Type@{entree_u} :=
-  match lrt with
-  | LRT_Ret R => unit
-  | LRT_Fun A rest => {a : A & LRTInput (rest a) }
+Fixpoint vec_mapM@{u} {A B:Type@{u}} {M} `{Monad@{u u} M} (f : A -> M B) n (v : VectorDef.t A n)
+  : M (VectorDef.t B n) :=
+  match v with
+  | VectorDef.nil _ => Monad.ret (VectorDef.nil B)
+  | VectorDef.cons _ a n' v' =>
+      Monad.bind (f a)
+        (fun b =>
+           Monad.bind (vec_mapM f n' v')
+             (fun vb => Monad.ret (VectorDef.cons B b n' vb)))
   end.
 
-(* Build the type forall a b c ..., F (a, (b, (c, ...))) for an arbitrary type
-   function F over an LRTInput *)
-Fixpoint lrtPi lrt : (LRTInput lrt -> Type) -> Type :=
-  match lrt return (LRTInput lrt -> Type) -> Type with
-  | LRT_Ret _ => fun F => F tt
-  | LRT_Fun A lrtF =>
-    fun F => forall a, lrtPi (lrtF a) (fun args => F (existT _ a args))
-  end.
 
-(* Build an lrtPi function from a unary function on an LRTInput *)
-Fixpoint lrtLambda lrt
-  : forall (F : LRTInput lrt -> Type), (forall args, F args) -> lrtPi lrt F :=
-  match lrt return forall (F : LRTInput lrt -> Type), (forall args, F args) ->
-                                                      lrtPi lrt F
-  with
-  | LRT_Ret _ => fun _ f => f tt
-  | LRT_Fun A lrtF =>
-    fun F f x => lrtLambda (lrtF x) (fun args => F (existT _ x args))
-                           (fun args => f (existT _ x args))
-  end.
-
-(* Apply an lrtPi function *)
-Fixpoint lrtApply lrt
-  : forall F, lrtPi lrt F -> forall args, F args :=
-  match lrt return forall F, lrtPi lrt F -> forall args, F args with
-  | LRT_Ret _ =>
-    fun F f u => match u return F u with | tt => f end
-  | LRT_Fun A lrtF =>
-    fun F f args =>
-      match args return F args with
-      | existT _ arg args' =>
-        lrtApply (lrtF arg) (fun args' => F (existT _ arg args')) (f arg) args'
-      end
-  end.
-
-(* NOTE: it is straight forward to prove a beta rule for lrtApply lrtLambda, but
-   that isn't really needed below *)
-
-(* Compute the output type (R a b c ...) from a LetRecType that represents
-   forall a b c..., SpecM ... (R a b c ...) and a dependent tuple of arguments
-   to a function of that type *)
-Fixpoint LRTOutput lrt : EncodingType (LRTInput lrt) :=
-  match lrt with
-  | LRT_Ret R => fun _ : unit => R
-  | LRT_Fun A rest => fun args =>
-                        let '(existT _ a args') := args in
-                        LRTOutput (rest a) args'
-  end.
-
-Global Instance LRTOutputEncoding lrt : EncodingType (LRTInput lrt) := LRTOutput lrt.
-
-(* A recursive frame is a list of types for recursive functions all bound at the
-   same time *)
-Definition RecFrame := list LetRecType.
-
-(* A version of nth_default that does primary recursion on the list *)
-Fixpoint nth_default' {A} (d : A) (l : list A) n : A :=
-  match l with
-  | nil => d
-  | x :: l' => match n with
-               | 0 => x
-               | S n' => nth_default' d l' n'
-               end
-  end.
-
-(* Get the nth element of a RecFrame list, or void -> void if n is too big *)
-Definition nthLRT (frame : RecFrame) n : LetRecType :=
-  nth_default' (LRT_Fun void (fun _ => LRT_Ret void)) frame n.
-
-(* A recursive call to one of the functions in a RecFrame *)
-Inductive FrameCall frame : Type@{entree_u} :=
-| FrameCallOfArgs n (args : LRTInput (nthLRT frame n)).
-
-(* Get the index of a FrameCall *)
-Definition FrameCallIndex {frame} (call : FrameCall frame) : nat :=
-  match call with
-  | FrameCallOfArgs _ n _ => n
-  end.
-
-(* Add a function type to the frame of a FrameCall *)
-Definition consFrameCall {lrt frame} (call : FrameCall frame)
-  : FrameCall (cons lrt frame) :=
-  match call in FrameCall _ return FrameCall (cons lrt frame) with
-  | FrameCallOfArgs _ n args => FrameCallOfArgs (cons lrt frame) (S n) args
-  end.
-
-(* The index of a FrameCall is always less than the length of the frame *)
-Lemma FrameCallIndexLt frame call : @FrameCallIndex frame call < length frame.
-Proof.
-  destruct call.
-  revert frame args; induction n; intros; destruct frame;
-    try (destruct args; destruct x).
-  - simpl. apply Lt.neq_0_lt. trivial.
-  - simpl. apply Lt.lt_n_S. apply (IHn _ args).
-Qed.
-
-(* The return type for calling a recursive function in a RecFrame *)
-Definition FrameCallRet frame (args: FrameCall frame) : Type@{entree_u} :=
-  match args with
-  | FrameCallOfArgs _ n args => LRTOutput (nthLRT frame n) args
-  end.
-
-Global Instance FrameCallRetEncoding lrt : EncodingType (FrameCall lrt) :=
-  FrameCallRet lrt.
-
-(* Make a recursive call from its individual arguments *)
-Definition mkFrameCall (frame : RecFrame) n
-  : lrtPi (nthLRT frame n) (fun args => FrameCall frame) :=
-  lrtLambda (nthLRT frame n) (fun _ => FrameCall frame) (FrameCallOfArgs frame n).
-
-(* ReSum instances for embedding the nth LRTInput into a FrameCall *)
-Global Instance FrameCall_ReSum frame n :
-  ReSum (LRTInput (nthLRT frame n)) (FrameCall frame) := FrameCallOfArgs frame n.
-Global Instance FrameCall_ReSumRet frame n :
-  ReSumRet (LRTInput (nthLRT frame n)) (FrameCall frame) :=
-  fun _ r => r.
-
-(* A FunStack is a list of RecFrame representing all of the functions bound
-    by multiFixS that are currently in scope *)
-Definition FunStack := list RecFrame.
+(**
+ ** EncodingType and ReSum instances for defining SpecM
+ **)
 
 (* The error event type *)
 Inductive ErrorE : Set :=
 | mkErrorE : string -> ErrorE.
 
-Global Instance EncodingType_ErrorE : EncodingType ErrorE := fun _ => void.
+Global Instance EncodingType_ErrorE : EncodingType ErrorE := fun _ => Empty_set.
 
-(* Create an event type for either an event in E or a recursive call in a stack
-   Γ of recursive functions in scope *)
-Fixpoint FunStackE (E : Type) (Γ : FunStack) : Type@{entree_u} :=
-  match Γ with
-  | nil => ErrorE + E
-  | frame :: Γ' => FrameCall frame + FunStackE E Γ'
+(* The event type for SpecM computations, given an underlying event type *)
+Definition SpecE (E : EvType) : Type@{entree_u} :=
+  SpecEvent (ErrorE + E).
+
+(* The return type for a SpecEE effect in a SpecM computation *)
+Definition SpecERet E (e:SpecE E) : Type@{entree_u} := encodes e.
+
+Definition SpecEv E : EvType := Build_EvType (SpecE E) _.
+
+Global Instance EncodingType_SpecE E : EncodingType (SpecE E) := SpecERet E.
+
+Global Instance ReSum_SpecE_E (E : EvType) : ReSum E (SpecE E) :=
+  fun e => Spec_vis (inr e).
+
+Global Instance ReSumRet_SpecE_E (E : EvType) : ReSumRet E (SpecE E) :=
+  fun _ r => r.
+
+Global Instance ReSum_SpecE_Error (E : EvType) : ReSum ErrorE (SpecE E) :=
+  fun e => Spec_vis (inl e).
+
+Global Instance ReSumRet_SpecE_Error (E : EvType) : ReSumRet ErrorE (SpecE E) :=
+  fun _ r => r.
+
+
+(**
+ ** The SpecM monad
+ **)
+
+Section SpecM.
+Context {Ops:TpExprOps}.
+
+
+(* The SpecM monad is an entree spec over SpecE events *)
+Definition SpecM (E:EvType) A : Type := fixtree TpDesc (SpecEv E) A.
+
+#[global] Instance Monad_SpecM E : Monad (SpecM E) := Monad_fixtree _ _.
+
+(* The monadic operations on SpecM *)
+Definition RetS {E A} (a : A) : SpecM E A := ret a.
+Definition BindS {E A B} (m : SpecM E A) (k : A -> SpecM E B) := bind m k.
+
+(* Specification combinators as monadic operations *)
+Definition ForallS {E} (A : Type) `{QuantType A} : SpecM E A :=
+  Fx_Vis (Spec_forall quantEnc : SpecEv E) (fun x => Fx_Ret (quantEnum x)).
+Definition ExistsS {E} (A : Type) `{QuantType A} : SpecM E A :=
+  Fx_Vis (Spec_exists quantEnc : SpecEv E) (fun x => Fx_Ret (quantEnum x)).
+
+(* Assumptions and assertions as monadic operations *)
+Definition AssumeS {E} (P : Prop) : SpecM E unit :=
+  BindS (ForallS P) (fun _ => ret tt).
+Definition AssertS {E} (P : Prop) : SpecM E unit :=
+  BindS (ExistsS P) (fun _ => ret tt).
+
+(* Trigger a domain-specific event in the E type *)
+Definition TriggerS {E:EvType} (e : E) : SpecM E (encodes e) :=
+  Fx_Vis (resum e : SpecEv E) (fun x => Fx_Ret x).
+
+(* Signal an error *)
+Definition ErrorS {E A} (str : string) : SpecM E A :=
+  Fx_Vis ((Spec_vis (inl (mkErrorE str))) : SpecEv E)
+    (fun (x:Empty_set) => match x with end).
+
+(* An error computation in the underlying entree type, to define interp_SpecM *)
+Definition errorEntree {E R} (s : string) : entree (SpecEv E) R :=
+  Vis (Spec_vis (inl (mkErrorE s))) (fun v:Empty_set => match v with end).
+
+(* Interpret a SpecM computation as an entree *)
+Definition interp_SpecM {E R} (t:SpecM E R) : entree (SpecEv E) R :=
+  interp_fixtree (@errorEntree E R "Unbound function call") nil t.
+
+
+(**
+ ** Specification Elements of Type Descriptions
+ **)
+
+(* An infinite stream represented as a function from a natural number index to
+the element at that index *)
+Inductive Stream (A:Type@{entree_u}) : Type@{entree_u} :=
+| MkStream (f : nat -> A).
+
+Arguments MkStream {_} _.
+
+(* Get the element of a stream at a particular index *)
+Definition streamGet {A} (s:Stream A) i : A :=
+  match s with
+  | MkStream f => f i
   end.
 
-(* Compute the output type for a FunStackE event *)
-Fixpoint FunStackE_encodes (E : Type) `{EncodingType E} (Γ : FunStack) :
-  FunStackE E Γ -> Type@{entree_u} :=
-  match Γ return FunStackE E Γ -> Type with
-  | nil => fun e => encodes e
-  | frame :: Γ' => fun e => match e with
-                            | inl args => FrameCallRet frame args
-                            | inr args => FunStackE_encodes E Γ' args
-                            end
+(* A finite or infinite sequence, where the latter is represented as a monadic
+function from the natural number index to the element at that index *)
+Definition mseq (E:EvType) len (A:Type@{entree_u}) : Type@{entree_u} :=
+  match len with
+  | TCNum n => VectorDef.t A n
+  | TCInf => Stream (SpecM E A)
   end.
 
-Global Instance FunStackE_encodes' (E : Type) `{EncodingType E} (Γ : FunStack) : EncodingType (FunStackE E Γ) :=
-  FunStackE_encodes E Γ.
+(* Specialized inductive type to indicate if a type description is to be treated
+as a monadic function or as a data type *)
+Inductive FunFlag : Set := IsFun | IsData.
 
-(* Embed an underlying event into the FunStackE event type *)
-Fixpoint FunStackE_embed_ev (E : Type) Γ (e : ErrorE + E) : FunStackE E Γ :=
-  match Γ return FunStackE E Γ with
-  | nil => e
-  | (_ :: Γ') => inr (FunStackE_embed_ev E Γ' e)
+(* Elements of type descriptions that use monadic functions instead of FunIxs.
+If the FunFlag flag is true, we are translating a monadic function type, and
+should use funElem *)
+Fixpoint tpElemEnv (E:EvType) env (isf : FunFlag) T : Type@{entree_u} :=
+  match T with
+  | Tp_M R => SpecM E (tpElemEnv E env IsData R)
+  | Tp_Pi K B =>
+      forall (elem:kindElem K), tpElemEnv E (envConsElem elem env) IsFun B
+  | Tp_Arr A B =>
+      tpElemEnv E env IsData A -> tpElemEnv E env IsFun B
+  | Tp_Kind K =>
+      if isf then unit else kindElem K
+  | Tp_Pair A B =>
+      if isf then unit else tpElemEnv E env IsData A * tpElemEnv E env IsData B
+  | Tp_Sum A B =>
+      if isf then unit else tpElemEnv E env IsData A + tpElemEnv E env IsData B
+  | Tp_Sigma K B =>
+      if isf then unit else
+        { elem: kindElem K & tpElemEnv E (envConsElem elem env) IsData B }
+  | Tp_Seq e A =>
+      if isf then unit else mseq E (evalTpExpr env e) (tpElemEnv E env IsData A)
+  | Tp_Void => if isf then unit else Empty_set
+  | Tp_Ind A =>
+      if isf then unit else indElem (unfoldIndTpDesc env A)
+  | Tp_Var var =>
+      if isf then unit else indElem (tpSubst 0 env (Tp_Var var))
+  | Tp_TpSubst A B =>
+      if isf then unit else
+        tpElemEnv E (envConsElem (K:=Kind_Tp) (tpSubst 0 env B) env) IsData A
+  | Tp_ExprSubst A EK e =>
+      if isf then unit else
+        tpElemEnv E (envConsElem (K:=Kind_Expr EK) (evalTpExpr env e) env) IsData A
   end.
 
-(* Map the output of a FunStackE event for an E to the output type of E *)
-Fixpoint FunStackE_embed_ev_unmap (E : Type) `{EncodingType E} Γ e
-  : encodes (FunStackE_embed_ev E Γ e) -> encodes e :=
-  match Γ return encodes (FunStackE_embed_ev E Γ e) -> encodes e with
-  | nil => fun o => o
-  | (_ :: Γ') => FunStackE_embed_ev_unmap E Γ' e
+Definition tpElem E T := tpElemEnv E nil IsData T.
+
+Definition specFunEnv E env T := tpElemEnv E env IsFun T.
+Definition specFun E T := tpElemEnv E nil IsFun T.
+
+Definition specIndFun E env T := indFun (SpecEv E) env T.
+
+
+(* Call a function index in a specification *)
+Definition callIx {E T} (f : FunIx T) (args : TpFunInput nil T)
+  : SpecM E (TpFunOutput args) :=
+  Fx_Call (MkFunCall T f args) (fun x => Fx_Ret x).
+
+Axiom callIxSubst : forall {E env} T (f : FunIx (tpSubst 0 env T)) (args : TpFunInput env T),
+    SpecM E (TpFunOutput args).
+
+(* Create a function index from a specification function in a specification *)
+Definition lambdaIx {E T}
+  (f : forall args : TpFunInput nil T, SpecM E (TpFunOutput args)) : SpecM E (FunIx T) :=
+  Fx_MkFuns (fun _ => mkMultiFxInterp1 T f) (fun ixs => Fx_Ret (headFunIx ixs)).
+
+Axiom lambdaIxSubst :
+  forall {E env} T
+         (f : forall args : TpFunInput env T, SpecM E (TpFunOutput args)),
+    SpecM E (FunIx (tpSubst 0 env T)).
+
+Axiom subst_nil_eq : forall n T, tpSubst n nil T = T.
+
+Axiom subst1_of_subst_eq :
+  forall K (elem : kindElem K) env T,
+    tpSubst1 elem (tpSubst 1 env T) = tpSubst 0 (envConsElem elem env) T.
+
+Axiom indElem_invSeqSubst :
+  forall {env A e} (elem : indElem (Tp_Seq (substTpExpr 0 env e) A)),
+    mseqIndElem (evalTpExpr env e) A.
+
+Axiom unfoldInd_subst_eq :
+  forall env A, unfoldIndTpDesc nil (tpSubst 1 env A) = unfoldIndTpDesc env A.
+
+Axiom subst1_eval_nil_subst_eq :
+  forall env EK (e : TpExpr EK) A,
+    tpSubst1 (K:=Kind_Expr EK)
+      (evalTpExpr nil (substTpExpr 0 env e)) (tpSubst 1 env A)
+    = tpSubst 0 (envConsElem (K:=Kind_Expr EK) (evalTpExpr env e) env) A.
+
+Axiom mkSeqIndElemSubst :
+  forall {env} T (e : TpExpr Kind_num),
+    mseqIndElem (evalTpExpr env e) (tpSubst 0 env T) ->
+    indElem (tpSubst 0 env (Tp_Seq e T)).
+
+
+Fixpoint interpToSpecFun E env T {struct T} :
+  (forall args:TpFunInput env T, SpecM E (TpFunOutput args)) ->
+  specFunEnv E env T :=
+  match T return (forall args:TpFunInput env T, SpecM E (TpFunOutput args)) ->
+                 specFunEnv E env T with
+  | Tp_M R => fun f => Functor.fmap (indToTpElem E env R) (f tt)
+  | Tp_Pi K B =>
+      fun f elem =>
+        interpToSpecFun
+          E (envConsElem elem env) B
+          (fun args => f (existT _ elem args))
+  | Tp_Arr A B =>
+      fun f arg =>
+        interpToSpecFun E env B
+          (fun args =>
+             Monad.bind
+               (u:= TpFunOutput (T:=B) args)
+               (tpToIndElem E env A arg)
+               (fun iarg => f (iarg, args)))
+  | Tp_Kind K => fun _ => tt
+  | Tp_Pair A B => fun _ => tt
+  | Tp_Sum A B => fun _ => tt
+  | Tp_Sigma K B => fun _ => tt
+  | Tp_Seq e A => fun _ => tt
+  | Tp_Void => fun _ => tt
+  | Tp_Ind A => fun _ => tt
+  | Tp_Var var => fun _ => tt
+  | Tp_TpSubst A B => fun _ => tt
+  | Tp_ExprSubst A EK e => fun _ => tt
+  end
+with
+specFunToInterp E env T {struct T}
+  : specFunEnv E env T ->
+    (forall args:TpFunInput env T, SpecM E (TpFunOutput args)) :=
+  match T return specFunEnv E env T ->
+                 (forall args:TpFunInput env T, SpecM E (TpFunOutput args)) with
+  | Tp_M R => fun m _ =>
+                Monad.bind m (fun r => tpToIndElem E env R r)
+  | Tp_Pi K B =>
+      fun f args =>
+        specFunToInterp E (envConsElem (projT1 args) env) B (f (projT1 args)) (projT2 args)
+  | Tp_Arr A B =>
+      fun f args =>
+        specFunToInterp E env B (f (indToTpElem E env A (fst args))) (snd args)
+  | Tp_Kind K => fun _ _ => Monad.ret tt
+  | Tp_Pair A B => fun _ _ => Monad.ret tt
+  | Tp_Sum A B => fun _ _ => Monad.ret tt
+  | Tp_Sigma K B => fun _ _ => Monad.ret tt
+  | Tp_Seq e A => fun _ _ => Monad.ret tt
+  | Tp_Void => fun _ _ => Monad.ret tt
+  | Tp_Ind A => fun _ _ => Monad.ret tt
+  | Tp_Var var => fun _ _ => Monad.ret tt
+  | Tp_TpSubst A B => fun _ _ => Monad.ret tt
+  | Tp_ExprSubst A EK e => fun _ _ => Monad.ret tt
+  end
+with
+indToTpElem E env T {struct T} : indElem (tpSubst 0 env T) -> tpElemEnv E env IsData T :=
+  match T return indElem (tpSubst 0 env T) -> tpElemEnv E env IsData T with
+  | Tp_M R =>
+      fun elem =>
+        Functor.fmap (indToTpElem E env R) (callIxSubst (Tp_M R) (indElem_invM elem) tt)
+  | Tp_Pi K B =>
+      fun elem arg =>
+        interpToSpecFun
+          E (envConsElem arg env) B
+          (fun args =>
+             callIxSubst (Tp_Pi K B) (indElem_invPi elem) (existT _ arg args))
+  | Tp_Arr A B =>
+      fun elem arg =>
+        interpToSpecFun E env B
+          (fun args =>
+             Monad.bind
+               (u:=TpFunOutput (T:=B) args)
+               (tpToIndElem E env A arg)
+               (fun iarg =>
+                  callIxSubst (Tp_Arr A B) (indElem_invArr elem) (iarg, args)))
+  | Tp_Kind K => fun elem => indElem_invKind elem
+  | Tp_Pair A B =>
+      fun elem => (indToTpElem E env A (fst (indElem_invPair elem)),
+                    indToTpElem E env B (snd (indElem_invPair elem)))
+  | Tp_Sum A B =>
+      fun elem =>
+        match indElem_invSum elem with
+        | inl x => inl (indToTpElem E env A x)
+        | inr y => inr (indToTpElem E env B y)
+        end
+  | Tp_Sigma K B =>
+      fun elem =>
+        existT _ (projT1 (indElem_invSigma elem))
+          (indToTpElem E (envConsElem (projT1 (indElem_invSigma elem)) env) B
+             (eq_rect _ indElem (projT2 (indElem_invSigma elem)) _
+                (subst1_of_subst_eq _ _ _ _)))
+  | Tp_Seq e A =>
+      fun elem =>
+        (match evalTpExpr env e as len return
+               mseqIndElem len (tpSubst 0 env A) ->
+               mseq E len (tpElemEnv E env IsData A) with
+         | TCNum n => fun vec => VectorDef.map (indToTpElem E env A) vec
+         | TCInf =>
+             fun funix =>
+               MkStream
+                 (fun n =>
+                    Functor.fmap (indToTpElem E env A)
+                      (callIxSubst (Tp_Arr Tp_Nat (Tp_M A)) funix
+                         (Elem_Kind (K:=Kind_Expr Kind_nat) n, tt)))
+         end)
+          (indElem_invSeqSubst elem)
+  | Tp_Void => fun elem => match indElem_invVoid elem with end
+  | Tp_Ind A =>
+      fun elem => eq_rect _ indElem (indElem_invInd elem) _
+                    (unfoldInd_subst_eq _ _)
+  | Tp_Var var => fun elem => elem
+  | Tp_TpSubst A B =>
+      fun elem =>
+        indToTpElem E (@envConsElem _ Kind_Tp (tpSubst 0 env B) env) A
+          (eq_rect _ indElem (indElem_invTpSubst elem) _
+             (subst1_of_subst_eq _ _ _ _))
+  | Tp_ExprSubst A EK e =>
+      fun elem =>
+        indToTpElem E (@envConsElem _ (Kind_Expr EK) (evalTpExpr env e) env) A
+          (eq_rect _ indElem (indElem_invExprSubst elem) _
+             (subst1_eval_nil_subst_eq _ _ _ _))
+  end
+with
+tpToIndElem E env T {struct T} : tpElemEnv E env IsData T -> SpecM E (indElem (tpSubst 0 env T)) :=
+  match T return tpElemEnv E env IsData T -> SpecM E (indElem (tpSubst 0 env T)) with
+  | Tp_M R =>
+      fun m =>
+        Functor.fmap Elem_M
+          (lambdaIxSubst (Tp_M R)
+             (fun _ => Monad.bind m (fun r => tpToIndElem E env R r)))
+  | Tp_Pi K B =>
+      fun f =>
+        Functor.fmap Elem_Pi
+          (lambdaIxSubst (Tp_Pi K B)
+             (fun args =>
+                specFunToInterp E (envConsElem (projT1 args) env) B
+                  (f (projT1 args)) (projT2 args)))
+  | Tp_Arr A B =>
+      fun f =>
+        Functor.fmap Elem_Arr
+          (lambdaIxSubst (Tp_Arr A B)
+             (fun args =>
+                specFunToInterp E env B
+                  (f (indToTpElem E env A (fst args))) (snd args)))
+  | Tp_Kind K => fun elem => Monad.ret (Elem_Kind elem)
+  | Tp_Pair A B =>
+      fun elem =>
+        Monad.bind (tpToIndElem E env A (fst elem))
+          (fun ielemA =>
+             Monad.bind (tpToIndElem E env B (snd elem))
+               (fun ielemB => Monad.ret (Elem_Pair ielemA ielemB)))
+  | Tp_Sum A B =>
+      fun elem =>
+        match elem with
+        | inl x => Functor.fmap Elem_SumL (tpToIndElem E env A x)
+        | inr y => Functor.fmap Elem_SumR (tpToIndElem E env B y)
+        end
+  | Tp_Sigma K B =>
+      fun elem =>
+        Functor.fmap
+          (fun ielem =>
+             Elem_Sigma (projT1 elem)
+               (eq_rect _ indElem ielem _ (eq_sym (subst1_of_subst_eq _ _ _ _))))
+          (tpToIndElem E (envConsElem (projT1 elem) env) B (projT2 elem))
+  | Tp_Seq e A =>
+      fun elem =>
+        Functor.fmap
+          (mkSeqIndElemSubst A e)
+          ((match evalTpExpr env e as len return
+                  mseq E len (tpElemEnv E env IsData A) ->
+                  SpecM E (mseqIndElem len (tpSubst 0 env A)) with
+            | TCNum n =>
+                fun v => vec_mapM (tpToIndElem E env A) n v
+            | TCInf =>
+                fun s =>
+                  lambdaIxSubst (Tp_Arr Tp_Nat (Tp_M A))
+                    (fun args =>
+                       Monad.bind (streamGet s (indElem_invKind (fst args))) (tpToIndElem E env A))
+            end)
+             elem)
+  | Tp_Void => fun elem => match elem with end
+  | Tp_Ind A =>
+      fun elem =>
+        Monad.ret (Elem_Ind
+                     (eq_rect _ indElem elem _
+                        (eq_sym (unfoldInd_subst_eq _ _))))
+  | Tp_Var var => fun elem => Monad.ret elem
+  | Tp_TpSubst A B =>
+      fun elem =>
+        Functor.fmap
+          (fun ielem =>
+             Elem_TpSubst
+               (eq_rect _ indElem ielem _
+                  (eq_sym (subst1_of_subst_eq _ _ _ _))))
+          (tpToIndElem E (@envConsElem _ Kind_Tp (tpSubst 0 env B) env) A elem)
+  | Tp_ExprSubst A EK e =>
+      fun elem =>
+        Functor.fmap
+          (fun ielem =>
+             Elem_ExprSubst
+               (eq_rect _ indElem ielem _
+                  (eq_sym (subst1_eval_nil_subst_eq _ _ _ _))))
+          (tpToIndElem E (@envConsElem _ (Kind_Expr EK) (evalTpExpr env e) env) A elem)
+  end
+.
+
+
+(* Fold an element of an inductive type; note that this must be monadic, because
+the inductive type element could contain specFuns, which need to get turned into
+function indices *)
+Definition foldTpElem {E T} (elem : tpElem E (unfoldIndTpDesc nil T)) :
+  SpecM E (tpElem E (Tp_Ind T)) :=
+  eq_rect _ (fun U => SpecM E (indElem U)) (tpToIndElem E nil _ elem)
+    _ (subst_nil_eq _ _).
+
+(* Unfold an element of an inductive type *)
+Definition unfoldTpElem {E T} (elem : tpElem E (Tp_Ind T)) :
+  tpElem E (unfoldIndTpDesc nil T) :=
+  indToTpElem E nil _ (eq_rect _ indElem elem
+                         _ (sym_eq (subst_nil_eq _ _))).
+
+
+(* Generate a function index for a fixpoint over a single function *)
+Definition fixIx {E T} (f: forall (_:FunIx T) (args:TpFunInput nil T),
+      SpecM E (TpFunOutput args)) : SpecM E (FunIx T) :=
+  Fx_MkFuns
+    (fun ixs => mkMultiFxInterp1 T (f (headFunIx ixs)))
+    (fun ixs => Fx_Ret (headFunIx ixs)).
+
+(* Monadic join, turning M (M A) into just M A *)
+Definition joinM {E A} (m : SpecM E (SpecM E A)) : SpecM E A :=
+  Monad.bind m (fun x => x).
+
+(* Do a form of monadic join, turning a computation of a monadic computation
+into just a monadic computation *)
+Fixpoint joinSpecFun {E env T} : SpecM E (specFunEnv E env T) -> specFunEnv E env T :=
+  match T return SpecM E (specFunEnv E env T) -> specFunEnv E env T with
+  | Tp_M R => fun m => joinM m
+  | Tp_Pi K B =>
+      fun mf elem => joinSpecFun (Functor.fmap (fun f => f elem) mf)
+  | Tp_Arr A B => fun mf arg => joinSpecFun (Functor.fmap (fun f => f arg) mf)
+  | _ => fun _ => tt
   end.
 
-Global Instance ReSum_FunStackE_E (E : Type) (Γ : FunStack) : ReSum E (FunStackE E Γ) :=
-  fun e => FunStackE_embed_ev E Γ (inr e).
-
-Global Instance ReSumRet_FunStackE_E (E : Type) `{EncodingType E} Γ :
-  ReSumRet E (FunStackE E Γ) :=
-  fun e => FunStackE_embed_ev_unmap E Γ (inr e).
-
-Global Instance ReSum_FunStackE_Error (E : Type) (Γ : FunStack) : ReSum ErrorE (FunStackE E Γ) :=
-  fun e => FunStackE_embed_ev E Γ (inl e).
-
-Global Instance ReSumRet_FunStackE_Error (E : Type) `{EncodingType E} Γ :
-  ReSumRet ErrorE (FunStackE E Γ) :=
-  fun e => FunStackE_embed_ev_unmap E Γ (inl e).
-
-(* Get the nth RecFrame frame in a FunStack, returning the empty frame if n
-   is too big *)
-Definition nthFrame (Γ : FunStack) fnum : RecFrame :=
-  nth_default' nil Γ fnum.
-
-(* Embed a FrameCall for the fnum-th frame of a FunStack into FunStackE *)
-(*
-Fixpoint mkFunStackE E Γ fnum : FrameCall (nthFrame Γ fnum) -> FunStackE E Γ :=
-  match Γ return FrameCall (nthFrame Γ fnum) -> FunStackE E Γ with
-  | nil => fun x => match x with end
-  | frame :: Γ' =>
-    match fnum return FrameCall (nthFrame (frame :: Γ') fnum) ->
-                      FunStackE E (frame :: Γ') with
-    | 0 => fun args => inl args
-    | S fnum' => fun args => inr (mkFunStackE E Γ' fnum' args)
-    end
-  end.
-
-(* Embed an LRTInput for the nth function in the fnum-th frame of a FunStack
-   into FunStackE *)
-Definition mkFunStackE' E Γ fnum n
-           (args:LRTInput (nthLRT (nthFrame Γ fnum) n)) : FunStackE E Γ :=
-  mkFunStackE E Γ fnum (embedFrameCall _ n args).
-*)
-
-(* Embed a call in the top level of the FunStack into a FunStackE *)
-Global Instance ReSum_LRTInput_FunStackE (E : Type) (Γ : FunStack) frame n :
-  ReSum (LRTInput (nthLRT frame n)) (FunStackE E (frame :: Γ)) :=
-  fun args => inl (FrameCallOfArgs frame n args).
-
-(* Map the return value for embedding a call in the top level to a FunStackE *)
-Global Instance ReSumRet_LRTInput_FunStackE (E : Type) `{EncodingType E} Γ frame n
-  : ReSumRet (LRTInput (nthLRT frame n)) (FunStackE E (frame :: Γ)) :=
-  fun args o => o.
-
-(* Embed a call in the top level of the FunStack into a FunStackE *)
-Global Instance ReSum_FrameCall_FunStackE (E : Type) (Γ : FunStack) frame :
-  ReSum (FrameCall frame) (FunStackE E (frame :: Γ)) :=
-  fun args => inl args.
-
-(* Map the return value for embedding a call in the top level to a FunStackE *)
-Global Instance ReSumRet_FrameCall_FunStackE (E : Type) `{EncodingType E} Γ frame :
-  ReSumRet (FrameCall frame) (FunStackE E (frame :: Γ)) :=
-  fun args o => o.
+(* Create a lambda as a fixed-point that can call itself. Note that the type of
+   f, specFun E T -> specFun E T, is the same as specFun E (Tp_Arr T T) when T
+   is a monadic function type. *)
+Definition FixS {E T} (f: specFun E T -> specFun E T) : specFun E T :=
+  joinSpecFun
+    (Functor.fmap
+       (fun funix => interpToSpecFun E nil T (callIx funix))
+       (fixIx (fun funix =>
+                 specFunToInterp E nil T
+                   (f (interpToSpecFun E nil T (callIx funix)))))).
 
 
-(* An EvType is an event type E plus a return type for each event in E *)
-Record EvType : Type :=
-  { evTypeType :> Type@{entree_u};
-    evRetType : evTypeType -> Type@{entree_u} }.
+(**
+ ** Defining a multi-way fixed point
+ **)
 
-Global Instance EncodingType_EvType (E:EvType) : EncodingType E :=
-  fun e => evRetType E e.
-
-Global Instance ReSum_FunStack_EvType (E : EvType) Γ : ReSum E (FunStackE E Γ) :=
-  ReSum_FunStackE_E _ _.
-Global Instance ReSumRet_FunStack_EvType (E : EvType) Γ : ReSumRet E (FunStackE E Γ) :=
-  ReSumRet_FunStackE_E _ _.
-
-(* The SpecM monad is the entree_spec monad with FunStackE as the event type *)
-Definition SpecM (E:EvType) Γ A : Type@{entree_u} :=
-  entree_spec (FunStackE E Γ) A.
-
-Definition RetS {E} {Γ A} (a : A) : SpecM E Γ A := ret a.
-Definition BindS {E} {Γ A B} (m : SpecM E Γ A) (k : A -> SpecM E Γ B) :=
-  bind m k.
-Definition IterS {E} {Γ A B} (body : A -> SpecM E Γ (A + B)) :
-  A -> SpecM E Γ B := EnTree.iter body.
-Definition AssumeS {E} {Γ} (P : Prop) : SpecM E Γ unit :=
-  assume_spec P.
-Definition AssertS {E} {Γ} (P : Prop) : SpecM E Γ unit :=
-  assert_spec P.
-Definition ForallS {E} {Γ} (A : Type) `{QuantType A} : SpecM E Γ A :=
-  forall_spec A.
-Definition ExistsS {E} {Γ} (A : Type) `{QuantType A} : SpecM E Γ A :=
-  exists_spec A.
-Definition TriggerS {E:EvType} {Γ} (e : E) : SpecM E Γ (encodes e) := trigger e.
-Definition ErrorS {E} {Γ} A (str : string) : SpecM E Γ A :=
-  bind (trigger (mkErrorE str)) (fun (x:void) => match x with end).
-
-Global Instance SpecM_Monad {E} Γ : Monad (SpecM E Γ) :=
-  {|
-    ret := fun A a => RetS a;
-    bind := fun A B m k => BindS m k;
-  |}.
-
-Global Instance ReSum_nil_FunStack E (Γ : FunStack) :
-  ReSum (SpecEvent (FunStackE E nil)) (SpecEvent (FunStackE E Γ)) :=
-  fun e => match e with
-           | Spec_vis (inl el) => Spec_vis (resum el)
-           | Spec_vis (inr er) => Spec_vis (resum er)
-           | Spec_forall T => Spec_forall T
-           | Spec_exists T => Spec_exists T
-           end.
-
-Global Instance ReSumRet_nil_FunStack (E:EvType) (Γ : FunStack) :
-  ReSumRet (SpecEvent (FunStackE E nil)) (SpecEvent (FunStackE E Γ)) :=
-  fun e =>
-    match e return encodes (ReSum_nil_FunStack E Γ e) -> encodes e with
-    | Spec_vis (inl el) => fun x => resum_ret el x
-    | Spec_vis (inr er) => fun x => resum_ret er x
-    | Spec_forall T => fun x => x
-    | Spec_exists T => fun x => x
-    end.
-
-
-(* Lift a SpecM in the empty FunStack to an arbitrary FunStack *)
-Definition liftStackS {E} {Γ} A (t:SpecM E nil A) : SpecM E Γ A :=
-  resumEntree t.
-
-(* Compute the type forall a b c ... . SpecM ... (R a b c ...) from an lrt *)
-(*
-Fixpoint LRTType E `{EncodingType E} Γ (lrt : LetRecType) : Type@{entree_u} :=
-  match lrt with
-  | LRT_Ret R => SpecM E Γ R
-  | LRT_Fun A rest => forall (a : A), LRTType E Γ (rest a)
-  end.
-*)
-Definition LRTType E Γ lrt : Type@{entree_u} :=
-  lrtPi lrt (fun args => SpecM E Γ (LRTOutput lrt args)).
-
-(* Create a recursive call to a function in the top-most using args *)
-Definition CallS E Γ frame (args : FrameCall frame) :
-  SpecM E (frame :: Γ) (FrameCallRet frame args) :=
-  trigger (H2:=@SpecEventReSumRet _ _ _ _ _ _) args.
-
-(* Build the right-nested tuple type of a list of functions in a RecFrame *)
-Fixpoint FrameTuple E Γ (frame : RecFrame) : Type :=
-  match frame with
+(* A tuple of spec functions of the given types *)
+Fixpoint specFuns E Ts : Type@{entree_u} :=
+  match Ts with
   | nil => unit
-  | lrt :: frame' => LRTType E Γ lrt * FrameTuple E Γ frame'
+  | T :: Ts' => specFun E T * specFuns E Ts'
   end.
 
-(* Get the nth function in a FrameTuple *)
-Fixpoint nthFrameTupleFun E Γ frame : forall n, FrameTuple E Γ frame ->
-                                                LRTType E Γ (nthLRT frame n) :=
-  match frame return forall n, FrameTuple E Γ frame ->
-                               LRTType E Γ (nthLRT frame n) with
-  | nil => fun _ _ v => match v with end
-  | lrt :: frame' =>
-    fun n => match n return FrameTuple E Γ (lrt :: frame') ->
-                            LRTType E Γ (nthLRT (lrt :: frame') n) with
-             | 0 => fun tup => fst tup
-             | S n' => fun tup => nthFrameTupleFun E Γ frame' n' (snd tup)
-             end
+(* Convert a sequence of function indices to a tuple of specFuns *)
+Fixpoint funIxsToSpecFuns {E Ts} : FunIxs Ts -> specFuns E Ts :=
+  match Ts return FunIxs Ts -> specFuns E Ts with
+  | nil => fun _ => tt
+  | T :: Ts' => fun ixs => (interpToSpecFun E nil T (callIx (headFunIx ixs)),
+                             funIxsToSpecFuns (tailFunIxs ixs))
   end.
 
-(* Apply a FrameTuple to a FrameCall to get a FrameCallRet *)
-Definition applyFrameTuple E Γ frame (funs : FrameTuple E Γ frame)
-           (call : FrameCall frame) : SpecM E Γ (FrameCallRet frame call) :=
-  match call return SpecM E Γ (FrameCallRet frame call) with
-  | FrameCallOfArgs _ n args =>
-    lrtApply (nthLRT frame n) _ (nthFrameTupleFun _ _ frame n funs) args
+(* Do a joinSpecFun on a tuple of specFuns *)
+Fixpoint joinSpecFuns {E Ts} : SpecM E (specFuns E Ts) -> specFuns E Ts :=
+  match Ts return SpecM E (specFuns E Ts) -> specFuns E Ts with
+  | nil => fun _ => tt
+  | T :: Ts' => fun m => (joinSpecFun (Functor.fmap fst m),
+                           joinSpecFuns (Functor.fmap snd m))
   end.
 
-(* Create a multi-way fixed point of a sequence of functions *)
-Definition MultiFixS E Γ frame
-           (bodies : FrameTuple E (frame :: Γ) frame)
-           (call : FrameCall frame) : SpecM E Γ (FrameCallRet frame call) :=
-  mrec_spec (applyFrameTuple E (frame :: Γ) frame bodies) call.
 
-
-(** Notations in terms of the SpecM combinators **)
-Module SpecMNotations.
-
-Notation "t1 >>= k2" := (BindS t1 k2)
-                        (at level 58, left associativity) : entree_scope.
-Notation "x <- t1 ;; t2" := (BindS t1 (fun x => t2) )
-                        (at level 61, t1 at next level, right associativity) : entree_scope.
-Notation "t1 ;; t2" := (BindS t1 (fun _ => t2))
-                       (at level 61, right associativity) : entree_scope.
-Notation "' p <- t1 ;; t2" :=
-  (BindS t1 (fun x_ => match x_ with p => t2 end) )
-  (at level 61, t1 at next level, p pattern, right associativity) : entree_scope.
-
-End SpecMNotations.
-
-
-(* Interpreting SpecM computations in the state monad *)
-
-Section interpWithState.
-Import ExtLib.Structures.Functor.
-
-Definition StateT S M A := S -> M (S * A)%type.
-Global Instance Monad_StateT M s `{Monad M} : Monad (StateT s M) :=
-  {|
-    ret := fun A x s => ret (s, x);
-    bind := fun A B m k s => bind (m s) (fun a_s =>
-                                           let (s',a) := a_s in
-                                           k a s')
-  |}.
-
-Global Instance MonadIter_StateT M St `{Monad M} `{MI:MonadIter M} : MonadIter (StateT St M) :=
-  fun R I body i s =>
-    iter (MonadIter:=MI) (R:=St * R)
-         (fun s'_i':St * I =>
-            let (s',i') := s'_i' in
-            bind (body i s) (fun s''_ir =>
-                               match s''_ir with
-                               | (s'', inl i') => ret (inl (s'', i'))
-                               | (s'', inr r) => ret (inr (s'', r))
-                               end)) (s,i).
-
-Definition interpWithState {E1 E2} `{EncodingType E1} `{EncodingType E2} {St}
-           (h : forall e:E1, StateT St (entree E2) (encodes e)) {A} :
-  entree E1 A -> StateT St (entree E2) A :=
-  iter (fun t =>
-          match observe t with
-          | RetF r => ret (inr r)
-          | TauF t => ret (inl t)
-          | VisF e k => fmap (fun x => inl (k x)) (h e)
-          end).
-
-End interpWithState.
-
-(* Corecursively looks for performances of exceptional effects. If an
-   exceptional performance is caught, then `catch` is performed instead. *)
-Program CoFixpoint try_catch {E:EvType} {Γ} {A} {B}
-    (is_exceptional : FunStackE E Γ -> option A)
-    (catch : A -> SpecM E Γ B) :
-    SpecM E Γ B -> SpecM E Γ B :=
-  fun t => match t with
-  | go _ _ (RetF r) => ret r
-  | go _ _ (TauF t') => Tau (try_catch is_exceptional catch t')
-  | go _ _ (VisF se k) =>
-      match se with
-      | Spec_vis fs =>
-          match is_exceptional fs with 
-          | Some a => catch a
-          | None => Vis (Spec_vis fs) (fun x => try_catch is_exceptional catch (k _))
-          end
-      | Spec_forall T => Vis (Spec_forall T) (fun x => try_catch is_exceptional catch (k _))
-      | Spec_exists T => Vis (Spec_exists T) (fun x => try_catch is_exceptional catch (k _))
-      end
+(* Build the multi-arity function type specFun E T1 -> ... specFun E Tn -> A *)
+Fixpoint arrowSpecFuns E (Ts : list TpDesc) (A : Type@{entree_u}) : Type@{entree_u} :=
+  match Ts with
+  | nil => A
+  | T :: Ts' => specFun E T -> arrowSpecFuns E Ts' A
   end.
+
+(* Apply a multi-arity function over specFuns to a tuple of specFuns *)
+Fixpoint applyArrowSpecFuns {E Ts A} : arrowSpecFuns E Ts A -> specFuns E Ts -> A :=
+  match Ts return arrowSpecFuns E Ts A -> specFuns E Ts -> A with
+  | nil => fun f _ => f
+  | T :: Ts' => fun f tup => applyArrowSpecFuns (f (fst tup)) (snd tup)
+  end.
+
+(* FIXME: move this somewhere more relevant *)
+Arguments MultiFxInterp {_ _} _ _.
+
+(* Convert a specFuns tuple to a MultiFxInterp *)
+Fixpoint specFunsToMultiInterp {E Ts} : specFuns E Ts -> MultiFxInterp (SpecEv E) Ts :=
+  match Ts return specFuns E Ts -> MultiFxInterp (SpecEv E) Ts with
+  | nil => fun _ => mkMultiFxInterp0
+  | T :: Ts' =>
+      fun fs =>
+        consMultiFxInterp (specFunToInterp E nil T (fst fs))
+          (specFunsToMultiInterp (snd fs))
+  end.
+
+Definition MultiFixBodies E Ts : Type@{entree_u} :=
+  arrowSpecFuns E Ts (specFuns E Ts).
+
+Definition MultiFixS {E Ts} (funs : MultiFixBodies E Ts) : specFuns E Ts :=
+  joinSpecFuns
+    (Fx_MkFuns
+       (fun ixs => specFunsToMultiInterp (applyArrowSpecFuns funs (funIxsToSpecFuns ixs)))
+       (fun ixs => Fx_Ret (funIxsToSpecFuns ixs))).
+
+Definition LetRecS {E Ts A}
+  (funs : MultiFixBodies E Ts) (body : arrowSpecFuns E Ts (SpecM E A)) : SpecM E A :=
+  applyArrowSpecFuns body (MultiFixS funs).
+
+End SpecM.
