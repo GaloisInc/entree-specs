@@ -11,7 +11,7 @@ depends: [
   "ocaml"
   "ocamlfind"
   "coq" {>= "8.15"}
-  "coq-itree" {>= "5.0.0" & < "5.2"}
+  "coq-itree" {>= "5.2" & < "5.3"}
   "coq-paco" {>= "4.1.2"}
 ]
 build: [
