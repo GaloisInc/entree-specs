@@ -1,8 +1,7 @@
 # Requirements
 - coq >= 8.15
 - coq-paco >= 4.1.2
-- coq-itree >= 5.0.0
-
+- coq-itree >= 5.2.0
 
 # Build
 run `make`
