@@ -233,7 +233,7 @@ Proof.
    + pstep. constructor. auto.
  - repeat rewrite bind_tau. pstep. constructor.  pclearbot. left.
    eapply refines_iter_aux; eauto.
- - repeat rewrite bind_vis. pstep. constructor. auto. pclearbot. left.
+ - repeat rewrite bind_vis. pstep. constructor. auto. pclearbot. intros * H5. left.
    apply H2 in H5. pclearbot.
    eapply refines_iter_aux; eauto.
  - rewrite bind_tau. pstep. constructor. pstep_reverse.
