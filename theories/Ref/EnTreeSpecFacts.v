@@ -429,7 +429,10 @@ Proof.
     + remember (VisF (Spec_vis e2) k2) as x.
       hinduction REL before r; intros; inv Heqx; inj_existT; subst.
       * constructor; auto. intros. eapply H0 in H2. right. pclearbot.
-        eapply CIH; eauto with solve_padded. 2 : apply REL. 2 : destruct H2; try contradiction; auto. 
+        eapply CIH; eauto with solve_padded.
+        2 : apply REL.
+        (* these bits no longer needed 20241014 *)
+        (* 2 : destruct H2; try contradiction; auto. *)
         inv Hpad1. inj_existT. subst. pstep.
         constructor. auto.
       * constructor. eapply IHREL; eauto. inv H1. pclearbot. pstep_reverse.
