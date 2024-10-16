@@ -1,0 +1,38 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        ocaml: ["4.14.x"]
+        os: ["ubuntu-22.04"]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          submodules: true
+
+      - name: Install OCaml
+        uses: ocaml/setup-ocaml@v2
+        with:
+          ocaml-compiler: ${{ matrix.ocaml }}
+
+      - name: Add coq-released repo
+        shell: bash
+        run: opam repo add coq-released https://coq.inria.fr/opam/released
+
+      - name: Install dependencies
+        shell: bash
+        run: opam install . --deps-only --yes
+
+      - name: Build entree-specs
+        shell: bash
+        run: opam exec -- make -j
