@@ -431,7 +431,7 @@ Proof.
       * constructor; auto. intros. eapply H0 in H2. right. pclearbot.
         eapply CIH; eauto with solve_padded.
         2 : apply REL.
-        (* these bits no longer needed 20241014 *)
+        (* these bits no longer needed with coq-paco 4.2.1 *)
         (* 2 : destruct H2; try contradiction; auto. *)
         inv Hpad1. inj_existT. subst. pstep.
         constructor. auto.
