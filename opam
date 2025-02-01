@@ -12,7 +12,7 @@ depends: [
   "ocamlfind"
   "coq" {>= "8.15" & < "8.16"}
   "coq-itree" {>= "5.2" & < "5.3"}
-  "coq-paco" {>= "4.2.1"}
+  "coq-paco" {>= "4.2.3"}
 ]
 build: [
   [make]

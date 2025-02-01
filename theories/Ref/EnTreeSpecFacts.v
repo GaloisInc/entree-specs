@@ -324,10 +324,18 @@ Proof.
     { subst. constructor. auto. }
     hinduction H0 before r; intros; inv Heqy; inj_existT; subst; eauto with solve_padded.
     (* * eapply IHrefinesF; eauto. pstep_reverse. rewrite <- (tau_eutt phi). pstep. auto. *)
-    * remember (VisF (Spec_vis e1) k1) as y. pclearbot.
+    * remember (VisF (Spec_vis e1) k1) as y.
+      (*
+       * dholland 20250131: with coq-paco 4.2.3 this pclearbot changes
+       * the upaco2 in H0 to paco2; with coq-paco 4.2.2 and earlier
+       * it's missed.
+       *)
+      pclearbot.
       (* shouldn't I know that k2 is padded here? *)
       hinduction REL before r; intros; inv Heqy; inj_existT; subst.
-      -- pclearbot. constructor; auto. intros. eapply H0 in H3. destruct H3; try contradiction.
+      -- pclearbot. constructor; auto. intros. eapply H0 in H3.
+         (* dholland 20250131: consequently this is no longer needed *)
+         (*destruct H3; try contradiction.*)
          right. pclearbot. inv Hy. inj_existT. subst. eapply CIH; eauto with solve_padded; try apply REL. 
          pstep. constructor. auto.
       -- constructor. eapply IHREL; eauto.
